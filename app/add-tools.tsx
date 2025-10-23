@@ -29,12 +29,11 @@ export default function AddToolsScreen() {
   const [saving, setSaving] = useState(false);
   const [debugLog, setDebugLog] = useState<string[]>([]);
 
-  // Add debug logging helper
   const addDebugLog = (message: string) => {
     const timestamp = new Date().toLocaleTimeString();
     const logMessage = `[${timestamp}] ${message}`;
     console.log(logMessage);
-    setDebugLog(prev => [...prev, logMessage].slice(-10)); // Keep last 10 logs
+    setDebugLog(prev => [...prev, logMessage].slice(-10));
   };
 
   useEffect(() => {
@@ -43,7 +42,7 @@ export default function AddToolsScreen() {
 
   const pickImage = async () => {
     try {
-      addDebugLog('📸 pickImage() called - requesting camera permissions');
+      addDebugLog('📸 Requesting camera permissions');
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       
       if (status !== 'granted') {
@@ -52,39 +51,29 @@ export default function AddToolsScreen() {
         return;
       }
 
-      addDebugLog('✅ Camera permission granted - launching camera');
+      addDebugLog('✅ Launching camera');
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: 'images',
         allowsEditing: true,
-        quality: 0.5, // Reduced from 0.8 to 0.5 to reduce file size
+        quality: 0.7,
       });
-
-      addDebugLog(`📸 Camera result - canceled: ${result.canceled}, assets: ${result.assets?.length || 0}`);
 
       if (!result.canceled && result.assets[0]) {
         const uri = result.assets[0].uri;
         addDebugLog(`✅ Image captured: ${uri.substring(0, 50)}...`);
         setImageUri(uri);
-        
-        // Trigger analysis
-        addDebugLog('🤖 About to call analyzeImage()');
-        setTimeout(() => {
-          addDebugLog('🤖 Calling analyzeImage() now');
-          analyzeImage(uri);
-        }, 100);
-      } else {
-        addDebugLog('📸 Camera was canceled by user');
+        analyzeImage(uri);
       }
     } catch (error) {
       addDebugLog(`❌ Error in pickImage: ${error}`);
-      console.error('❌ Error picking image:', error);
+      console.error('Error picking image:', error);
       Alert.alert('Error', 'Failed to take photo');
     }
   };
 
   const pickFromGallery = async () => {
     try {
-      addDebugLog('🖼️ pickFromGallery() called - requesting permissions');
+      addDebugLog('🖼️ Requesting gallery permissions');
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       
       if (status !== 'granted') {
@@ -93,213 +82,136 @@ export default function AddToolsScreen() {
         return;
       }
 
-      addDebugLog('✅ Gallery permission granted - launching picker');
+      addDebugLog('✅ Launching gallery');
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: 'images',
         allowsEditing: true,
-        quality: 0.5, // Reduced from 0.8 to 0.5 to reduce file size
+        quality: 0.7,
       });
-
-      addDebugLog(`🖼️ Gallery result - canceled: ${result.canceled}, assets: ${result.assets?.length || 0}`);
 
       if (!result.canceled && result.assets[0]) {
         const uri = result.assets[0].uri;
         addDebugLog(`✅ Image selected: ${uri.substring(0, 50)}...`);
         setImageUri(uri);
-        
-        // Trigger analysis
-        addDebugLog('🤖 About to call analyzeImage()');
-        setTimeout(() => {
-          addDebugLog('🤖 Calling analyzeImage() now');
-          analyzeImage(uri);
-        }, 100);
-      } else {
-        addDebugLog('🖼️ Gallery was canceled by user');
+        analyzeImage(uri);
       }
     } catch (error) {
       addDebugLog(`❌ Error in pickFromGallery: ${error}`);
-      console.error('❌ Error picking from gallery:', error);
+      console.error('Error picking from gallery:', error);
       Alert.alert('Error', 'Failed to select photo');
     }
   };
 
   const analyzeImage = async (uri: string) => {
-    addDebugLog(`🤖 analyzeImage() STARTED with URI: ${uri.substring(0, 50)}...`);
+    if (Platform.OS === 'web') {
+      addDebugLog('⚠️ Image analysis not supported on web');
+      Alert.alert('Not Supported', 'Image analysis is not supported on web. Please enter tools manually.');
+      return;
+    }
+
+    addDebugLog(`🤖 Starting image analysis`);
     setAnalyzing(true);
-    setToolsList(''); // Clear previous results
+    setToolsList('');
     
     try {
-      addDebugLog('🤖 Step 1: Checking if file exists');
-      
-      // Check if file exists using legacy API
+      addDebugLog('📁 Checking file exists');
       const fileInfo = await FileSystem.getInfoAsync(uri);
-      addDebugLog(`📁 File exists: ${fileInfo.exists}, size: ${fileInfo.exists && 'size' in fileInfo ? fileInfo.size : 'unknown'}`);
       
       if (!fileInfo.exists) {
         throw new Error('Image file does not exist');
       }
 
-      // Convert image to base64
-      addDebugLog('🤖 Step 2: Converting to base64');
+      addDebugLog('🔄 Converting to base64');
       const base64 = await FileSystem.readAsStringAsync(uri, {
         encoding: FileSystem.EncodingType.Base64,
       });
 
-      addDebugLog(`✅ Base64 conversion complete - length: ${base64.length} chars`);
-      
-      // Validate base64 string
-      if (!base64 || base64.length === 0) {
-        throw new Error('Failed to convert image to base64');
+      addDebugLog(`✅ Base64 ready (${base64.length} chars)`);
+
+      addDebugLog('🌐 Calling Gemini API via Edge Function');
+      const { data, error } = await supabase.functions.invoke('analyze-tools-image', {
+        body: { imageBase64: base64 },
+      });
+
+      if (error) {
+        addDebugLog(`❌ Edge Function error: ${error.message}`);
+        throw new Error(`Edge Function failed: ${error.message}`);
       }
 
-      // Check if base64 is too large
-      const maxSize = 15 * 1024 * 1024; // 15MB limit for base64
-      if (base64.length > maxSize) {
-        addDebugLog(`⚠️ Base64 too large: ${base64.length} bytes (max: ${maxSize})`);
-        throw new Error('Image is too large. Please use a smaller image or reduce quality.');
+      addDebugLog(`✅ Response received`);
+
+      if (data.error) {
+        addDebugLog(`❌ API error: ${data.error}`);
+        throw new Error(data.error);
       }
 
-      addDebugLog('🤖 Step 3: Getting Supabase session for authentication');
-      
-      // Get the current session to include auth token
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError) {
-        addDebugLog(`⚠️ Session error (will try anonymous): ${sessionError.message}`);
-      }
-      
-      addDebugLog(`🔑 Session status: ${session ? 'authenticated' : 'anonymous'}`);
-
-      addDebugLog('🤖 Step 4: Calling Edge Function via Supabase client');
-      const requestBody = { imageBase64: base64 };
-      const bodySize = JSON.stringify(requestBody).length;
-      addDebugLog(`📦 Request body size: ${bodySize} bytes (${(bodySize / 1024 / 1024).toFixed(2)} MB)`);
-
-      // Call Edge Function using Supabase client (handles auth automatically)
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => {
-        addDebugLog('⏰ Request timeout - aborting');
-        controller.abort();
-      }, 60000); // 60 second timeout
-
-      try {
-        addDebugLog('🌐 Invoking Edge Function: analyze-tools-image');
+      if (data.tools && Array.isArray(data.tools) && data.tools.length > 0) {
+        addDebugLog(`✅ Found ${data.tools.length} tools`);
+        const toolsText = data.tools.join('\n');
+        setToolsList(toolsText);
         
-        const { data, error } = await supabase.functions.invoke('analyze-tools-image', {
-          body: requestBody,
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        });
-
-        clearTimeout(timeoutId);
-
-        if (error) {
-          addDebugLog(`❌ Edge Function error: ${JSON.stringify(error)}`);
-          throw new Error(`Edge Function failed: ${error.message || JSON.stringify(error)}`);
-        }
-
-        addDebugLog(`📥 Response data: ${JSON.stringify(data)?.substring(0, 200)}`);
-
-        if (data.error) {
-          addDebugLog(`❌ Data contains error: ${data.error}`);
-          addDebugLog(`❌ Error details: ${JSON.stringify(data)}`);
-          throw new Error(data.error + (data.details ? `: ${data.details}` : ''));
-        }
-
-        if (data.tools && Array.isArray(data.tools) && data.tools.length > 0) {
-          addDebugLog(`✅ Tools identified: ${data.tools.length} tools`);
-          addDebugLog(`✅ Tools list: ${data.tools.join(', ')}`);
-          
-          // Convert array to newline-separated string
-          const toolsText = data.tools.join('\n');
-          setToolsList(toolsText);
-          
-          Alert.alert(
-            '✨ AI Analysis Complete!',
-            `Gemini identified ${data.tools.length} tool${data.tools.length === 1 ? '' : 's'} in your image. You can edit the list if needed.`,
-            [{ text: 'OK' }]
-          );
-        } else {
-          addDebugLog('⚠️ No tools found in response');
-          Alert.alert(
-            'No Tools Found',
-            'Gemini couldn\'t identify any tools in this image. Please enter them manually.',
-            [{ text: 'OK' }]
-          );
-        }
-      } catch (fetchError) {
-        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-          addDebugLog('❌ Request timed out after 60 seconds');
-          throw new Error('Request timed out. The AI is taking too long to respond. Please try again.');
-        }
-        throw fetchError;
+        Alert.alert(
+          '✨ AI Analysis Complete!',
+          `Gemini identified ${data.tools.length} tool${data.tools.length === 1 ? '' : 's'}. You can edit the list if needed.`
+        );
+      } else {
+        addDebugLog('⚠️ No tools found');
+        Alert.alert(
+          'No Tools Found',
+          'Gemini couldn\'t identify any tools. Please enter them manually.'
+        );
       }
       
     } catch (error) {
-      addDebugLog(`❌ Error in analyzeImage: ${error}`);
-      console.error('❌ Error analyzing image:', error);
+      addDebugLog(`❌ Analysis error: ${error}`);
+      console.error('Error analyzing image:', error);
       
-      let errorMessage = 'Failed to analyze image with AI. ';
-      
+      let errorMessage = 'Failed to analyze image. ';
       if (error instanceof Error) {
-        addDebugLog(`❌ Error message: ${error.message}`);
         errorMessage += error.message;
-      } else {
-        errorMessage += 'Unknown error occurred. Please enter tools manually.';
       }
       
-      Alert.alert('AI Analysis Error', errorMessage, [{ text: 'OK' }]);
+      Alert.alert('AI Analysis Error', errorMessage);
     } finally {
-      addDebugLog('🏁 analyzeImage() FINISHED - setting analyzing to false');
+      addDebugLog('🏁 Analysis complete');
       setAnalyzing(false);
     }
   };
 
   const uploadImageToSupabase = async (uri: string): Promise<string | null> => {
     try {
-      addDebugLog('☁️ Uploading image to Supabase Storage');
+      addDebugLog('☁️ Uploading image to Supabase');
       
-      // Read the file as base64 using legacy API
       const base64 = await FileSystem.readAsStringAsync(uri, {
         encoding: FileSystem.EncodingType.Base64,
       });
 
-      // Convert base64 to blob
       const response = await fetch(`data:image/jpeg;base64,${base64}`);
       const blob = await response.blob();
 
-      // Generate unique filename
       const fileName = `tool-${Date.now()}.jpg`;
-      const filePath = `${fileName}`;
 
-      addDebugLog(`☁️ Uploading to storage bucket: ${filePath}`);
-
-      // Upload to Supabase Storage
       const { data, error } = await supabase.storage
         .from('tool-images')
-        .upload(filePath, blob, {
+        .upload(fileName, blob, {
           contentType: 'image/jpeg',
           upsert: false,
         });
 
       if (error) {
-        addDebugLog(`❌ Storage upload error: ${error.message}`);
+        addDebugLog(`❌ Upload error: ${error.message}`);
         throw error;
       }
 
-      addDebugLog('✅ Image uploaded successfully');
-
-      // Get public URL
       const { data: urlData } = supabase.storage
         .from('tool-images')
-        .getPublicUrl(filePath);
+        .getPublicUrl(fileName);
 
-      addDebugLog(`✅ Public URL: ${urlData.publicUrl}`);
+      addDebugLog(`✅ Image uploaded`);
       return urlData.publicUrl;
     } catch (error) {
-      addDebugLog(`❌ Error uploading image: ${error}`);
-      console.error('❌ Error uploading image:', error);
+      addDebugLog(`❌ Upload failed: ${error}`);
+      console.error('Error uploading image:', error);
       return null;
     }
   };
@@ -311,7 +223,7 @@ export default function AddToolsScreen() {
     }
 
     if (!toolsList.trim()) {
-      Alert.alert('Missing Tools', 'Please enter the tools in the photo or wait for AI analysis to complete');
+      Alert.alert('Missing Tools', 'Please enter the tools or wait for AI analysis');
       return;
     }
 
@@ -327,60 +239,44 @@ export default function AddToolsScreen() {
 
     setSaving(true);
     try {
-      addDebugLog('💾 Saving inventory to Supabase');
+      addDebugLog('💾 Saving inventory');
       
-      // Upload image to Supabase Storage
       const imageUrl = await uploadImageToSupabase(imageUri);
       
       if (!imageUrl) {
         throw new Error('Failed to upload image');
       }
 
-      // Parse tools list (split by newlines)
       const tools = toolsList
         .split('\n')
         .map(t => t.trim())
         .filter(t => t.length > 0);
 
-      addDebugLog(`💾 Inserting into database: ${tools.length} tools`);
-
-      // Save to Supabase database
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('tool_inventory')
         .insert({
           image_url: imageUrl,
           tools: tools,
           bin_name: binName,
           bin_location: binLocation,
-        })
-        .select()
-        .single();
+        });
 
       if (error) {
-        addDebugLog(`❌ Database insert error: ${error.message}`);
+        addDebugLog(`❌ Save error: ${error.message}`);
         throw error;
       }
 
-      addDebugLog('✅ Inventory saved successfully');
+      addDebugLog('✅ Saved successfully');
 
       Alert.alert(
         '✅ Success!',
         'Tools added to inventory!',
-        [
-          {
-            text: 'OK',
-            onPress: () => router.back(),
-          },
-        ]
+        [{ text: 'OK', onPress: () => router.back() }]
       );
     } catch (error) {
-      addDebugLog(`❌ Error saving inventory: ${error}`);
-      console.error('❌ Error saving inventory:', error);
-      Alert.alert(
-        'Error',
-        'Failed to save inventory. Please try again.',
-        [{ text: 'OK' }]
-      );
+      addDebugLog(`❌ Save failed: ${error}`);
+      console.error('Error saving inventory:', error);
+      Alert.alert('Error', 'Failed to save inventory. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -399,10 +295,9 @@ export default function AddToolsScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* Debug Log Section - Only show if there are logs */}
           {debugLog.length > 0 && (
             <View style={styles.debugSection}>
-              <Text style={styles.debugTitle}>🔍 Debug Log (Last 10 events)</Text>
+              <Text style={styles.debugTitle}>🔍 Debug Log</Text>
               <ScrollView style={styles.debugLogContainer} nestedScrollEnabled>
                 {debugLog.map((log, index) => (
                   <Text key={index} style={styles.debugLogText}>{log}</Text>
@@ -411,7 +306,6 @@ export default function AddToolsScreen() {
             </View>
           )}
 
-          {/* Image Section */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>1. Take a Photo</Text>
             {imageUri ? (
@@ -420,7 +314,6 @@ export default function AddToolsScreen() {
                 <Pressable
                   style={styles.changeImageButton}
                   onPress={() => {
-                    addDebugLog('🗑️ Clearing image and resetting form');
                     setImageUri(null);
                     setToolsList('');
                   }}
@@ -446,17 +339,13 @@ export default function AddToolsScreen() {
             )}
           </View>
 
-          {/* Tools List Section */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>2. List of Tools</Text>
               {imageUri && !analyzing && (
                 <Pressable
                   style={styles.reanalyzeButton}
-                  onPress={() => {
-                    addDebugLog('🔄 Manual re-analyze triggered');
-                    analyzeImage(imageUri);
-                  }}
+                  onPress={() => analyzeImage(imageUri)}
                 >
                   <IconSymbol name="arrow.clockwise" color={colors.primary} size={18} />
                   <Text style={styles.reanalyzeText}>Re-analyze</Text>
@@ -466,20 +355,17 @@ export default function AddToolsScreen() {
             {analyzing ? (
               <View style={styles.analyzingContainer}>
                 <ActivityIndicator size="large" color={colors.primary} />
-                <Text style={styles.analyzingText}>🤖 Analyzing image with Gemini AI...</Text>
-                <Text style={styles.analyzingSubtext}>This may take up to 60 seconds</Text>
-                <Text style={styles.analyzingSubtext}>Check debug log above for progress</Text>
+                <Text style={styles.analyzingText}>🤖 Analyzing with Gemini AI...</Text>
+                <Text style={styles.analyzingSubtext}>This may take 10-30 seconds</Text>
               </View>
             ) : (
               <>
                 <View style={styles.aiInfoBadge}>
                   <IconSymbol name="sparkles" color={colors.accent} size={16} />
-                  <Text style={styles.aiInfoText}>
-                    AI-powered by Google Gemini
-                  </Text>
+                  <Text style={styles.aiInfoText}>AI-powered by Google Gemini</Text>
                 </View>
                 <Text style={styles.helperText}>
-                  Enter each tool on a new line. The AI will automatically identify tools when you take a photo.
+                  Enter each tool on a new line. AI will identify tools automatically when you take a photo.
                 </Text>
                 <TextInput
                   style={styles.textArea}
@@ -495,7 +381,6 @@ export default function AddToolsScreen() {
             )}
           </View>
 
-          {/* Storage Info Section */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>3. Storage Information</Text>
             <Text style={styles.label}>Bin Name/ID</Text>
@@ -517,7 +402,6 @@ export default function AddToolsScreen() {
             />
           </View>
 
-          {/* Save Button */}
           <Pressable
             style={[styles.saveButton, (saving || analyzing) && styles.saveButtonDisabled]}
             onPress={saveInventory}
