@@ -8,7 +8,13 @@ Deno.serve(async (req) => {
   console.log('🚀 Edge Function called - analyze-tools-image');
   console.log('Method:', req.method);
   console.log('URL:', req.url);
-  console.log('Headers:', Object.fromEntries(req.headers.entries()));
+  
+  // Log all headers for debugging
+  const headers: Record<string, string> = {};
+  req.headers.forEach((value, key) => {
+    headers[key] = value;
+  });
+  console.log('Headers:', JSON.stringify(headers, null, 2));
 
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -23,22 +29,38 @@ Deno.serve(async (req) => {
   }
 
   try {
-    console.log('📥 Parsing request body');
-    let body;
-    let rawBody;
+    console.log('📥 Reading request body');
     
+    // Read the raw body first
+    const rawBody = await req.text();
+    console.log('📦 Raw body length:', rawBody.length);
+    console.log('📦 Raw body first 500 chars:', rawBody.substring(0, 500));
+    console.log('📦 Raw body last 100 chars:', rawBody.substring(Math.max(0, rawBody.length - 100)));
+    
+    // Try to parse as JSON
+    let body;
     try {
-      rawBody = await req.text();
-      console.log('📦 Raw body length:', rawBody.length);
-      console.log('📦 Raw body preview:', rawBody.substring(0, 200));
       body = JSON.parse(rawBody);
+      console.log('✅ Successfully parsed JSON body');
+      console.log('📊 Body keys:', Object.keys(body));
+      console.log('📊 Body structure:', JSON.stringify(body, (key, value) => {
+        if (key === 'imageBase64' && typeof value === 'string') {
+          return `[base64 string of length ${value.length}]`;
+        }
+        return value;
+      }, 2));
     } catch (parseError) {
-      console.error('❌ Failed to parse JSON body:', parseError);
+      console.error('❌ Failed to parse JSON body');
+      console.error('Parse error:', parseError);
+      console.error('Raw body type:', typeof rawBody);
+      console.error('Raw body:', rawBody);
+      
       return new Response(
         JSON.stringify({
           error: 'Invalid JSON in request body',
           details: parseError instanceof Error ? parseError.message : 'Unknown parse error',
-          receivedBody: rawBody ? rawBody.substring(0, 500) : 'empty',
+          receivedBodyPreview: rawBody.substring(0, 500),
+          receivedBodyType: typeof rawBody,
         }),
         {
           status: 400,
@@ -50,16 +72,19 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Extract imageBase64 from body
     const { imageBase64 } = body;
 
     if (!imageBase64) {
       console.error('❌ Missing imageBase64 in request body');
-      console.error('Body keys:', Object.keys(body));
-      console.error('Body:', JSON.stringify(body).substring(0, 500));
+      console.error('Available keys:', Object.keys(body));
+      console.error('Body sample:', JSON.stringify(body).substring(0, 1000));
+      
       return new Response(
         JSON.stringify({
           error: 'Missing imageBase64 in request body',
           receivedKeys: Object.keys(body),
+          bodySample: JSON.stringify(body).substring(0, 500),
           hint: 'Make sure you are sending { imageBase64: "your-base64-string" }',
         }),
         {
@@ -72,7 +97,10 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log('✅ Received base64 image, length:', imageBase64.length);
+    console.log('✅ Received imageBase64 field');
+    console.log('📊 imageBase64 type:', typeof imageBase64);
+    console.log('📊 imageBase64 length:', imageBase64.length);
+    console.log('📊 imageBase64 first 100 chars:', imageBase64.substring(0, 100));
 
     // Remove data URL prefix if present
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
@@ -86,6 +114,7 @@ Deno.serve(async (req) => {
           error: 'Invalid image data - too short',
           receivedLength: base64Data.length,
           minimumLength: 100,
+          preview: base64Data.substring(0, 100),
         }),
         {
           status: 400,
@@ -119,8 +148,11 @@ Deno.serve(async (req) => {
       );
     }
 
+    console.log('✅ Base64 validation passed');
+    console.log('📊 Image size:', (base64Data.length / (1024 * 1024)).toFixed(2), 'MB');
+
     // Call Gemini API
-    console.log('🤖 Calling Gemini API...');
+    console.log('🤖 Preparing Gemini API request...');
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
     
     const geminiPayload = {
@@ -148,10 +180,11 @@ Deno.serve(async (req) => {
     };
 
     console.log('📤 Sending request to Gemini API');
-    console.log('📦 Payload size:', JSON.stringify(geminiPayload).length);
+    console.log('📦 Payload structure prepared (image data omitted from log)');
     
     let geminiResponse;
     try {
+      console.log('🌐 Calling Gemini API...');
       geminiResponse = await fetch(geminiUrl, {
         method: 'POST',
         headers: {
@@ -159,8 +192,10 @@ Deno.serve(async (req) => {
         },
         body: JSON.stringify(geminiPayload),
       });
+      console.log('✅ Gemini API responded');
     } catch (fetchError) {
-      console.error('❌ Network error calling Gemini API:', fetchError);
+      console.error('❌ Network error calling Gemini API');
+      console.error('Fetch error:', fetchError);
       return new Response(
         JSON.stringify({
           error: 'Network error calling Gemini API',
@@ -177,15 +212,18 @@ Deno.serve(async (req) => {
     }
 
     console.log('📡 Gemini API response status:', geminiResponse.status);
-    console.log('📡 Gemini API response headers:', Object.fromEntries(geminiResponse.headers.entries()));
+    console.log('📡 Gemini API response statusText:', geminiResponse.statusText);
 
     if (!geminiResponse.ok) {
       const errorText = await geminiResponse.text();
-      console.error('❌ Gemini API error response:', errorText);
+      console.error('❌ Gemini API error response');
+      console.error('Status:', geminiResponse.status);
+      console.error('Response:', errorText);
       return new Response(
         JSON.stringify({
           error: 'Gemini API request failed',
           status: geminiResponse.status,
+          statusText: geminiResponse.statusText,
           details: errorText,
         }),
         {
@@ -204,8 +242,10 @@ Deno.serve(async (req) => {
       console.log('📥 Gemini response text length:', responseText.length);
       console.log('📥 Gemini response preview:', responseText.substring(0, 500));
       geminiData = JSON.parse(responseText);
+      console.log('✅ Gemini response parsed successfully');
     } catch (jsonError) {
-      console.error('❌ Failed to parse Gemini response as JSON:', jsonError);
+      console.error('❌ Failed to parse Gemini response as JSON');
+      console.error('JSON parse error:', jsonError);
       return new Response(
         JSON.stringify({
           error: 'Invalid JSON response from Gemini',
@@ -221,8 +261,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log('✅ Gemini response parsed successfully');
-    console.log('📊 Response structure:', JSON.stringify(geminiData, null, 2).substring(0, 1000));
+    console.log('📊 Gemini response structure:', JSON.stringify(geminiData, null, 2).substring(0, 1000));
 
     // Extract the text response
     const textResponse = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -302,13 +341,19 @@ Deno.serve(async (req) => {
       }
     );
   } catch (error) {
-    console.error('❌ Error in analyze-tools-image function:', error);
+    console.error('❌ Error in analyze-tools-image function');
+    console.error('Error:', error);
+    console.error('Error type:', typeof error);
+    console.error('Error name:', error instanceof Error ? error.name : 'unknown');
+    console.error('Error message:', error instanceof Error ? error.message : 'unknown');
     console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+    
     return new Response(
       JSON.stringify({
         error: 'Internal server error',
         message: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined,
+        errorType: typeof error,
       }),
       {
         status: 500,
