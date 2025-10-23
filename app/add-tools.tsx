@@ -87,7 +87,7 @@ export default function AddToolsScreen() {
       
       // Convert image to base64
       const base64 = await FileSystem.readAsStringAsync(uri, {
-        encoding: FileSystem.EncodingType.Base64,
+        encoding: 'base64',
       });
 
       console.log('Image converted to base64, calling Edge Function...');
@@ -153,7 +153,7 @@ export default function AddToolsScreen() {
       
       // Read the file as base64
       const base64 = await FileSystem.readAsStringAsync(uri, {
-        encoding: FileSystem.EncodingType.Base64,
+        encoding: 'base64',
       });
 
       // Convert base64 to blob

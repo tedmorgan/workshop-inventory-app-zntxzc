@@ -1,3 +1,4 @@
+
 // https://docs.expo.dev/guides/using-eslint/
 module.exports = {
   extends: [
@@ -20,6 +21,26 @@ module.exports = {
   ignorePatterns: ['/dist/*', '/public/*', '/babel-plugins/*'],
   env: {
     browser: true,
+  },
+  settings: {
+    'import/resolver': {
+      typescript: {
+        alwaysTryTypes: true,
+        project: './tsconfig.json'
+      },
+      'babel-module': {
+        root: ['./'],
+        alias: {
+          '@': './',
+          '@components': './components',
+          '@style': './style',
+          '@hooks': './hooks',
+          '@types': './types',
+          '@contexts': './contexts',
+        },
+        extensions: ['.ios.ts', '.android.ts', '.ts', '.ios.tsx', '.android.tsx', '.tsx', '.jsx', '.js', '.json']
+      }
+    }
   },
   rules: {
     "@typescript-eslint/no-unused-vars": "off",

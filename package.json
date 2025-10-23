@@ -27,6 +27,8 @@
     "@types/difflib": "^0.2.7",
     "difflib": "^0.2.4",
     "eas": "^0.1.0",
+    "eslint-import-resolver-babel-module": "^5.3.2",
+    "eslint-import-resolver-typescript": "^4.4.4",
     "expo": "~54.0.1",
     "expo-blur": "^15.0.6",
     "expo-constants": "~18.0.8",
