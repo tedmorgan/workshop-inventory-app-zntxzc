@@ -1,3 +1,4 @@
+
 module.exports = function (api) {
   api.cache(true);
 
@@ -35,6 +36,7 @@ module.exports = function (api) {
             "@hooks": "./hooks",
             "@types": "./types",
             "@contexts": "./contexts",
+            "@integrations": "./app/integrations",
           },
         },
       ],
