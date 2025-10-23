@@ -1,14 +1,18 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-const GEMINI_API_KEY = 'AIzaSyBwakctmMO7kWAfGudzsfHPaku0Opzxc88';
+const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') || 'AIzaSyBwakctmMO7kWAfGudzsfHPaku0Opzxc88';
 
-Deno.serve(async (req) => {
-  console.log('🚀 Edge Function called - analyze-tools-image');
+console.log('🚀 Edge Function initialized - analyze-tools-image');
+
+Deno.serve(async (req: Request) => {
+  console.log('📥 Request received:', req.method, req.url);
   
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
+    console.log('✅ Handling CORS preflight');
     return new Response(null, {
+      status: 200,
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -17,19 +21,36 @@ Deno.serve(async (req) => {
     });
   }
 
+  // Only allow POST requests
+  if (req.method !== 'POST') {
+    console.log('❌ Method not allowed:', req.method);
+    return new Response(
+      JSON.stringify({ error: 'Method not allowed. Use POST.' }),
+      {
+        status: 405,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        },
+      }
+    );
+  }
+
   try {
-    // Parse JSON body directly
+    // Parse JSON body
+    console.log('📦 Parsing request body...');
     const body = await req.json();
-    console.log('📦 Body received, keys:', Object.keys(body));
+    console.log('✅ Body parsed, keys:', Object.keys(body));
     
     const { imageBase64 } = body;
 
     if (!imageBase64) {
-      console.error('❌ Missing imageBase64');
+      console.error('❌ Missing imageBase64 field');
       return new Response(
         JSON.stringify({
           error: 'Missing imageBase64 in request body',
           receivedKeys: Object.keys(body),
+          hint: 'Send a POST request with { "imageBase64": "your_base64_string" }',
         }),
         {
           status: 400,
@@ -47,13 +68,16 @@ Deno.serve(async (req) => {
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
     console.log('✅ Cleaned base64, length:', base64Data.length);
 
-    // Validate size
-    const maxSize = 20 * 1024 * 1024;
-    if (base64Data.length > maxSize) {
+    // Validate size (20MB limit for Gemini API)
+    const sizeInMB = (base64Data.length * 0.75) / (1024 * 1024);
+    const maxSize = 20;
+    
+    if (sizeInMB > maxSize) {
+      console.error(`❌ Image too large: ${sizeInMB.toFixed(2)}MB`);
       return new Response(
         JSON.stringify({
-          error: 'Image too large. Maximum 20MB.',
-          sizeMB: (base64Data.length / (1024 * 1024)).toFixed(2),
+          error: `Image too large. Maximum ${maxSize}MB.`,
+          sizeMB: sizeInMB.toFixed(2),
         }),
         {
           status: 400,
@@ -64,6 +88,8 @@ Deno.serve(async (req) => {
         }
       );
     }
+
+    console.log(`📊 Image size: ${sizeInMB.toFixed(2)}MB`);
 
     // Call Gemini API
     console.log('🤖 Calling Gemini API...');
@@ -93,6 +119,7 @@ Deno.serve(async (req) => {
       },
     };
 
+    console.log('📤 Sending request to Gemini...');
     const geminiResponse = await fetch(geminiUrl, {
       method: 'POST',
       headers: {
@@ -124,12 +151,14 @@ Deno.serve(async (req) => {
 
     const geminiData = await geminiResponse.json();
     console.log('✅ Gemini response received');
+    console.log('📝 Response structure:', JSON.stringify(geminiData, null, 2));
 
     // Extract the text response
     const textResponse = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!textResponse) {
       console.error('❌ No text response from Gemini');
+      console.error('Full response:', JSON.stringify(geminiData, null, 2));
       return new Response(
         JSON.stringify({
           error: 'No response from Gemini',
@@ -154,26 +183,31 @@ Deno.serve(async (req) => {
       const jsonMatch = textResponse.match(/\[.*\]/s);
       if (jsonMatch) {
         tools = JSON.parse(jsonMatch[0]);
+        console.log('✅ Parsed JSON array:', tools);
       } else {
+        console.log('⚠️ No JSON array found, using fallback parsing');
         // Fallback: split by newlines and clean up
         tools = textResponse
           .split('\n')
-          .map((line) => line.trim())
-          .filter((line) => line.length > 0 && !line.startsWith('[') && !line.startsWith(']'))
-          .map((line) =>
+          .map((line: string) => line.trim())
+          .filter((line: string) => line.length > 0 && !line.startsWith('[') && !line.startsWith(']'))
+          .map((line: string) =>
             line
               .replace(/^[\d\-\*\.\)\]]+\s*/, '')
               .replace(/^["']|["']$/g, '')
               .trim()
           )
-          .filter((line) => line.length > 0);
+          .filter((line: string) => line.length > 0);
+        console.log('✅ Fallback parsed tools:', tools);
       }
     } catch (parseError) {
       console.error('❌ Error parsing tools:', parseError);
+      // Last resort: split by common delimiters
       tools = textResponse
         .split(/[\n,]/)
-        .map((item) => item.trim())
-        .filter((item) => item.length > 0);
+        .map((item: string) => item.trim())
+        .filter((item: string) => item.length > 0);
+      console.log('✅ Last resort parsed tools:', tools);
     }
 
     console.log('🎉 Returning', tools.length, 'tools');
@@ -185,6 +219,7 @@ Deno.serve(async (req) => {
         rawResponse: textResponse,
         metadata: {
           toolCount: tools.length,
+          imageSizeMB: sizeInMB.toFixed(2),
         },
       }),
       {
@@ -196,12 +231,13 @@ Deno.serve(async (req) => {
       }
     );
   } catch (error) {
-    console.error('❌ Error:', error);
+    console.error('❌ Unexpected error:', error);
     
     return new Response(
       JSON.stringify({
         error: 'Internal server error',
         message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
       }),
       {
         status: 500,
