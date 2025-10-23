@@ -56,7 +56,7 @@ export default function AddToolsScreen() {
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: 'images',
         allowsEditing: true,
-        quality: 0.8,
+        quality: 0.5, // Reduced from 0.8 to 0.5 to reduce file size
       });
 
       addDebugLog(`📸 Camera result - canceled: ${result.canceled}, assets: ${result.assets?.length || 0}`);
@@ -97,7 +97,7 @@ export default function AddToolsScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: 'images',
         allowsEditing: true,
-        quality: 0.8,
+        quality: 0.5, // Reduced from 0.8 to 0.5 to reduce file size
       });
 
       addDebugLog(`🖼️ Gallery result - canceled: ${result.canceled}, assets: ${result.assets?.length || 0}`);
@@ -152,6 +152,13 @@ export default function AddToolsScreen() {
         throw new Error('Failed to convert image to base64');
       }
 
+      // Check if base64 is too large
+      const maxSize = 15 * 1024 * 1024; // 15MB limit for base64
+      if (base64.length > maxSize) {
+        addDebugLog(`⚠️ Base64 too large: ${base64.length} bytes (max: ${maxSize})`);
+        throw new Error('Image is too large. Please use a smaller image or reduce quality.');
+      }
+
       addDebugLog('🤖 Step 3: Getting Supabase session for authentication');
       
       // Get the current session to include auth token
@@ -165,7 +172,8 @@ export default function AddToolsScreen() {
 
       addDebugLog('🤖 Step 4: Calling Edge Function via Supabase client');
       const requestBody = { imageBase64: base64 };
-      addDebugLog(`📦 Request body size: ${JSON.stringify(requestBody).length} bytes`);
+      const bodySize = JSON.stringify(requestBody).length;
+      addDebugLog(`📦 Request body size: ${bodySize} bytes (${(bodySize / 1024 / 1024).toFixed(2)} MB)`);
 
       // Call Edge Function using Supabase client (handles auth automatically)
       const controller = new AbortController();
@@ -187,15 +195,16 @@ export default function AddToolsScreen() {
         clearTimeout(timeoutId);
 
         if (error) {
-          addDebugLog(`❌ Edge Function error: ${error.message}`);
-          throw new Error(`Edge Function failed: ${error.message}`);
+          addDebugLog(`❌ Edge Function error: ${JSON.stringify(error)}`);
+          throw new Error(`Edge Function failed: ${error.message || JSON.stringify(error)}`);
         }
 
         addDebugLog(`📥 Response data: ${JSON.stringify(data)?.substring(0, 200)}`);
 
         if (data.error) {
           addDebugLog(`❌ Data contains error: ${data.error}`);
-          throw new Error(data.error);
+          addDebugLog(`❌ Error details: ${JSON.stringify(data)}`);
+          throw new Error(data.error + (data.details ? `: ${data.details}` : ''));
         }
 
         if (data.tools && Array.isArray(data.tools) && data.tools.length > 0) {

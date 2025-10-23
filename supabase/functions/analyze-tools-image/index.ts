@@ -25,7 +25,9 @@ Deno.serve(async (req) => {
     console.log('📥 Parsing request body');
     let body;
     try {
-      body = await req.json();
+      const rawBody = await req.text();
+      console.log('📦 Raw body length:', rawBody.length);
+      body = JSON.parse(rawBody);
     } catch (parseError) {
       console.error('❌ Failed to parse JSON body:', parseError);
       return new Response(
@@ -47,9 +49,11 @@ Deno.serve(async (req) => {
 
     if (!imageBase64) {
       console.error('❌ Missing imageBase64 in request body');
+      console.error('Body keys:', Object.keys(body));
       return new Response(
         JSON.stringify({
           error: 'Missing imageBase64 in request body',
+          receivedKeys: Object.keys(body),
         }),
         {
           status: 400,
@@ -73,6 +77,26 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({
           error: 'Invalid image data - too short',
+        }),
+        {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+        }
+      );
+    }
+
+    // Check if base64 is too large (Gemini has limits)
+    const maxSize = 20 * 1024 * 1024; // 20MB in base64
+    if (base64Data.length > maxSize) {
+      console.error('❌ Base64 data too large:', base64Data.length);
+      return new Response(
+        JSON.stringify({
+          error: 'Image too large. Please use a smaller image or reduce quality.',
+          size: base64Data.length,
+          maxSize: maxSize,
         }),
         {
           status: 400,
@@ -113,6 +137,7 @@ Deno.serve(async (req) => {
     };
 
     console.log('📤 Sending request to Gemini API');
+    console.log('📦 Payload size:', JSON.stringify(geminiPayload).length);
     
     let geminiResponse;
     try {
@@ -141,10 +166,11 @@ Deno.serve(async (req) => {
     }
 
     console.log('📡 Gemini API response status:', geminiResponse.status);
+    console.log('📡 Gemini API response headers:', Object.fromEntries(geminiResponse.headers.entries()));
 
     if (!geminiResponse.ok) {
       const errorText = await geminiResponse.text();
-      console.error('❌ Gemini API error:', errorText);
+      console.error('❌ Gemini API error response:', errorText);
       return new Response(
         JSON.stringify({
           error: 'Gemini API request failed',
@@ -163,7 +189,10 @@ Deno.serve(async (req) => {
 
     let geminiData;
     try {
-      geminiData = await geminiResponse.json();
+      const responseText = await geminiResponse.text();
+      console.log('📥 Gemini response text length:', responseText.length);
+      console.log('📥 Gemini response preview:', responseText.substring(0, 500));
+      geminiData = JSON.parse(responseText);
     } catch (jsonError) {
       console.error('❌ Failed to parse Gemini response as JSON:', jsonError);
       return new Response(
@@ -181,7 +210,8 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log('✅ Gemini response:', JSON.stringify(geminiData).substring(0, 500));
+    console.log('✅ Gemini response parsed successfully');
+    console.log('📊 Response structure:', JSON.stringify(geminiData, null, 2).substring(0, 1000));
 
     // Extract the text response
     const textResponse = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text;
