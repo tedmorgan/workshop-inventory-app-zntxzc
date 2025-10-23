@@ -3,7 +3,7 @@ import React from "react";
 import { useTheme } from "@react-navigation/native";
 import { colors } from "@/styles/commonStyles";
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { View, Text, StyleSheet, ScrollView, Platform, Pressable, Alert, Linking } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Platform, Pressable, Alert } from "react-native";
 import { Stack } from "expo-router";
 import { IconSymbol } from "@/components/IconSymbol";
 
@@ -28,24 +28,6 @@ export default function ProfileScreen() {
               Alert.alert('Error', 'Failed to clear data');
             }
           },
-        },
-      ]
-    );
-  };
-
-  const openGeminiSetup = () => {
-    Alert.alert(
-      '🤖 Gemini AI Setup',
-      'To enable AI-powered tool recognition:\n\n' +
-      '1. Get a Gemini API key from Google AI Studio\n' +
-      '2. Add it to your Supabase project secrets as GEMINI_API_KEY\n' +
-      '3. The app will automatically use it for image analysis\n\n' +
-      'Would you like to open Google AI Studio?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Open',
-          onPress: () => Linking.openURL('https://aistudio.google.com/app/apikey'),
         },
       ]
     );
@@ -83,7 +65,7 @@ export default function ProfileScreen() {
                 <View style={styles.featureContent}>
                   <Text style={styles.featureTitle}>Gemini AI Recognition</Text>
                   <Text style={styles.featureDescription}>
-                    Automatically identifies tools in photos using Google&apos;s Gemini AI
+                    Automatically identifies tools in photos using Google&apos;s Gemini AI - no setup required!
                   </Text>
                 </View>
               </View>
@@ -107,25 +89,71 @@ export default function ProfileScreen() {
                   </Text>
                 </View>
               </View>
+
+              <View style={styles.featureItem}>
+                <IconSymbol name="checkmark.shield.fill" color="#34C759" size={24} />
+                <View style={styles.featureContent}>
+                  <Text style={styles.featureTitle}>Ready to Use</Text>
+                  <Text style={styles.featureDescription}>
+                    AI is pre-configured and ready to go - just start taking photos!
+                  </Text>
+                </View>
+              </View>
             </View>
           </View>
 
-          {/* Setup Section */}
+          {/* How It Works Section */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>⚙️ Setup</Text>
-            <Pressable style={styles.setupCard} onPress={openGeminiSetup}>
-              <View style={styles.setupHeader}>
-                <IconSymbol name="key.fill" color={colors.primary} size={20} />
-                <Text style={styles.setupTitle}>Gemini API Configuration</Text>
+            <Text style={styles.sectionTitle}>📖 How It Works</Text>
+            <View style={styles.card}>
+              <View style={styles.stepItem}>
+                <View style={styles.stepNumber}>
+                  <Text style={styles.stepNumberText}>1</Text>
+                </View>
+                <View style={styles.stepContent}>
+                  <Text style={styles.stepTitle}>Take a Photo</Text>
+                  <Text style={styles.stepDescription}>
+                    Snap a picture of your tools using your camera or select from gallery
+                  </Text>
+                </View>
               </View>
-              <Text style={styles.setupDescription}>
-                Configure your Gemini API key for AI-powered tool recognition
-              </Text>
-              <View style={styles.setupAction}>
-                <Text style={styles.setupActionText}>Setup Guide</Text>
-                <IconSymbol name="chevron.right" color={colors.primary} size={16} />
+
+              <View style={styles.stepItem}>
+                <View style={styles.stepNumber}>
+                  <Text style={styles.stepNumberText}>2</Text>
+                </View>
+                <View style={styles.stepContent}>
+                  <Text style={styles.stepTitle}>AI Analyzes</Text>
+                  <Text style={styles.stepDescription}>
+                    Gemini AI automatically identifies and lists all tools in the image
+                  </Text>
+                </View>
               </View>
-            </Pressable>
+
+              <View style={styles.stepItem}>
+                <View style={styles.stepNumber}>
+                  <Text style={styles.stepNumberText}>3</Text>
+                </View>
+                <View style={styles.stepContent}>
+                  <Text style={styles.stepTitle}>Add Storage Info</Text>
+                  <Text style={styles.stepDescription}>
+                    Specify which bin the tools are in and where it&apos;s located
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.stepItem}>
+                <View style={styles.stepNumber}>
+                  <Text style={styles.stepNumberText}>4</Text>
+                </View>
+                <View style={styles.stepContent}>
+                  <Text style={styles.stepTitle}>Save & Track</Text>
+                  <Text style={styles.stepDescription}>
+                    Your inventory is saved to the cloud and accessible anytime
+                  </Text>
+                </View>
+              </View>
+            </View>
           </View>
 
           {/* Data Management Section */}
@@ -207,44 +235,38 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     lineHeight: 20,
   },
-  setupCard: {
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    padding: 16,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
-    elevation: 3,
-    borderWidth: 2,
-    borderColor: `${colors.primary}30`,
-  },
-  setupHeader: {
+  stepItem: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
+    alignItems: 'flex-start',
+    marginBottom: 16,
+    gap: 12,
   },
-  setupTitle: {
+  stepNumber: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepNumberText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  stepContent: {
+    flex: 1,
+  },
+  stepTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: colors.text,
+    marginBottom: 4,
   },
-  setupDescription: {
+  stepDescription: {
     fontSize: 14,
     color: colors.textSecondary,
     lineHeight: 20,
-    marginBottom: 12,
-  },
-  setupAction: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: colors.background,
-  },
-  setupActionText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.primary,
   },
   dangerCard: {
     backgroundColor: colors.card,
