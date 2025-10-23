@@ -1,19 +1,19 @@
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useTheme } from "@react-navigation/native";
-import { View, Text, StyleSheet, ScrollView, Platform, Pressable, Image, Alert } from "react-native";
-import { Stack, useRouter } from "expo-router";
+import { View, Text, StyleSheet, ScrollView, Platform, Pressable, Image, Alert, RefreshControl } from "react-native";
+import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { IconSymbol } from "@/components/IconSymbol";
 import { colors } from "@/styles/commonStyles";
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from "@/integrations/supabase/client";
 
 type ToolInventoryItem = {
   id: string;
-  imageUri: string;
+  image_url: string;
   tools: string[];
-  binName: string;
-  binLocation: string;
-  dateAdded: string;
+  bin_name: string;
+  bin_location: string;
+  created_at: string;
 };
 
 export default function InventoryScreen() {
@@ -21,24 +21,50 @@ export default function InventoryScreen() {
   const router = useRouter();
   const [inventory, setInventory] = useState<ToolInventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    loadInventory();
-  }, []);
+  // Load inventory when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      loadInventory();
+    }, [])
+  );
 
   const loadInventory = async () => {
     try {
-      const stored = await AsyncStorage.getItem('tool_inventory');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        setInventory(parsed);
+      console.log('Loading inventory from Supabase...');
+      
+      const { data, error } = await supabase
+        .from('tool_inventory')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error loading inventory:', error);
+        throw error;
       }
+
+      console.log('Inventory loaded:', data);
+
+      // Parse tools from JSON
+      const parsedInventory = data.map(item => ({
+        ...item,
+        tools: Array.isArray(item.tools) ? item.tools : [],
+      }));
+
+      setInventory(parsedInventory);
     } catch (error) {
-      console.log('Error loading inventory:', error);
-      Alert.alert('Error', 'Failed to load inventory');
+      console.error('Error loading inventory:', error);
+      Alert.alert('Error', 'Failed to load inventory. Please try again.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadInventory();
   };
 
   const deleteItem = async (id: string) => {
@@ -52,12 +78,25 @@ export default function InventoryScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              const updated = inventory.filter(item => item.id !== id);
-              await AsyncStorage.setItem('tool_inventory', JSON.stringify(updated));
-              setInventory(updated);
+              console.log('Deleting item:', id);
+              
+              const { error } = await supabase
+                .from('tool_inventory')
+                .delete()
+                .eq('id', id);
+
+              if (error) {
+                console.error('Error deleting item:', error);
+                throw error;
+              }
+
+              // Update local state
+              setInventory(prev => prev.filter(item => item.id !== id));
+              
+              Alert.alert('Success', 'Item deleted successfully');
             } catch (error) {
-              console.log('Error deleting item:', error);
-              Alert.alert('Error', 'Failed to delete item');
+              console.error('Error deleting item:', error);
+              Alert.alert('Error', 'Failed to delete item. Please try again.');
             }
           },
         },
@@ -91,10 +130,17 @@ export default function InventoryScreen() {
             Platform.OS !== 'ios' && styles.scrollContentWithTabBar
           ]}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.primary}
+            />
+          }
         >
           {loading ? (
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>Loading...</Text>
+              <Text style={styles.emptyText}>Loading inventory...</Text>
             </View>
           ) : inventory.length === 0 ? (
             <View style={styles.emptyContainer}>
@@ -113,21 +159,29 @@ export default function InventoryScreen() {
             </View>
           ) : (
             <>
-              <Text style={styles.headerText}>
-                {inventory.length} {inventory.length === 1 ? 'Collection' : 'Collections'}
-              </Text>
+              <View style={styles.headerContainer}>
+                <Text style={styles.headerText}>
+                  {inventory.length} {inventory.length === 1 ? 'Collection' : 'Collections'}
+                </Text>
+                <View style={styles.aiPoweredBadge}>
+                  <IconSymbol name="sparkles" color={colors.accent} size={14} />
+                  <Text style={styles.aiPoweredText}>AI Powered</Text>
+                </View>
+              </View>
               {inventory.map((item) => (
                 <View key={item.id} style={styles.inventoryCard}>
-                  <Image source={{ uri: item.imageUri }} style={styles.inventoryImage} />
+                  <Image source={{ uri: item.image_url }} style={styles.inventoryImage} />
                   <View style={styles.inventoryContent}>
                     <View style={styles.locationBadge}>
                       <IconSymbol name="location.fill" color={colors.primary} size={14} />
                       <Text style={styles.locationText}>
-                        {item.binName} - {item.binLocation}
+                        {item.bin_name} - {item.bin_location}
                       </Text>
                     </View>
                     
-                    <Text style={styles.toolsTitle}>Tools:</Text>
+                    <Text style={styles.toolsTitle}>
+                      Tools ({item.tools.length}):
+                    </Text>
                     {item.tools.map((tool, index) => (
                       <View key={index} style={styles.toolItem}>
                         <Text style={styles.toolBullet}>•</Text>
@@ -136,7 +190,7 @@ export default function InventoryScreen() {
                     ))}
                     
                     <Text style={styles.dateText}>
-                      Added: {new Date(item.dateAdded).toLocaleDateString()}
+                      Added: {new Date(item.created_at).toLocaleDateString()} at {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </Text>
                     
                     <Pressable
@@ -168,11 +222,30 @@ const styles = StyleSheet.create({
   scrollContentWithTabBar: {
     paddingBottom: 100,
   },
+  headerContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   headerText: {
     fontSize: 16,
     fontWeight: '600',
     color: colors.textSecondary,
-    marginBottom: 16,
+  },
+  aiPoweredBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: `${colors.accent}15`,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  aiPoweredText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.accent,
   },
   emptyContainer: {
     flex: 1,

@@ -14,9 +14,10 @@ import {
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '@/integrations/supabase/client';
 
 export default function AddToolsScreen() {
   const router = useRouter();
@@ -43,7 +44,7 @@ export default function AddToolsScreen() {
 
       if (!result.canceled && result.assets[0]) {
         setImageUri(result.assets[0].uri);
-        // Auto-analyze the image
+        // Auto-analyze the image with Gemini
         analyzeImage(result.assets[0].uri);
       }
     } catch (error) {
@@ -68,7 +69,7 @@ export default function AddToolsScreen() {
 
       if (!result.canceled && result.assets[0]) {
         setImageUri(result.assets[0].uri);
-        // Auto-analyze the image
+        // Auto-analyze the image with Gemini
         analyzeImage(result.assets[0].uri);
       }
     } catch (error) {
@@ -79,31 +80,114 @@ export default function AddToolsScreen() {
 
   const analyzeImage = async (uri: string) => {
     setAnalyzing(true);
+    setToolsList(''); // Clear previous results
+    
     try {
-      // This is where you would call OpenAI Vision API
-      // For now, we'll show a message that Supabase needs to be enabled
+      console.log('Starting image analysis with Gemini...');
       
-      Alert.alert(
-        'AI Analysis',
-        'To use AI-powered tool identification, you need to:\n\n' +
-        '1. Enable Supabase by clicking the Supabase button\n' +
-        '2. Connect to a Supabase project (create one if needed)\n' +
-        '3. Set up an edge function for OpenAI Vision API\n\n' +
-        'For now, you can manually enter the tools you see in the photo.',
-        [{ text: 'OK' }]
-      );
-      
-      // Placeholder: In a real implementation, you would:
-      // 1. Convert image to base64
-      // 2. Call Supabase edge function
-      // 3. Edge function calls OpenAI Vision API
-      // 4. Parse response and set toolsList
+      // Convert image to base64
+      const base64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      console.log('Image converted to base64, calling Edge Function...');
+
+      // Call Supabase Edge Function
+      const { data, error } = await supabase.functions.invoke('analyze-tools-image', {
+        body: { imageBase64: base64 },
+      });
+
+      if (error) {
+        console.error('Edge Function error:', error);
+        throw error;
+      }
+
+      console.log('Gemini analysis response:', data);
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      if (data.tools && Array.isArray(data.tools) && data.tools.length > 0) {
+        // Convert array to newline-separated string
+        const toolsText = data.tools.join('\n');
+        setToolsList(toolsText);
+        
+        Alert.alert(
+          '✨ AI Analysis Complete!',
+          `Gemini identified ${data.tools.length} tool${data.tools.length === 1 ? '' : 's'} in your image. You can edit the list if needed.`,
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert(
+          'No Tools Found',
+          'Gemini couldn\'t identify any tools in this image. Please enter them manually.',
+          [{ text: 'OK' }]
+        );
+      }
       
     } catch (error) {
-      console.log('Error analyzing image:', error);
-      Alert.alert('Error', 'Failed to analyze image. Please enter tools manually.');
+      console.error('Error analyzing image:', error);
+      
+      let errorMessage = 'Failed to analyze image with AI. ';
+      
+      if (error instanceof Error) {
+        if (error.message.includes('API key not configured')) {
+          errorMessage += 'The Gemini API key needs to be configured in Supabase Edge Function secrets. Please add GEMINI_API_KEY to your project secrets.';
+        } else {
+          errorMessage += error.message;
+        }
+      } else {
+        errorMessage += 'Please enter tools manually.';
+      }
+      
+      Alert.alert('AI Analysis Error', errorMessage, [{ text: 'OK' }]);
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const uploadImageToSupabase = async (uri: string): Promise<string | null> => {
+    try {
+      console.log('Uploading image to Supabase Storage...');
+      
+      // Read the file as base64
+      const base64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      // Convert base64 to blob
+      const response = await fetch(`data:image/jpeg;base64,${base64}`);
+      const blob = await response.blob();
+
+      // Generate unique filename
+      const fileName = `tool-${Date.now()}.jpg`;
+      const filePath = `${fileName}`;
+
+      // Upload to Supabase Storage
+      const { data, error } = await supabase.storage
+        .from('tool-images')
+        .upload(filePath, blob, {
+          contentType: 'image/jpeg',
+          upsert: false,
+        });
+
+      if (error) {
+        console.error('Storage upload error:', error);
+        throw error;
+      }
+
+      console.log('Image uploaded successfully:', data);
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('tool-images')
+        .getPublicUrl(filePath);
+
+      return urlData.publicUrl;
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      return null;
     }
   };
 
@@ -114,7 +198,7 @@ export default function AddToolsScreen() {
     }
 
     if (!toolsList.trim()) {
-      Alert.alert('Missing Tools', 'Please enter the tools in the photo');
+      Alert.alert('Missing Tools', 'Please enter the tools in the photo or wait for AI analysis to complete');
       return;
     }
 
@@ -130,41 +214,57 @@ export default function AddToolsScreen() {
 
     setSaving(true);
     try {
+      console.log('Saving inventory to Supabase...');
+      
+      // Upload image to Supabase Storage
+      const imageUrl = await uploadImageToSupabase(imageUri);
+      
+      if (!imageUrl) {
+        throw new Error('Failed to upload image');
+      }
+
       // Parse tools list (split by newlines)
       const tools = toolsList
         .split('\n')
         .map(t => t.trim())
         .filter(t => t.length > 0);
 
-      // Create new inventory item
-      const newItem = {
-        id: Date.now().toString(),
-        imageUri,
-        tools,
-        binName,
-        binLocation,
-        dateAdded: new Date().toISOString(),
-      };
+      // Save to Supabase database
+      const { data, error } = await supabase
+        .from('tool_inventory')
+        .insert({
+          image_url: imageUrl,
+          tools: tools,
+          bin_name: binName,
+          bin_location: binLocation,
+        })
+        .select()
+        .single();
 
-      // Load existing inventory
-      const stored = await AsyncStorage.getItem('tool_inventory');
-      const inventory = stored ? JSON.parse(stored) : [];
+      if (error) {
+        console.error('Database insert error:', error);
+        throw error;
+      }
 
-      // Add new item
-      inventory.unshift(newItem);
+      console.log('Inventory saved successfully:', data);
 
-      // Save back to storage
-      await AsyncStorage.setItem('tool_inventory', JSON.stringify(inventory));
-
-      Alert.alert('Success', 'Tools added to inventory!', [
-        {
-          text: 'OK',
-          onPress: () => router.back(),
-        },
-      ]);
+      Alert.alert(
+        '✅ Success!',
+        'Tools added to inventory!',
+        [
+          {
+            text: 'OK',
+            onPress: () => router.back(),
+          },
+        ]
+      );
     } catch (error) {
-      console.log('Error saving inventory:', error);
-      Alert.alert('Error', 'Failed to save inventory');
+      console.error('Error saving inventory:', error);
+      Alert.alert(
+        'Error',
+        'Failed to save inventory. Please try again.',
+        [{ text: 'OK' }]
+      );
     } finally {
       setSaving(false);
     }
@@ -219,16 +319,34 @@ export default function AddToolsScreen() {
 
           {/* Tools List Section */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>2. List of Tools</Text>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>2. List of Tools</Text>
+              {imageUri && !analyzing && (
+                <Pressable
+                  style={styles.reanalyzeButton}
+                  onPress={() => analyzeImage(imageUri)}
+                >
+                  <IconSymbol name="arrow.clockwise" color={colors.primary} size={18} />
+                  <Text style={styles.reanalyzeText}>Re-analyze</Text>
+                </Pressable>
+              )}
+            </View>
             {analyzing ? (
               <View style={styles.analyzingContainer}>
                 <ActivityIndicator size="large" color={colors.primary} />
-                <Text style={styles.analyzingText}>Analyzing image with AI...</Text>
+                <Text style={styles.analyzingText}>🤖 Analyzing image with Gemini AI...</Text>
+                <Text style={styles.analyzingSubtext}>This may take a few seconds</Text>
               </View>
             ) : (
               <>
+                <View style={styles.aiInfoBadge}>
+                  <IconSymbol name="sparkles" color={colors.accent} size={16} />
+                  <Text style={styles.aiInfoText}>
+                    AI-powered by Google Gemini
+                  </Text>
+                </View>
                 <Text style={styles.helperText}>
-                  Enter each tool on a new line (AI analysis coming soon with Supabase)
+                  Enter each tool on a new line. The AI will automatically identify tools when you take a photo.
                 </Text>
                 <TextInput
                   style={styles.textArea}
@@ -299,11 +417,30 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: 24,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: colors.text,
-    marginBottom: 12,
+  },
+  reanalyzeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: `${colors.primary}15`,
+    borderRadius: 16,
+  },
+  reanalyzeText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.primary,
   },
   imageContainer: {
     position: 'relative',
@@ -370,6 +507,28 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.text,
     marginTop: 16,
+    fontWeight: '600',
+  },
+  analyzingSubtext: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginTop: 8,
+  },
+  aiInfoBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: `${colors.accent}15`,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginBottom: 12,
+    gap: 6,
+  },
+  aiInfoText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.accent,
   },
   helperText: {
     fontSize: 14,
