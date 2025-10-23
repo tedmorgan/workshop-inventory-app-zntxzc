@@ -55,7 +55,7 @@ export default function AddToolsScreen() {
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: 'images',
         allowsEditing: true,
-        quality: 0.7,
+        quality: 0.5,
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -86,7 +86,7 @@ export default function AddToolsScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: 'images',
         allowsEditing: true,
-        quality: 0.7,
+        quality: 0.5,
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -128,17 +128,27 @@ export default function AddToolsScreen() {
 
       addDebugLog(`✅ Base64 ready (${base64.length} chars)`);
 
+      // Validate size (15MB limit on client side)
+      const sizeInMB = (base64.length * 0.75) / (1024 * 1024);
+      if (sizeInMB > 15) {
+        addDebugLog(`❌ Image too large: ${sizeInMB.toFixed(2)}MB`);
+        throw new Error(`Image is too large (${sizeInMB.toFixed(1)}MB). Please use a smaller image or reduce quality.`);
+      }
+
+      addDebugLog(`📊 Image size: ${sizeInMB.toFixed(2)}MB`);
       addDebugLog('🌐 Calling Gemini API via Edge Function');
+
       const { data, error } = await supabase.functions.invoke('analyze-tools-image', {
         body: { imageBase64: base64 },
       });
 
       if (error) {
-        addDebugLog(`❌ Edge Function error: ${error.message}`);
+        addDebugLog(`❌ Edge Function error: ${JSON.stringify(error)}`);
         throw new Error(`Edge Function failed: ${error.message}`);
       }
 
       addDebugLog(`✅ Response received`);
+      console.log('Full response data:', data);
 
       if (data.error) {
         addDebugLog(`❌ API error: ${data.error}`);
