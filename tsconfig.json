@@ -1,3 +1,4 @@
+
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
@@ -7,6 +8,9 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@/integrations/*": [
+        "./app/integrations/*"
       ]
     }
   },

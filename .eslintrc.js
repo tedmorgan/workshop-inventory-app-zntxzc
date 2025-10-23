@@ -37,9 +37,17 @@ module.exports = {
           '@hooks': './hooks',
           '@types': './types',
           '@contexts': './contexts',
+          '@integrations': './app/integrations',
         },
         extensions: ['.ios.ts', '.android.ts', '.ts', '.ios.tsx', '.android.tsx', '.tsx', '.jsx', '.js', '.json']
+      },
+      node: {
+        extensions: ['.js', '.jsx', '.ts', '.tsx', '.json']
       }
+    },
+    'import/extensions': ['.js', '.jsx', '.ts', '.tsx'],
+    'import/parsers': {
+      '@typescript-eslint/parser': ['.ts', '.tsx']
     }
   },
   rules: {
