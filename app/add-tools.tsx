@@ -17,7 +17,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
-import { supabase } from '@integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/client';
 
 export default function AddToolsScreen() {
   const router = useRouter();
@@ -119,46 +119,69 @@ export default function AddToolsScreen() {
       });
 
       console.log('✅ Image converted to base64, length:', base64.length);
-      console.log('🌐 Calling Supabase Edge Function...');
-
-      // Call Supabase Edge Function
-      const { data, error } = await supabase.functions.invoke('analyze-tools-image', {
-        body: { imageBase64: base64 },
-      });
-
-      console.log('📥 Edge Function response - data:', data);
-      console.log('📥 Edge Function response - error:', error);
-
-      if (error) {
-        console.error('❌ Edge Function error:', error);
-        throw error;
+      
+      // Validate base64 string
+      if (!base64 || base64.length === 0) {
+        throw new Error('Failed to convert image to base64');
       }
 
-      console.log('✅ Gemini analysis response:', data);
+      console.log('🌐 Calling Supabase Edge Function: analyze-tools-image');
+      console.log('📦 Request body size:', JSON.stringify({ imageBase64: base64 }).length);
 
-      if (data.error) {
-        console.error('❌ Data contains error:', data.error);
-        throw new Error(data.error);
-      }
+      // Call Supabase Edge Function with timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
-      if (data.tools && Array.isArray(data.tools) && data.tools.length > 0) {
-        console.log('✅ Tools identified:', data.tools);
-        // Convert array to newline-separated string
-        const toolsText = data.tools.join('\n');
-        setToolsList(toolsText);
-        
-        Alert.alert(
-          '✨ AI Analysis Complete!',
-          `Gemini identified ${data.tools.length} tool${data.tools.length === 1 ? '' : 's'} in your image. You can edit the list if needed.`,
-          [{ text: 'OK' }]
-        );
-      } else {
-        console.log('⚠️ No tools found in response');
-        Alert.alert(
-          'No Tools Found',
-          'Gemini couldn\'t identify any tools in this image. Please enter them manually.',
-          [{ text: 'OK' }]
-        );
+      try {
+        const { data, error } = await supabase.functions.invoke('analyze-tools-image', {
+          body: { imageBase64: base64 },
+        });
+
+        clearTimeout(timeoutId);
+
+        console.log('📥 Edge Function response - data:', data);
+        console.log('📥 Edge Function response - error:', error);
+
+        if (error) {
+          console.error('❌ Edge Function error:', error);
+          throw new Error(`Edge Function error: ${error.message || JSON.stringify(error)}`);
+        }
+
+        if (!data) {
+          throw new Error('No data returned from Edge Function');
+        }
+
+        console.log('✅ Gemini analysis response:', data);
+
+        if (data.error) {
+          console.error('❌ Data contains error:', data.error);
+          throw new Error(data.error);
+        }
+
+        if (data.tools && Array.isArray(data.tools) && data.tools.length > 0) {
+          console.log('✅ Tools identified:', data.tools);
+          // Convert array to newline-separated string
+          const toolsText = data.tools.join('\n');
+          setToolsList(toolsText);
+          
+          Alert.alert(
+            '✨ AI Analysis Complete!',
+            `Gemini identified ${data.tools.length} tool${data.tools.length === 1 ? '' : 's'} in your image. You can edit the list if needed.`,
+            [{ text: 'OK' }]
+          );
+        } else {
+          console.log('⚠️ No tools found in response');
+          Alert.alert(
+            'No Tools Found',
+            'Gemini couldn\'t identify any tools in this image. Please enter them manually.',
+            [{ text: 'OK' }]
+          );
+        }
+      } catch (fetchError) {
+        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+          throw new Error('Request timed out. Please try again.');
+        }
+        throw fetchError;
       }
       
     } catch (error) {
@@ -169,13 +192,9 @@ export default function AddToolsScreen() {
       if (error instanceof Error) {
         console.error('❌ Error message:', error.message);
         console.error('❌ Error stack:', error.stack);
-        if (error.message.includes('API key not configured')) {
-          errorMessage += 'The Gemini API key needs to be configured in Supabase Edge Function secrets. Please add GEMINI_API_KEY to your project secrets.';
-        } else {
-          errorMessage += error.message;
-        }
+        errorMessage += error.message;
       } else {
-        errorMessage += 'Please enter tools manually.';
+        errorMessage += 'Unknown error occurred. Please enter tools manually.';
       }
       
       Alert.alert('AI Analysis Error', errorMessage, [{ text: 'OK' }]);
