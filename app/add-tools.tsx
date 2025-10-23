@@ -55,7 +55,7 @@ export default function AddToolsScreen() {
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: 'images',
         allowsEditing: true,
-        quality: 0.3,
+        quality: 1.0,
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -86,7 +86,7 @@ export default function AddToolsScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: 'images',
         allowsEditing: true,
-        quality: 0.3,
+        quality: 1.0,
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -121,18 +121,18 @@ export default function AddToolsScreen() {
         throw new Error('Image file does not exist');
       }
 
-      addDebugLog('🔄 Converting to base64');
+      addDebugLog('🔄 Converting to base64 (full quality)');
       const base64 = await FileSystem.readAsStringAsync(uri, {
         encoding: FileSystem.EncodingType.Base64,
       });
 
       addDebugLog(`✅ Base64 ready (${base64.length} chars)`);
 
-      // Validate size (10MB limit on client side for safety)
+      // Validate size (20MB limit to match Gemini API)
       const sizeInMB = (base64.length * 0.75) / (1024 * 1024);
-      if (sizeInMB > 10) {
+      if (sizeInMB > 20) {
         addDebugLog(`❌ Image too large: ${sizeInMB.toFixed(2)}MB`);
-        throw new Error(`Image is too large (${sizeInMB.toFixed(1)}MB). Please use a smaller image.`);
+        throw new Error(`Image is too large (${sizeInMB.toFixed(1)}MB). Maximum is 20MB. Please use a smaller image.`);
       }
 
       addDebugLog(`📊 Image size: ${sizeInMB.toFixed(2)}MB`);
@@ -140,7 +140,7 @@ export default function AddToolsScreen() {
 
       // Call with timeout
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Request timeout after 30 seconds')), 30000)
+        setTimeout(() => reject(new Error('Request timeout after 60 seconds')), 60000)
       );
 
       const apiPromise = supabase.functions.invoke('analyze-tools-image', {
@@ -192,7 +192,7 @@ export default function AddToolsScreen() {
       
       Alert.alert(
         'AI Analysis Error',
-        errorMessage + '\n\nPlease enter tools manually or try again with a smaller image.',
+        errorMessage + '\n\nPlease enter tools manually or try again.',
         [{ text: 'OK' }]
       );
     } finally {
@@ -379,13 +379,13 @@ export default function AddToolsScreen() {
               <View style={styles.analyzingContainer}>
                 <ActivityIndicator size="large" color={colors.primary} />
                 <Text style={styles.analyzingText}>🤖 Analyzing with Gemini AI...</Text>
-                <Text style={styles.analyzingSubtext}>This may take 10-30 seconds</Text>
+                <Text style={styles.analyzingSubtext}>This may take 10-60 seconds</Text>
               </View>
             ) : (
               <>
                 <View style={styles.aiInfoBadge}>
                   <IconSymbol name="sparkles" color={colors.accent} size={16} />
-                  <Text style={styles.aiInfoText}>AI-powered by Google Gemini</Text>
+                  <Text style={styles.aiInfoText}>AI-powered by Google Gemini (Full Quality)</Text>
                 </View>
                 <Text style={styles.helperText}>
                   Enter each tool on a new line. AI will identify tools automatically when you take a photo.
