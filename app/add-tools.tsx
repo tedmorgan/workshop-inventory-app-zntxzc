@@ -55,7 +55,7 @@ export default function AddToolsScreen() {
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: 'images',
         allowsEditing: true,
-        quality: 0.5,
+        quality: 0.3,
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -86,7 +86,7 @@ export default function AddToolsScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: 'images',
         allowsEditing: true,
-        quality: 0.5,
+        quality: 0.3,
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -128,23 +128,30 @@ export default function AddToolsScreen() {
 
       addDebugLog(`✅ Base64 ready (${base64.length} chars)`);
 
-      // Validate size (15MB limit on client side)
+      // Validate size (10MB limit on client side for safety)
       const sizeInMB = (base64.length * 0.75) / (1024 * 1024);
-      if (sizeInMB > 15) {
+      if (sizeInMB > 10) {
         addDebugLog(`❌ Image too large: ${sizeInMB.toFixed(2)}MB`);
-        throw new Error(`Image is too large (${sizeInMB.toFixed(1)}MB). Please use a smaller image or reduce quality.`);
+        throw new Error(`Image is too large (${sizeInMB.toFixed(1)}MB). Please use a smaller image.`);
       }
 
       addDebugLog(`📊 Image size: ${sizeInMB.toFixed(2)}MB`);
-      addDebugLog('🌐 Calling Gemini API via Edge Function');
+      addDebugLog('🌐 Calling Edge Function');
 
-      const { data, error } = await supabase.functions.invoke('analyze-tools-image', {
+      // Call with timeout
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Request timeout after 30 seconds')), 30000)
+      );
+
+      const apiPromise = supabase.functions.invoke('analyze-tools-image', {
         body: { imageBase64: base64 },
       });
 
+      const { data, error } = await Promise.race([apiPromise, timeoutPromise]) as any;
+
       if (error) {
         addDebugLog(`❌ Edge Function error: ${JSON.stringify(error)}`);
-        throw new Error(`Edge Function failed: ${error.message}`);
+        throw new Error(`API Error: ${error.message || 'Unknown error'}`);
       }
 
       addDebugLog(`✅ Response received`);
@@ -179,9 +186,15 @@ export default function AddToolsScreen() {
       let errorMessage = 'Failed to analyze image. ';
       if (error instanceof Error) {
         errorMessage += error.message;
+      } else {
+        errorMessage += 'Unknown error occurred.';
       }
       
-      Alert.alert('AI Analysis Error', errorMessage);
+      Alert.alert(
+        'AI Analysis Error',
+        errorMessage + '\n\nPlease enter tools manually or try again with a smaller image.',
+        [{ text: 'OK' }]
+      );
     } finally {
       addDebugLog('🏁 Analysis complete');
       setAnalyzing(false);
