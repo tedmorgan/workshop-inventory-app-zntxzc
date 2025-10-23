@@ -1,3 +1,4 @@
+
 import React from 'react';
 import {
   View,
@@ -12,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { IconSymbol } from '@/components/IconSymbol';
 import { BlurView } from 'expo-blur';
 import { useTheme } from '@react-navigation/native';
+import { colors } from '@/styles/commonStyles';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -37,7 +39,7 @@ interface FloatingTabBarProps {
 
 export default function FloatingTabBar({
   tabs,
-  containerWidth = 240,
+  containerWidth = 280,
   borderRadius = 25,
   bottomMargin
 }: FloatingTabBarProps) {
@@ -96,10 +98,8 @@ export default function FloatingTabBar({
     router.push(route);
   };
 
-  // Remove unnecessary tabBarStyle animation to prevent flickering
-
   const indicatorStyle = useAnimatedStyle(() => {
-    const tabWidth = (containerWidth - 16) / tabs.length; // Account for container padding (8px on each side)
+    const tabWidth = (containerWidth - 16) / tabs.length;
     return {
       transform: [
         {
@@ -121,7 +121,7 @@ export default function FloatingTabBar({
         ios: {
           backgroundColor: theme.dark
             ? 'rgba(28, 28, 30, 0.8)'
-            : 'rgba(255, 255, 255, 0.8)',
+            : 'rgba(255, 255, 255, 0.9)',
         },
         android: {
           backgroundColor: theme.dark
@@ -148,10 +148,8 @@ export default function FloatingTabBar({
     },
     indicator: {
       ...styles.indicator,
-      backgroundColor: theme.dark
-        ? 'rgba(255, 255, 255, 0.08)' // Subtle white overlay in dark mode
-        : 'rgba(0, 0, 0, 0.04)', // Subtle black overlay in light mode
-      width: `${(100 / tabs.length) - 3}%`, // Dynamic width based on number of tabs
+      backgroundColor: `${colors.primary}20`,
+      width: `${(100 / tabs.length) - 3}%`,
     },
   };
 
@@ -185,13 +183,13 @@ export default function FloatingTabBar({
                     <IconSymbol
                       name={tab.icon}
                       size={24}
-                      color={isActive ? theme.colors.primary : (theme.dark ? '#98989D' : '#8E8E93')}
+                      color={isActive ? colors.primary : colors.textSecondary}
                     />
                     <Text
                       style={[
                         styles.tabLabel,
-                        { color: theme.dark ? '#98989D' : '#8E8E93' },
-                        isActive && { color: theme.colors.primary, fontWeight: '600' },
+                        { color: colors.textSecondary },
+                        isActive && { color: colors.primary, fontWeight: '600' },
                       ]}
                     >
                       {tab.label}
@@ -214,20 +212,17 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 1000,
-    alignItems: 'center', // Center the content
+    alignItems: 'center',
   },
   container: {
     marginHorizontal: 20,
     alignSelf: 'center',
-    // width and marginBottom handled dynamically via props
   },
   blurContainer: {
     overflow: 'hidden',
-    // borderRadius and other styling applied dynamically
   },
   background: {
     ...StyleSheet.absoluteFillObject,
-    // Dynamic styling applied in component
   },
   indicator: {
     position: 'absolute',
@@ -235,8 +230,6 @@ const styles = StyleSheet.create({
     left: 8,
     bottom: 8,
     borderRadius: 17,
-    width: `${(100 / 2) - 3}%`, // Default for 2 tabs, will be overridden by dynamic styles
-    // Dynamic styling applied in component
   },
   tabsContainer: {
     flexDirection: 'row',
@@ -259,6 +252,5 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '500',
     marginTop: 2,
-    // Dynamic styling applied in component
   },
 });
