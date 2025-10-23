@@ -165,6 +165,11 @@ export default function AddToolsScreen() {
 
       try {
         addDebugLog('🌐 Invoking Edge Function: analyze-tools-image');
+        
+        // Get the current session to check auth status
+        const { data: sessionData } = await supabase.auth.getSession();
+        addDebugLog(`🔐 Auth session: ${sessionData.session ? 'authenticated' : 'NOT authenticated'}`);
+        
         const { data, error } = await supabase.functions.invoke('analyze-tools-image', {
           body: requestBody,
         });
@@ -177,6 +182,12 @@ export default function AddToolsScreen() {
 
         if (error) {
           addDebugLog(`❌ Edge Function returned error: ${error.message || JSON.stringify(error)}`);
+          
+          // Check if it's an auth error
+          if (error.message?.includes('JWT') || error.message?.includes('401') || error.message?.includes('Unauthorized')) {
+            throw new Error('Authentication required. The Edge Function requires authentication but you are not logged in. Please contact support.');
+          }
+          
           throw new Error(`Edge Function error: ${error.message || JSON.stringify(error)}`);
         }
 
