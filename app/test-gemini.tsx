@@ -1,5 +1,4 @@
 
-import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -8,312 +7,372 @@ import {
   Pressable,
   ActivityIndicator,
   Platform,
+  Alert,
 } from 'react-native';
-import { Stack } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system/legacy';
-import { IconSymbol } from '@/components/IconSymbol';
-import { colors } from '@/styles/commonStyles';
 import { testGeminiIntegration, runMultipleTests } from '../testGemini';
-
-export default function TestGeminiScreen() {
-  const [testing, setTesting] = useState(false);
-  const [results, setResults] = useState<string>('');
-
-  const runSimpleTest = async () => {
-    setTesting(true);
-    setResults('🧪 Running simple test with sample image...\n\n');
-    
-    try {
-      const result = await testGeminiIntegration();
-      setResults(prev => prev + '\n✅ Test completed! Check console for detailed logs.\n\n' + JSON.stringify(result, null, 2));
-    } catch (error) {
-      setResults(prev => prev + '\n❌ Test failed: ' + error);
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  const runTestWithImage = async () => {
-    if (Platform.OS === 'web') {
-      setResults('⚠️ Image selection not supported on web. Use the simple test instead.');
-      return;
-    }
-
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      
-      if (status !== 'granted') {
-        setResults('❌ Permission denied. Cannot access photo library.');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: 'images',
-        allowsEditing: true,
-        quality: 1.0,
-      });
-
-      if (result.canceled || !result.assets[0]) {
-        return;
-      }
-
-      setTesting(true);
-      setResults('🖼️ Converting image to base64...\n\n');
-
-      const base64 = await FileSystem.readAsStringAsync(result.assets[0].uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-
-      const sizeInMB = (base64.length * 0.75) / (1024 * 1024);
-      setResults(prev => prev + `📊 Image size: ${sizeInMB.toFixed(2)}MB\n\n`);
-      setResults(prev => prev + '🧪 Testing with your image...\n\n');
-
-      const testResult = await testGeminiIntegration(base64);
-      setResults(prev => prev + '\n✅ Test completed! Check console for detailed logs.\n\n' + JSON.stringify(testResult, null, 2));
-    } catch (error) {
-      setResults(prev => prev + '\n❌ Test failed: ' + error);
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  const runMultipleTestsHandler = async () => {
-    setTesting(true);
-    setResults('🔄 Running 3 test iterations...\n\n');
-    
-    try {
-      const testResults = await runMultipleTests(3);
-      setResults(prev => prev + '\n✅ All tests completed! Check console for detailed logs.\n\n' + JSON.stringify(testResults, null, 2));
-    } catch (error) {
-      setResults(prev => prev + '\n❌ Tests failed: ' + error);
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  return (
-    <>
-      <Stack.Screen
-        options={{
-          title: 'Test Gemini Integration',
-          headerBackTitle: 'Back',
-        }}
-      />
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.header}>
-            <IconSymbol name="flask.fill" color={colors.primary} size={48} />
-            <Text style={styles.title}>Gemini API Test Suite</Text>
-            <Text style={styles.subtitle}>
-              Test the Gemini integration with various scenarios
-            </Text>
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Quick Tests</Text>
-            
-            <Pressable
-              style={[styles.testButton, testing && styles.testButtonDisabled]}
-              onPress={runSimpleTest}
-              disabled={testing}
-            >
-              <IconSymbol name="play.circle.fill" color="#FFFFFF" size={24} />
-              <View style={styles.buttonTextContainer}>
-                <Text style={styles.buttonText}>Simple Test</Text>
-                <Text style={styles.buttonSubtext}>Test with sample image</Text>
-              </View>
-            </Pressable>
-
-            {Platform.OS !== 'web' && (
-              <Pressable
-                style={[styles.testButton, styles.secondaryButton, testing && styles.testButtonDisabled]}
-                onPress={runTestWithImage}
-                disabled={testing}
-              >
-                <IconSymbol name="photo.fill" color="#FFFFFF" size={24} />
-                <View style={styles.buttonTextContainer}>
-                  <Text style={styles.buttonText}>Test with Your Image</Text>
-                  <Text style={styles.buttonSubtext}>Select from gallery</Text>
-                </View>
-              </Pressable>
-            )}
-
-            <Pressable
-              style={[styles.testButton, styles.tertiaryButton, testing && styles.testButtonDisabled]}
-              onPress={runMultipleTestsHandler}
-              disabled={testing}
-            >
-              <IconSymbol name="arrow.clockwise.circle.fill" color="#FFFFFF" size={24} />
-              <View style={styles.buttonTextContainer}>
-                <Text style={styles.buttonText}>Run Multiple Tests</Text>
-                <Text style={styles.buttonSubtext}>3 iterations for consistency</Text>
-              </View>
-            </Pressable>
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Test Results</Text>
-            {testing ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={colors.primary} />
-                <Text style={styles.loadingText}>Running test...</Text>
-              </View>
-            ) : (
-              <View style={styles.resultsContainer}>
-                {results ? (
-                  <ScrollView style={styles.resultsScroll} nestedScrollEnabled>
-                    <Text style={styles.resultsText}>{results}</Text>
-                  </ScrollView>
-                ) : (
-                  <Text style={styles.noResultsText}>
-                    No results yet. Run a test to see output.
-                  </Text>
-                )}
-              </View>
-            )}
-          </View>
-
-          <View style={styles.infoSection}>
-            <Text style={styles.infoTitle}>ℹ️ About This Test</Text>
-            <Text style={styles.infoText}>
-              This test suite validates the Gemini API integration by:
-            </Text>
-            <Text style={styles.infoText}>
-              - Sending images to the Edge Function{'\n'}
-              - Verifying API responses{'\n'}
-              - Measuring response times{'\n'}
-              - Checking tool identification accuracy
-            </Text>
-            <Text style={styles.infoText}>
-              {'\n'}Check the console logs for detailed debugging information.
-            </Text>
-          </View>
-        </ScrollView>
-      </View>
-    </>
-  );
-}
+import { colors } from '@/styles/commonStyles';
+import { Stack } from 'expo-router';
+import * as FileSystem from 'expo-file-system/legacy';
+import React, { useState } from 'react';
+import { IconSymbol } from '@/components/IconSymbol';
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: colors.background,
   },
-  scrollContent: {
-    paddingVertical: 20,
-    paddingHorizontal: 16,
-    paddingBottom: 40,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 32,
-    paddingVertical: 20,
+  content: {
+    padding: 20,
   },
   title: {
     fontSize: 24,
-    fontWeight: '700',
+    fontWeight: 'bold',
     color: colors.text,
-    marginTop: 16,
-    textAlign: 'center',
+    marginBottom: 10,
   },
   subtitle: {
     fontSize: 16,
     color: colors.textSecondary,
-    marginTop: 8,
-    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 24,
   },
-  section: {
-    marginBottom: 24,
+  warningBox: {
+    backgroundColor: '#FFF3CD',
+    borderLeftWidth: 4,
+    borderLeftColor: '#FFC107',
+    padding: 15,
+    marginBottom: 20,
+    borderRadius: 8,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.text,
-    marginBottom: 16,
+  warningTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#856404',
+    marginBottom: 8,
   },
-  testButton: {
+  warningText: {
+    fontSize: 14,
+    color: '#856404',
+    lineHeight: 20,
+    marginBottom: 4,
+  },
+  infoBox: {
+    backgroundColor: '#D1ECF1',
+    borderLeftWidth: 4,
+    borderLeftColor: '#17A2B8',
+    padding: 15,
+    marginBottom: 20,
+    borderRadius: 8,
+  },
+  infoTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#0C5460',
+    marginBottom: 8,
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#0C5460',
+    lineHeight: 20,
+    marginBottom: 4,
+  },
+  button: {
     backgroundColor: colors.primary,
-    flexDirection: 'row',
-    alignItems: 'center',
     padding: 16,
     borderRadius: 12,
+    alignItems: 'center',
     marginBottom: 12,
-    gap: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
   },
-  secondaryButton: {
-    backgroundColor: colors.secondary,
-  },
-  tertiaryButton: {
-    backgroundColor: colors.accent,
-  },
-  testButtonDisabled: {
-    opacity: 0.6,
-  },
-  buttonTextContainer: {
-    flex: 1,
+  buttonDisabled: {
+    opacity: 0.5,
   },
   buttonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
   },
-  buttonSubtext: {
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontSize: 13,
-    marginTop: 2,
+  secondaryButton: {
+    backgroundColor: colors.cardBackground,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  loadingContainer: {
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    padding: 40,
-    alignItems: 'center',
-  },
-  loadingText: {
-    fontSize: 16,
+  secondaryButtonText: {
     color: colors.text,
-    marginTop: 16,
-    fontWeight: '600',
   },
-  resultsContainer: {
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    padding: 16,
-    minHeight: 200,
-  },
-  resultsScroll: {
-    maxHeight: 400,
-  },
-  resultsText: {
-    fontSize: 13,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    color: colors.text,
-    lineHeight: 20,
-  },
-  noResultsText: {
+  statusText: {
     fontSize: 14,
     color: colors.textSecondary,
     textAlign: 'center',
-    paddingVertical: 40,
+    marginTop: 10,
   },
-  infoSection: {
-    backgroundColor: `${colors.primary}15`,
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 8,
+  section: {
+    marginBottom: 24,
   },
-  infoTitle: {
-    fontSize: 16,
-    fontWeight: '700',
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
     color: colors.text,
     marginBottom: 12,
   },
-  infoText: {
+  stepText: {
     fontSize: 14,
     color: colors.text,
     lineHeight: 22,
     marginBottom: 8,
   },
+  codeText: {
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontSize: 12,
+    backgroundColor: colors.cardBackground,
+    padding: 8,
+    borderRadius: 4,
+    color: colors.text,
+    marginVertical: 4,
+  },
 });
+
+export default function TestGeminiScreen() {
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState('');
+
+  const runSimpleTest = async () => {
+    setLoading(true);
+    setStatus('Running simple test...');
+    try {
+      const result = await testGeminiIntegration();
+      if (result.success) {
+        setStatus('✅ Test passed! Check console for details.');
+        Alert.alert('Success', 'Test completed successfully! Check console for detailed logs.');
+      } else {
+        setStatus('❌ Test failed. Check console for details.');
+        Alert.alert(
+          'Test Failed',
+          'The test encountered an error. Check the console logs for details.\n\nCommon issues:\n- JWT verification is enabled (401 error)\n- Invalid request format (400 error)\n- Network issues'
+        );
+      }
+    } catch (error) {
+      console.error('Test error:', error);
+      setStatus('❌ Test error. Check console.');
+      Alert.alert('Error', 'An unexpected error occurred. Check console logs.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const runTestWithImage = async () => {
+    if (Platform.OS === 'web') {
+      Alert.alert('Not Supported', 'Image picker is not supported on web.');
+      return;
+    }
+
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 1.0,
+      });
+
+      if (result.canceled) {
+        return;
+      }
+
+      setLoading(true);
+      setStatus('Converting image to base64...');
+
+      const base64 = await FileSystem.readAsStringAsync(result.assets[0].uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      setStatus('Running test with your image...');
+      const testResult = await testGeminiIntegration(base64);
+
+      if (testResult.success) {
+        setStatus('✅ Test passed! Check console for details.');
+        Alert.alert('Success', 'Test completed successfully! Check console for detailed logs.');
+      } else {
+        setStatus('❌ Test failed. Check console for details.');
+        Alert.alert('Test Failed', 'Check the console logs for detailed error information.');
+      }
+    } catch (error) {
+      console.error('Image test error:', error);
+      setStatus('❌ Error. Check console.');
+      Alert.alert('Error', 'Failed to process image. Check console logs.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const runMultipleTestsHandler = async () => {
+    setLoading(true);
+    setStatus('Running 3 test iterations...');
+    try {
+      const results = await runMultipleTests(3);
+      const successCount = results.filter((r) => r.success).length;
+      setStatus(`✅ Completed: ${successCount}/3 passed`);
+      
+      if (successCount === 3) {
+        Alert.alert('All Tests Passed', 'All 3 tests completed successfully!');
+      } else {
+        Alert.alert(
+          'Some Tests Failed',
+          `${successCount}/3 tests passed. Check console for details.`
+        );
+      }
+    } catch (error) {
+      console.error('Multiple tests error:', error);
+      setStatus('❌ Error. Check console.');
+      Alert.alert('Error', 'Failed to run tests. Check console logs.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <Stack.Screen
+        options={{
+          title: 'Test Gemini Integration',
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.text,
+        }}
+      />
+      <ScrollView style={styles.content}>
+        <Text style={styles.title}>Gemini Integration Test</Text>
+        <Text style={styles.subtitle}>
+          Test the Gemini API integration to identify tools in images.
+        </Text>
+
+        <View style={styles.warningBox}>
+          <Text style={styles.warningTitle}>⚠️ Known Issue: JWT Verification</Text>
+          <Text style={styles.warningText}>
+            The Edge Function currently has JWT verification enabled, which may cause 401 Unauthorized errors.
+          </Text>
+          <Text style={styles.warningText}>
+            If tests fail with FunctionsHttpError, follow the fix below.
+          </Text>
+        </View>
+
+        <View style={styles.infoBox}>
+          <Text style={styles.infoTitle}>🔧 How to Fix JWT Verification</Text>
+          <Text style={styles.infoText}>
+            1. Go to Supabase Dashboard
+          </Text>
+          <Text style={styles.infoText}>
+            2. Navigate to: Edge Functions → analyze-tools-image
+          </Text>
+          <Text style={styles.infoText}>
+            3. Click on Settings or Configuration
+          </Text>
+          <Text style={styles.infoText}>
+            4. Find "Verify JWT" option and disable it
+          </Text>
+          <Text style={styles.infoText}>
+            5. Save changes and run the test again
+          </Text>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Test Options</Text>
+
+          <Pressable
+            style={[styles.button, loading && styles.buttonDisabled]}
+            onPress={runSimpleTest}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <>
+                <IconSymbol name="play.circle.fill" size={20} color="#FFFFFF" />
+                <Text style={styles.buttonText}>Run Simple Test</Text>
+              </>
+            )}
+          </Pressable>
+
+          {Platform.OS !== 'web' && (
+            <Pressable
+              style={[styles.button, styles.secondaryButton, loading && styles.buttonDisabled]}
+              onPress={runTestWithImage}
+              disabled={loading}
+            >
+              <IconSymbol name="photo" size={20} color={colors.text} />
+              <Text style={[styles.buttonText, styles.secondaryButtonText]}>
+                Test with Your Image
+              </Text>
+            </Pressable>
+          )}
+
+          <Pressable
+            style={[styles.button, styles.secondaryButton, loading && styles.buttonDisabled]}
+            onPress={runMultipleTestsHandler}
+            disabled={loading}
+          >
+            <IconSymbol name="arrow.clockwise" size={20} color={colors.text} />
+            <Text style={[styles.buttonText, styles.secondaryButtonText]}>
+              Run 3 Test Iterations
+            </Text>
+          </Pressable>
+
+          {status ? <Text style={styles.statusText}>{status}</Text> : null}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>What This Tests</Text>
+          <Text style={styles.stepText}>
+            - Sends a sample image to the Edge Function
+          </Text>
+          <Text style={styles.stepText}>
+            - Calls the Gemini API to analyze the image
+          </Text>
+          <Text style={styles.stepText}>
+            - Returns a list of identified tools
+          </Text>
+          <Text style={styles.stepText}>
+            - Measures response time and success rate
+          </Text>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Troubleshooting</Text>
+          
+          <Text style={styles.stepText}>
+            <Text style={{ fontWeight: 'bold' }}>401 Unauthorized:</Text>
+            {'\n'}JWT verification is enabled. Disable it in the Supabase Dashboard (see instructions above).
+          </Text>
+          
+          <Text style={styles.stepText}>
+            <Text style={{ fontWeight: 'bold' }}>400 Bad Request:</Text>
+            {'\n'}Request format issue. Check Edge Function logs in Supabase Dashboard.
+          </Text>
+          
+          <Text style={styles.stepText}>
+            <Text style={{ fontWeight: 'bold' }}>500 Internal Error:</Text>
+            {'\n'}Edge Function error. Check logs for Gemini API issues or code errors.
+          </Text>
+          
+          <Text style={styles.stepText}>
+            <Text style={{ fontWeight: 'bold' }}>Network Error:</Text>
+            {'\n'}Check your internet connection and Supabase project status.
+          </Text>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Check Logs</Text>
+          <Text style={styles.stepText}>
+            View detailed logs in:
+          </Text>
+          <Text style={styles.stepText}>
+            - App console (React Native debugger)
+          </Text>
+          <Text style={styles.stepText}>
+            - Supabase Dashboard → Edge Functions → Logs
+          </Text>
+        </View>
+      </ScrollView>
+    </View>
+  );
+}

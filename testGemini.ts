@@ -35,6 +35,19 @@ export async function testGeminiIntegration(imageBase64?: string) {
     console.log(`  - Timestamp: ${new Date().toISOString()}`);
     console.log('');
     
+    // Check authentication status
+    const { data: { session } } = await supabase.auth.getSession();
+    console.log('🔐 Authentication Status:');
+    console.log(`  - Logged in: ${session ? 'Yes' : 'No'}`);
+    if (session) {
+      console.log(`  - User ID: ${session.user.id}`);
+    } else {
+      console.log('  ⚠️  Warning: Not authenticated. Edge Function may require authentication.');
+      console.log('  ℹ️  If you get a 401 error, the Edge Function has JWT verification enabled.');
+      console.log('  ℹ️  Solution: Disable JWT verification in Supabase Dashboard or sign in.');
+    }
+    console.log('');
+    
     // Call the Edge Function
     console.log('🌐 Calling Supabase Edge Function: analyze-tools-image');
     const { data, error } = await supabase.functions.invoke('analyze-tools-image', {
@@ -48,7 +61,32 @@ export async function testGeminiIntegration(imageBase64?: string) {
     // Check for errors
     if (error) {
       console.error('❌ Edge Function Error:');
-      console.error(JSON.stringify(error, null, 2));
+      console.error('Error name:', error.name);
+      console.error('Error message:', error.message);
+      console.error('Full error:', JSON.stringify(error, null, 2));
+      console.error('');
+      
+      // Provide helpful error messages
+      if (error.message && error.message.includes('401')) {
+        console.error('💡 This is a 401 Unauthorized error.');
+        console.error('   The Edge Function requires authentication (JWT verification is enabled).');
+        console.error('');
+        console.error('   Solutions:');
+        console.error('   1. Sign in to the app before running this test');
+        console.error('   2. Disable JWT verification in Supabase Dashboard:');
+        console.error('      - Go to Edge Functions > analyze-tools-image > Settings');
+        console.error('      - Disable "Verify JWT"');
+        console.error('   3. Or manually set verify_jwt = false in config.toml and redeploy');
+      } else if (error.message && error.message.includes('400')) {
+        console.error('💡 This is a 400 Bad Request error.');
+        console.error('   The request body may be malformed or missing required fields.');
+        console.error('   Check the Edge Function logs for more details.');
+      } else if (error.message && error.message.includes('500')) {
+        console.error('💡 This is a 500 Internal Server Error.');
+        console.error('   The Edge Function encountered an error while processing.');
+        console.error('   Check the Edge Function logs for more details.');
+      }
+      
       return { success: false, error, duration };
     }
     
@@ -111,13 +149,14 @@ export async function testWithCustomImage(base64Image: string) {
  * @param imageBase64 - Optional custom image
  */
 export async function runMultipleTests(iterations: number = 3, imageBase64?: string) {
-  console.log(`🔄 Running ${iterations} test iterations`);
-  console.log('=' .repeat(50));
+  console.log(`🔄 Running ${iterations} test iterations...`);
+  console.log('');
   
   const results = [];
   
   for (let i = 0; i < iterations; i++) {
     console.log(`\n📍 Test ${i + 1}/${iterations}`);
+    console.log('-'.repeat(50));
     const result = await testGeminiIntegration(imageBase64);
     results.push(result);
     
@@ -138,6 +177,20 @@ export async function runMultipleTests(iterations: number = 3, imageBase64?: str
   console.log(`✅ Successful: ${successful}/${iterations}`);
   console.log(`❌ Failed: ${failed}/${iterations}`);
   console.log(`⏱️  Average duration: ${avgDuration.toFixed(0)}ms`);
+  console.log('');
+  
+  if (failed > 0) {
+    console.log('⚠️  Some tests failed. Common issues:');
+    console.log('   - JWT verification is enabled (401 errors)');
+    console.log('   - Invalid request format (400 errors)');
+    console.log('   - Edge Function errors (500 errors)');
+    console.log('   - Network issues or timeouts');
+    console.log('');
+    console.log('💡 Check the detailed logs above for specific error messages.');
+  }
+  
+  console.log('✅ All tests completed! Check console for detailed logs.');
+  console.log('');
   
   return results;
 }

@@ -7,9 +7,10 @@ const GEMINI_API_KEY = 'AIzaSyBwakctmMO7kWAfGudzsfHPaku0Opzxc88';
 Deno.serve(async (req) => {
   console.log('🚀 Edge Function called - analyze-tools-image');
   console.log('Method:', req.method);
+  console.log('URL:', req.url);
   console.log('Headers:', Object.fromEntries(req.headers.entries()));
 
-  // Handle CORS
+  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     console.log('✅ Handling CORS preflight');
     return new Response(null, {
@@ -24,9 +25,12 @@ Deno.serve(async (req) => {
   try {
     console.log('📥 Parsing request body');
     let body;
+    let rawBody;
+    
     try {
-      const rawBody = await req.text();
+      rawBody = await req.text();
       console.log('📦 Raw body length:', rawBody.length);
+      console.log('📦 Raw body preview:', rawBody.substring(0, 200));
       body = JSON.parse(rawBody);
     } catch (parseError) {
       console.error('❌ Failed to parse JSON body:', parseError);
@@ -34,6 +38,7 @@ Deno.serve(async (req) => {
         JSON.stringify({
           error: 'Invalid JSON in request body',
           details: parseError instanceof Error ? parseError.message : 'Unknown parse error',
+          receivedBody: rawBody ? rawBody.substring(0, 500) : 'empty',
         }),
         {
           status: 400,
@@ -50,10 +55,12 @@ Deno.serve(async (req) => {
     if (!imageBase64) {
       console.error('❌ Missing imageBase64 in request body');
       console.error('Body keys:', Object.keys(body));
+      console.error('Body:', JSON.stringify(body).substring(0, 500));
       return new Response(
         JSON.stringify({
           error: 'Missing imageBase64 in request body',
           receivedKeys: Object.keys(body),
+          hint: 'Make sure you are sending { imageBase64: "your-base64-string" }',
         }),
         {
           status: 400,
@@ -77,6 +84,8 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({
           error: 'Invalid image data - too short',
+          receivedLength: base64Data.length,
+          minimumLength: 100,
         }),
         {
           status: 400,
@@ -97,6 +106,8 @@ Deno.serve(async (req) => {
           error: 'Image too large. Please use a smaller image or reduce quality.',
           size: base64Data.length,
           maxSize: maxSize,
+          sizeMB: (base64Data.length / (1024 * 1024)).toFixed(2),
+          maxSizeMB: (maxSize / (1024 * 1024)).toFixed(2),
         }),
         {
           status: 400,
@@ -274,8 +285,13 @@ Deno.serve(async (req) => {
 
     return new Response(
       JSON.stringify({
+        success: true,
         tools,
         rawResponse: textResponse,
+        metadata: {
+          toolCount: tools.length,
+          processingTime: Date.now(),
+        },
       }),
       {
         status: 200,
