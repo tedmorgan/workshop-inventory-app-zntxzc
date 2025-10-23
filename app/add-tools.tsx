@@ -152,51 +152,45 @@ export default function AddToolsScreen() {
         throw new Error('Failed to convert image to base64');
       }
 
-      addDebugLog('🤖 Step 3: Calling Supabase Edge Function');
+      addDebugLog('🤖 Step 3: Calling Edge Function via direct fetch (no auth required)');
       const requestBody = { imageBase64: base64 };
       addDebugLog(`📦 Request body size: ${JSON.stringify(requestBody).length} bytes`);
 
-      // Call Supabase Edge Function with timeout
+      // Get the project URL
+      const projectUrl = 'https://bnyyfypaudhisookytoq.supabase.co';
+      const functionUrl = `${projectUrl}/functions/v1/analyze-tools-image`;
+      
+      addDebugLog(`🌐 Calling: ${functionUrl}`);
+
+      // Call Edge Function directly with fetch (no JWT required)
       const controller = new AbortController();
       const timeoutId = setTimeout(() => {
         addDebugLog('⏰ Request timeout - aborting');
         controller.abort();
-      }, 30000); // 30 second timeout
+      }, 60000); // 60 second timeout
 
       try {
-        addDebugLog('🌐 Invoking Edge Function: analyze-tools-image');
-        
-        // Get the current session to check auth status
-        const { data: sessionData } = await supabase.auth.getSession();
-        addDebugLog(`🔐 Auth session: ${sessionData.session ? 'authenticated' : 'NOT authenticated'}`);
-        
-        const { data, error } = await supabase.functions.invoke('analyze-tools-image', {
-          body: requestBody,
+        const response = await fetch(functionUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal,
         });
 
         clearTimeout(timeoutId);
 
-        addDebugLog(`📥 Edge Function response received`);
-        addDebugLog(`📥 Data: ${JSON.stringify(data)?.substring(0, 200)}`);
-        addDebugLog(`📥 Error: ${JSON.stringify(error)}`);
+        addDebugLog(`📥 Response status: ${response.status} ${response.statusText}`);
 
-        if (error) {
-          addDebugLog(`❌ Edge Function returned error: ${error.message || JSON.stringify(error)}`);
-          
-          // Check if it's an auth error
-          if (error.message?.includes('JWT') || error.message?.includes('401') || error.message?.includes('Unauthorized')) {
-            throw new Error('Authentication required. The Edge Function requires authentication but you are not logged in. Please contact support.');
-          }
-          
-          throw new Error(`Edge Function error: ${error.message || JSON.stringify(error)}`);
+        if (!response.ok) {
+          const errorText = await response.text();
+          addDebugLog(`❌ Response error: ${errorText}`);
+          throw new Error(`HTTP ${response.status}: ${errorText}`);
         }
 
-        if (!data) {
-          addDebugLog('❌ No data returned from Edge Function');
-          throw new Error('No data returned from Edge Function');
-        }
-
-        addDebugLog(`✅ Edge Function success - data keys: ${Object.keys(data).join(', ')}`);
+        const data = await response.json();
+        addDebugLog(`📥 Response data: ${JSON.stringify(data)?.substring(0, 200)}`);
 
         if (data.error) {
           addDebugLog(`❌ Data contains error: ${data.error}`);
@@ -226,8 +220,8 @@ export default function AddToolsScreen() {
         }
       } catch (fetchError) {
         if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-          addDebugLog('❌ Request timed out after 30 seconds');
-          throw new Error('Request timed out. Please try again.');
+          addDebugLog('❌ Request timed out after 60 seconds');
+          throw new Error('Request timed out. The AI is taking too long to respond. Please try again.');
         }
         throw fetchError;
       }
@@ -463,7 +457,7 @@ export default function AddToolsScreen() {
               <View style={styles.analyzingContainer}>
                 <ActivityIndicator size="large" color={colors.primary} />
                 <Text style={styles.analyzingText}>🤖 Analyzing image with Gemini AI...</Text>
-                <Text style={styles.analyzingSubtext}>This may take a few seconds</Text>
+                <Text style={styles.analyzingSubtext}>This may take up to 60 seconds</Text>
                 <Text style={styles.analyzingSubtext}>Check debug log above for progress</Text>
               </View>
             ) : (
