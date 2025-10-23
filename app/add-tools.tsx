@@ -152,17 +152,22 @@ export default function AddToolsScreen() {
         throw new Error('Failed to convert image to base64');
       }
 
-      addDebugLog('🤖 Step 3: Calling Edge Function via direct fetch (no auth required)');
+      addDebugLog('🤖 Step 3: Getting Supabase session for authentication');
+      
+      // Get the current session to include auth token
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError) {
+        addDebugLog(`⚠️ Session error (will try anonymous): ${sessionError.message}`);
+      }
+      
+      addDebugLog(`🔑 Session status: ${session ? 'authenticated' : 'anonymous'}`);
+
+      addDebugLog('🤖 Step 4: Calling Edge Function via Supabase client');
       const requestBody = { imageBase64: base64 };
       addDebugLog(`📦 Request body size: ${JSON.stringify(requestBody).length} bytes`);
 
-      // Get the project URL
-      const projectUrl = 'https://bnyyfypaudhisookytoq.supabase.co';
-      const functionUrl = `${projectUrl}/functions/v1/analyze-tools-image`;
-      
-      addDebugLog(`🌐 Calling: ${functionUrl}`);
-
-      // Call Edge Function directly with fetch (no JWT required)
+      // Call Edge Function using Supabase client (handles auth automatically)
       const controller = new AbortController();
       const timeoutId = setTimeout(() => {
         addDebugLog('⏰ Request timeout - aborting');
@@ -170,26 +175,22 @@ export default function AddToolsScreen() {
       }, 60000); // 60 second timeout
 
       try {
-        const response = await fetch(functionUrl, {
-          method: 'POST',
+        addDebugLog('🌐 Invoking Edge Function: analyze-tools-image');
+        
+        const { data, error } = await supabase.functions.invoke('analyze-tools-image', {
+          body: requestBody,
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(requestBody),
-          signal: controller.signal,
         });
 
         clearTimeout(timeoutId);
 
-        addDebugLog(`📥 Response status: ${response.status} ${response.statusText}`);
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          addDebugLog(`❌ Response error: ${errorText}`);
-          throw new Error(`HTTP ${response.status}: ${errorText}`);
+        if (error) {
+          addDebugLog(`❌ Edge Function error: ${error.message}`);
+          throw new Error(`Edge Function failed: ${error.message}`);
         }
 
-        const data = await response.json();
         addDebugLog(`📥 Response data: ${JSON.stringify(data)?.substring(0, 200)}`);
 
         if (data.error) {
