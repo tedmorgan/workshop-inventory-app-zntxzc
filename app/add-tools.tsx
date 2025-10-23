@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import { supabase } from '@integrations/supabase/client';
@@ -131,7 +131,7 @@ export default function AddToolsScreen() {
     try {
       addDebugLog('🤖 Step 1: Checking if file exists');
       
-      // Check if file exists
+      // Check if file exists using legacy API
       const fileInfo = await FileSystem.getInfoAsync(uri);
       addDebugLog(`📁 File exists: ${fileInfo.exists}, size: ${fileInfo.exists && 'size' in fileInfo ? fileInfo.size : 'unknown'}`);
       
@@ -142,7 +142,7 @@ export default function AddToolsScreen() {
       // Convert image to base64
       addDebugLog('🤖 Step 2: Converting to base64');
       const base64 = await FileSystem.readAsStringAsync(uri, {
-        encoding: 'base64',
+        encoding: FileSystem.EncodingType.Base64,
       });
 
       addDebugLog(`✅ Base64 conversion complete - length: ${base64.length} chars`);
@@ -251,9 +251,9 @@ export default function AddToolsScreen() {
     try {
       addDebugLog('☁️ Uploading image to Supabase Storage');
       
-      // Read the file as base64
+      // Read the file as base64 using legacy API
       const base64 = await FileSystem.readAsStringAsync(uri, {
-        encoding: 'base64',
+        encoding: FileSystem.EncodingType.Base64,
       });
 
       // Convert base64 to blob
