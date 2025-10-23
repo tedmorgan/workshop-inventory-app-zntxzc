@@ -5,7 +5,7 @@ import { View, Text, StyleSheet, ScrollView, Platform, Pressable, Image, Alert, 
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { IconSymbol } from "@/components/IconSymbol";
 import { colors } from "@/styles/commonStyles";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@integrations/supabase/client";
 
 type ToolInventoryItem = {
   id: string;

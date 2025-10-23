@@ -17,7 +17,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@integrations/supabase/client';
 
 export default function AddToolsScreen() {
   const router = useRouter();
