@@ -55,7 +55,7 @@ export default function AddToolsScreen() {
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: 'images',
         allowsEditing: true,
-        quality: 1.0,
+        quality: 0.8,
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -86,7 +86,7 @@ export default function AddToolsScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: 'images',
         allowsEditing: true,
-        quality: 1.0,
+        quality: 0.8,
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -102,7 +102,13 @@ export default function AddToolsScreen() {
     }
   };
 
-  const analyzeImage = async (uri: string) => {
+  const analyzeImage = async (uri: string | null) => {
+    if (!uri) {
+      addDebugLog('❌ No image URI provided');
+      Alert.alert('Error', 'No image selected');
+      return;
+    }
+
     if (Platform.OS === 'web') {
       addDebugLog('⚠️ Image analysis not supported on web');
       Alert.alert('Not Supported', 'Image analysis is not supported on web. Please enter tools manually.');
@@ -121,7 +127,7 @@ export default function AddToolsScreen() {
         throw new Error('Image file does not exist');
       }
 
-      addDebugLog('🔄 Converting to base64 (full quality)');
+      addDebugLog('🔄 Converting to base64');
       const base64 = await FileSystem.readAsStringAsync(uri, {
         encoding: FileSystem.EncodingType.Base64,
       });
@@ -139,44 +145,50 @@ export default function AddToolsScreen() {
       addDebugLog('🌐 Calling Edge Function');
 
       // Call with timeout
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Request timeout after 60 seconds')), 60000)
-      );
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000);
 
-      const apiPromise = supabase.functions.invoke('analyze-tools-image', {
-        body: { imageBase64: base64 },
-      });
+      try {
+        const { data, error } = await supabase.functions.invoke('analyze-tools-image', {
+          body: { imageBase64: base64 },
+        });
 
-      const { data, error } = await Promise.race([apiPromise, timeoutPromise]) as any;
+        clearTimeout(timeoutId);
 
-      if (error) {
-        addDebugLog(`❌ Edge Function error: ${JSON.stringify(error)}`);
-        throw new Error(`API Error: ${error.message || 'Unknown error'}`);
-      }
+        if (error) {
+          addDebugLog(`❌ Edge Function error: ${JSON.stringify(error)}`);
+          throw new Error(`API Error: ${error.message || 'Unknown error'}`);
+        }
 
-      addDebugLog(`✅ Response received`);
-      console.log('Full response data:', data);
+        addDebugLog(`✅ Response received`);
+        console.log('Full response data:', data);
 
-      if (data.error) {
-        addDebugLog(`❌ API error: ${data.error}`);
-        throw new Error(data.error);
-      }
+        if (data.error) {
+          addDebugLog(`❌ API error: ${data.error}`);
+          throw new Error(data.error);
+        }
 
-      if (data.tools && Array.isArray(data.tools) && data.tools.length > 0) {
-        addDebugLog(`✅ Found ${data.tools.length} tools`);
-        const toolsText = data.tools.join('\n');
-        setToolsList(toolsText);
-        
-        Alert.alert(
-          '✨ AI Analysis Complete!',
-          `Gemini identified ${data.tools.length} tool${data.tools.length === 1 ? '' : 's'}. You can edit the list if needed.`
-        );
-      } else {
-        addDebugLog('⚠️ No tools found');
-        Alert.alert(
-          'No Tools Found',
-          'Gemini couldn\'t identify any tools. Please enter them manually.'
-        );
+        if (data.tools && Array.isArray(data.tools) && data.tools.length > 0) {
+          addDebugLog(`✅ Found ${data.tools.length} tools`);
+          const toolsText = data.tools.join('\n');
+          setToolsList(toolsText);
+          
+          Alert.alert(
+            '✨ AI Analysis Complete!',
+            `Gemini identified ${data.tools.length} tool${data.tools.length === 1 ? '' : 's'}. You can edit the list if needed.`
+          );
+        } else {
+          addDebugLog('⚠️ No tools found');
+          Alert.alert(
+            'No Tools Found',
+            'Gemini couldn\'t identify any tools. Please enter them manually.'
+          );
+        }
+      } catch (fetchError) {
+        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+          throw new Error('Request timeout after 60 seconds');
+        }
+        throw fetchError;
       }
       
     } catch (error) {
@@ -385,7 +397,7 @@ export default function AddToolsScreen() {
               <>
                 <View style={styles.aiInfoBadge}>
                   <IconSymbol name="sparkles" color={colors.accent} size={16} />
-                  <Text style={styles.aiInfoText}>AI-powered by Google Gemini (Full Quality)</Text>
+                  <Text style={styles.aiInfoText}>AI-powered by Google Gemini</Text>
                 </View>
                 <Text style={styles.helperText}>
                   Enter each tool on a new line. AI will identify tools automatically when you take a photo.
