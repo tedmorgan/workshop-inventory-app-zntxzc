@@ -18,6 +18,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import { supabase } from '@integrations/supabase/client';
+import { decode } from 'base64-arraybuffer';
 
 export default function AddToolsScreen() {
   const router = useRouter();
@@ -224,18 +225,17 @@ export default function AddToolsScreen() {
 
       addDebugLog(`📦 Base64 size: ${(base64.length * 0.75 / 1024).toFixed(2)} KB`);
 
-      // Convert base64 to blob
-      const response = await fetch(`data:image/jpeg;base64,${base64}`);
-      const blob = await response.blob();
+      // Convert base64 to ArrayBuffer using decode
+      const arrayBuffer = decode(base64);
 
-      addDebugLog(`📦 Blob size: ${(blob.size / 1024).toFixed(2)} KB`);
+      addDebugLog(`📦 ArrayBuffer size: ${(arrayBuffer.byteLength / 1024).toFixed(2)} KB`);
 
       const fileName = `tool-${Date.now()}.jpg`;
       addDebugLog(`📝 Uploading as: ${fileName}`);
 
       const { data, error } = await supabase.storage
         .from('tool-images')
-        .upload(fileName, blob, {
+        .upload(fileName, arrayBuffer, {
           contentType: 'image/jpeg',
           upsert: false,
         });
