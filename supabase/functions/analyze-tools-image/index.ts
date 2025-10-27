@@ -1,5 +1,6 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { GoogleGenAI } from "npm:@google/genai";
 
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
 
@@ -111,78 +112,55 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Call Gemini API - FIXED: Changed from v1beta to v1
-    console.log('🤖 Calling Gemini API...');
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-    
-    const geminiPayload = {
-      contents: [
-        {
-          parts: [
-            {
-              text: 'Analyze this image and identify all tools visible. Return ONLY a JSON array of tool names, nothing else. Format: ["tool1", "tool2", "tool3"]. Be specific with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver").',
-            },
-            {
-              inline_data: {
-                mime_type: 'image/jpeg',
-                data: base64Data,
-              },
-            },
-          ],
-        },
-      ],
-      generationConfig: {
-        temperature: 0.4,
-        topK: 32,
-        topP: 1,
-        maxOutputTokens: 1024,
-      },
-    };
-
-    console.log('📤 Sending request to Gemini...');
-    const geminiResponse = await fetch(geminiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(geminiPayload),
+    // Initialize Gemini AI with the new SDK
+    console.log('🤖 Initializing Gemini 2.5 API...');
+    const ai = new GoogleGenAI({
+      apiKey: GEMINI_API_KEY,
     });
 
-    console.log('📡 Gemini response status:', geminiResponse.status);
+    // Use Gemini 2.5 Flash model
+    const model = 'gemini-2.5-flash';
+    
+    // Prepare the request parts
+    const parts = [
+      {
+        text: 'Analyze this image and identify all tools visible. Return ONLY a JSON array of tool names, nothing else. Format: ["tool1", "tool2", "tool3"]. Be specific with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver").',
+      },
+      {
+        inlineData: {
+          data: base64Data,
+          mimeType: 'image/jpeg',
+        },
+      },
+    ];
 
-    if (!geminiResponse.ok) {
-      const errorText = await geminiResponse.text();
-      console.error('❌ Gemini API error:', errorText);
-      return new Response(
-        JSON.stringify({
-          error: 'Gemini API request failed',
-          status: geminiResponse.status,
-          details: errorText,
-        }),
+    console.log('📤 Sending request to Gemini 2.5...');
+    
+    // Call Gemini API using the new SDK
+    const response = await ai.models.generateContent({
+      model,
+      contents: [
         {
-          status: geminiResponse.status,
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-          },
-        }
-      );
-    }
+          role: 'user',
+          parts,
+        },
+      ],
+    });
 
-    const geminiData = await geminiResponse.json();
-    console.log('✅ Gemini response received');
-    console.log('📝 Response structure:', JSON.stringify(geminiData, null, 2));
+    console.log('✅ Gemini 2.5 response received');
+    console.log('📝 Response structure:', JSON.stringify(response, null, 2));
 
     // Extract the text response
-    const textResponse = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const candidate = response.candidates?.[0];
+    const textResponse = candidate?.content?.parts?.[0]?.text;
 
     if (!textResponse) {
       console.error('❌ No text response from Gemini');
-      console.error('Full response:', JSON.stringify(geminiData, null, 2));
+      console.error('Full response:', JSON.stringify(response, null, 2));
       return new Response(
         JSON.stringify({
           error: 'No response from Gemini',
-          rawResponse: geminiData,
+          rawResponse: response,
         }),
         {
           status: 500,
@@ -240,6 +218,7 @@ Deno.serve(async (req: Request) => {
         metadata: {
           toolCount: tools.length,
           imageSizeMB: sizeInMB.toFixed(2),
+          model: model,
         },
       }),
       {

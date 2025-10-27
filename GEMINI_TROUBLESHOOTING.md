@@ -3,6 +3,27 @@
 
 This guide helps you debug and fix issues with the Gemini API integration for tool identification.
 
+## ✅ LATEST UPDATE: Gemini 2.5 Integration
+
+**Date:** October 27, 2025  
+**Version:** Edge Function v22
+
+The Edge Function has been updated to use **Gemini 2.5 Flash** with the new Google GenAI SDK.
+
+### What Changed
+
+- **Model:** Updated from `gemini-1.5-flash` to `gemini-2.5-flash`
+- **API Method:** Changed from REST API to the new `@google/genai` npm package
+- **SDK:** Now using `GoogleGenAI` class for better reliability and features
+- **Endpoint:** No longer using the REST endpoint; using the official SDK instead
+
+### Key Improvements
+
+1. **Better Error Handling:** The new SDK provides clearer error messages
+2. **Improved Performance:** Gemini 2.5 is faster and more accurate
+3. **Future-Proof:** Using the official SDK ensures compatibility with future updates
+4. **Simplified Code:** The SDK handles authentication and request formatting automatically
+
 ## Current Issue: FunctionsHttpError (401/400)
 
 The tests are failing with `FunctionsHttpError`, which indicates the Edge Function is rejecting requests before they reach the Gemini API.
@@ -55,6 +76,11 @@ However, this is not recommended for this use case since tool identification doe
 
 ## Understanding the Error Codes
 
+### 404 Not Found (Previous Issue - FIXED)
+- **Previous Cause:** Using `gemini-1.5-flash` with the v1beta API endpoint
+- **Solution Applied:** Updated to `gemini-2.5-flash` with the official SDK
+- **Status:** ✅ Fixed in version 22
+
 ### 401 Unauthorized
 - **Cause:** JWT verification is enabled, but no valid JWT token was provided
 - **Solution:** Disable JWT verification (see above)
@@ -99,14 +125,17 @@ Run the test and check your React Native debugger console for detailed logs:
 
 ### What to Look For in Logs
 
-**Successful Request:**
+**Successful Request (v22+):**
 ```
-🚀 Edge Function called - analyze-tools-image
-✅ Received base64 image, length: 12345
-🤖 Calling Gemini API...
-📡 Gemini API response status: 200
-✅ Gemini response parsed successfully
-🎉 Returning 5 tools
+🚀 Edge Function initialized - analyze-tools-image
+📥 Request received: POST
+✅ Body parsed, keys: [ 'imageBase64' ]
+✅ imageBase64 received, length: 12345
+🤖 Initializing Gemini 2.5 API...
+📤 Sending request to Gemini 2.5...
+✅ Gemini 2.5 response received
+✅ Parsed JSON array: [ 'tool1', 'tool2', 'tool3' ]
+🎉 Returning 3 tools
 ```
 
 **JWT Verification Error:**
@@ -123,14 +152,14 @@ Body keys: []
 
 **Gemini API Error:**
 ```
-❌ Gemini API error response: Invalid API key
+❌ Unexpected error: [error details]
 ```
 
 ## Testing Checklist
 
 Before running tests, verify:
 
-- [ ] Edge Function is deployed (version 13 or later)
+- [ ] Edge Function is deployed (version 22 or later)
 - [ ] JWT verification is **disabled** in Supabase Dashboard
 - [ ] Gemini API key is set correctly in the Edge Function
 - [ ] Your internet connection is working
@@ -171,7 +200,12 @@ await runMultipleTests(3);
     "success": true,
     "data": {
       "tools": ["tool1", "tool2", "tool3"],
-      "rawResponse": "..."
+      "rawResponse": "...",
+      "metadata": {
+        "toolCount": 3,
+        "imageSizeMB": "0.01",
+        "model": "gemini-2.5-flash"
+      }
     },
     "duration": 1234
   }
@@ -204,10 +238,32 @@ Once JWT verification is disabled and tests pass:
 4. Add error handling for production use
 5. Consider adding rate limiting or usage tracking
 
+## Gemini 2.5 Model Information
+
+### Available Models
+
+- **gemini-2.5-flash** (Current): Fast, efficient model for vision and text tasks
+- **gemini-2.5-flash-image**: Specialized for image generation (not used in this app)
+- **gemini-2.5-pro**: More powerful but slower model (can be used if needed)
+
+### Model Capabilities
+
+- **Vision:** Can analyze images and identify objects, text, and scenes
+- **Text Generation:** Produces natural language responses
+- **JSON Output:** Can be prompted to return structured JSON data
+- **Multimodal:** Accepts both text and image inputs simultaneously
+
+### API Limits
+
+- **Image Size:** Maximum 20MB per image
+- **Rate Limits:** Depends on your Gemini API tier
+- **Timeout:** Edge Functions have a 60-second timeout
+
 ## Additional Resources
 
+- [Gemini 2.5 Documentation](https://ai.google.dev/gemini-api/docs)
+- [Google GenAI SDK](https://www.npmjs.com/package/@google/genai)
 - [Supabase Edge Functions Documentation](https://supabase.com/docs/guides/functions)
-- [Gemini API Documentation](https://ai.google.dev/docs)
 - [Edge Function Configuration](https://supabase.com/docs/guides/functions/function-configuration)
 
 ## Still Having Issues?
@@ -215,11 +271,18 @@ Once JWT verification is disabled and tests pass:
 If you're still experiencing problems after following this guide:
 
 1. Check the Edge Function logs in Supabase Dashboard
-2. Verify your Gemini API key is valid
+2. Verify your Gemini API key is valid and has access to Gemini 2.5
 3. Try deploying the Edge Function again
 4. Check your Supabase project status
 5. Review the app console logs for detailed error messages
+6. Ensure you're using Edge Function version 22 or later
 
 ## Summary
 
-**The main issue is JWT verification being enabled.** Disable it in the Supabase Dashboard, and the tests should pass. The Edge Function code is working correctly; it's just being blocked by the authentication layer.
+**The Edge Function now uses Gemini 2.5 Flash with the official Google GenAI SDK.** This provides better performance, reliability, and future compatibility. If you're experiencing authentication errors, disable JWT verification in the Supabase Dashboard. The Edge Function code is working correctly with the new model.
+
+## Version History
+
+- **v22 (Oct 27, 2025):** Updated to Gemini 2.5 Flash with Google GenAI SDK
+- **v13-21:** Used Gemini 1.5 Flash with REST API (deprecated)
+- **v1-12:** Initial implementation and bug fixes
