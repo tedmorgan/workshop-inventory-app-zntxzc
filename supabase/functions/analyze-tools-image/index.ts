@@ -1,7 +1,11 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') || 'AIzaSyBwakctmMO7kWAfGudzsfHPaku0Opzxc88';
+const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+
+if (!GEMINI_API_KEY) {
+  console.error('❌ GEMINI_API_KEY environment variable is not set');
+}
 
 console.log('🚀 Edge Function initialized - analyze-tools-image');
 
@@ -90,6 +94,22 @@ Deno.serve(async (req: Request) => {
     }
 
     console.log(`📊 Image size: ${sizeInMB.toFixed(2)}MB`);
+
+    if (!GEMINI_API_KEY) {
+      console.error('❌ GEMINI_API_KEY not configured');
+      return new Response(
+        JSON.stringify({
+          error: 'Server configuration error: GEMINI_API_KEY not set',
+        }),
+        {
+          status: 500,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+        }
+      );
+    }
 
     // Call Gemini API
     console.log('🤖 Calling Gemini API...');
