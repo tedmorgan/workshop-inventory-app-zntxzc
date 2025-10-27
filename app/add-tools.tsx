@@ -213,18 +213,25 @@ export default function AddToolsScreen() {
     }
   };
 
-  const uploadImageToSupabase = async (uri: string): Promise<string | null> => {
+  const uploadImageToSupabase = async (uri: string): Promise<string> => {
     try {
-      addDebugLog('☁️ Uploading image to Supabase');
+      addDebugLog('☁️ Starting image upload to Supabase');
       
+      // Read the file as base64
       const base64 = await FileSystem.readAsStringAsync(uri, {
         encoding: FileSystem.EncodingType.Base64,
       });
 
+      addDebugLog(`📦 Base64 size: ${(base64.length * 0.75 / 1024).toFixed(2)} KB`);
+
+      // Convert base64 to blob
       const response = await fetch(`data:image/jpeg;base64,${base64}`);
       const blob = await response.blob();
 
+      addDebugLog(`📦 Blob size: ${(blob.size / 1024).toFixed(2)} KB`);
+
       const fileName = `tool-${Date.now()}.jpg`;
+      addDebugLog(`📝 Uploading as: ${fileName}`);
 
       const { data, error } = await supabase.storage
         .from('tool-images')
@@ -235,19 +242,22 @@ export default function AddToolsScreen() {
 
       if (error) {
         addDebugLog(`❌ Upload error: ${error.message}`);
-        throw error;
+        console.error('Storage upload error:', error);
+        throw new Error(`Failed to upload image: ${error.message}`);
       }
+
+      addDebugLog(`✅ Upload successful: ${data.path}`);
 
       const { data: urlData } = supabase.storage
         .from('tool-images')
         .getPublicUrl(fileName);
 
-      addDebugLog(`✅ Image uploaded`);
+      addDebugLog(`✅ Public URL: ${urlData.publicUrl}`);
       return urlData.publicUrl;
     } catch (error) {
       addDebugLog(`❌ Upload failed: ${error}`);
       console.error('Error uploading image:', error);
-      return null;
+      throw error;
     }
   };
 
@@ -273,35 +283,51 @@ export default function AddToolsScreen() {
     }
 
     setSaving(true);
+    addDebugLog('💾 Starting save process');
+    
     try {
-      addDebugLog('💾 Saving inventory');
-      
+      // Step 1: Upload image
+      addDebugLog('📤 Step 1: Uploading image');
       const imageUrl = await uploadImageToSupabase(imageUri);
       
       if (!imageUrl) {
-        throw new Error('Failed to upload image');
+        throw new Error('Image upload returned empty URL');
       }
 
+      addDebugLog(`✅ Image uploaded: ${imageUrl.substring(0, 50)}...`);
+
+      // Step 2: Prepare tools array
       const tools = toolsList
         .split('\n')
         .map(t => t.trim())
         .filter(t => t.length > 0);
 
-      const { error } = await supabase
+      addDebugLog(`📝 Prepared ${tools.length} tools`);
+
+      // Step 3: Insert into database
+      addDebugLog('💾 Step 2: Inserting into database');
+      const insertData = {
+        image_url: imageUrl,
+        tools: tools,
+        bin_name: binName,
+        bin_location: binLocation,
+      };
+
+      console.log('Insert data:', insertData);
+
+      const { data, error } = await supabase
         .from('tool_inventory')
-        .insert({
-          image_url: imageUrl,
-          tools: tools,
-          bin_name: binName,
-          bin_location: binLocation,
-        });
+        .insert(insertData)
+        .select();
 
       if (error) {
-        addDebugLog(`❌ Save error: ${error.message}`);
-        throw error;
+        addDebugLog(`❌ Database error: ${error.message}`);
+        console.error('Database insert error:', error);
+        throw new Error(`Database error: ${error.message}`);
       }
 
-      addDebugLog('✅ Saved successfully');
+      addDebugLog('✅ Saved successfully to database');
+      console.log('Inserted data:', data);
 
       Alert.alert(
         '✅ Success!',
@@ -311,9 +337,18 @@ export default function AddToolsScreen() {
     } catch (error) {
       addDebugLog(`❌ Save failed: ${error}`);
       console.error('Error saving inventory:', error);
-      Alert.alert('Error', 'Failed to save inventory. Please try again.');
+      
+      let errorMessage = 'Failed to save inventory. ';
+      if (error instanceof Error) {
+        errorMessage += error.message;
+      } else {
+        errorMessage += 'Unknown error occurred.';
+      }
+      
+      Alert.alert('Error', errorMessage);
     } finally {
       setSaving(false);
+      addDebugLog('🏁 Save process complete');
     }
   };
 

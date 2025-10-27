@@ -27,7 +27,7 @@ Deno.serve(async (req: Request) => {
   }
 
   // Only allow POST requests
-  if (req.method !== 'POST') {
+  if (req.method !== 'POST') 
     console.log('❌ Method not allowed:', req.method);
     return new Response(
       JSON.stringify({ error: 'Method not allowed. Use POST.' }),
