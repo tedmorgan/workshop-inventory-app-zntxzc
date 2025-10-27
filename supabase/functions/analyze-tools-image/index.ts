@@ -111,9 +111,9 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Call Gemini API
+    // Call Gemini API - FIXED: Changed from v1beta to v1
     console.log('🤖 Calling Gemini API...');
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
     
     const geminiPayload = {
       contents: [
