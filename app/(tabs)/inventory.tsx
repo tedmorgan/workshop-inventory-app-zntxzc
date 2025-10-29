@@ -1,7 +1,23 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useTheme } from "@react-navigation/native";
-import { View, Text, StyleSheet, ScrollView, Platform, Pressable, Image, Alert, RefreshControl } from "react-native";
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  ScrollView, 
+  Platform, 
+  Pressable, 
+  Image, 
+  Alert, 
+  RefreshControl,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  TouchableWithoutFeedback,
+  Keyboard,
+  ActivityIndicator,
+} from "react-native";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { IconSymbol } from "@/components/IconSymbol";
 import { colors } from "@/styles/commonStyles";
@@ -22,6 +38,13 @@ export default function InventoryScreen() {
   const [inventory, setInventory] = useState<ToolInventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editingItem, setEditingItem] = useState<ToolInventoryItem | null>(null);
+  const [editBinName, setEditBinName] = useState('');
+  const [editBinLocation, setEditBinLocation] = useState('');
+  const [editTools, setEditTools] = useState<string[]>([]);
+  const [newToolText, setNewToolText] = useState('');
+  const [saving, setSaving] = useState(false);
 
   // Load inventory when screen comes into focus
   useFocusEffect(
@@ -65,6 +88,106 @@ export default function InventoryScreen() {
   const onRefresh = () => {
     setRefreshing(true);
     loadInventory();
+  };
+
+  const openEditModal = (item: ToolInventoryItem) => {
+    console.log('Opening edit modal for item:', item.id);
+    setEditingItem(item);
+    setEditBinName(item.bin_name);
+    setEditBinLocation(item.bin_location);
+    setEditTools([...item.tools]);
+    setNewToolText('');
+    setEditModalVisible(true);
+  };
+
+  const closeEditModal = () => {
+    setEditModalVisible(false);
+    setEditingItem(null);
+    setEditBinName('');
+    setEditBinLocation('');
+    setEditTools([]);
+    setNewToolText('');
+  };
+
+  const addNewTool = () => {
+    if (newToolText.trim()) {
+      setEditTools([...editTools, newToolText.trim()]);
+      setNewToolText('');
+      Keyboard.dismiss();
+    }
+  };
+
+  const removeTool = (index: number) => {
+    const updatedTools = editTools.filter((_, i) => i !== index);
+    setEditTools(updatedTools);
+  };
+
+  const updateTool = (index: number, newValue: string) => {
+    const updatedTools = [...editTools];
+    updatedTools[index] = newValue;
+    setEditTools(updatedTools);
+  };
+
+  const saveChanges = async () => {
+    if (!editingItem) return;
+
+    if (!editBinName.trim()) {
+      Alert.alert('Missing Bin Name', 'Please enter a bin name');
+      return;
+    }
+
+    if (!editBinLocation.trim()) {
+      Alert.alert('Missing Location', 'Please enter a bin location');
+      return;
+    }
+
+    if (editTools.length === 0) {
+      Alert.alert('No Tools', 'Please add at least one tool');
+      return;
+    }
+
+    setSaving(true);
+    console.log('Saving changes for item:', editingItem.id);
+
+    try {
+      const { data, error } = await supabase
+        .from('tool_inventory')
+        .update({
+          bin_name: editBinName.trim(),
+          bin_location: editBinLocation.trim(),
+          tools: editTools.filter(t => t.trim().length > 0),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', editingItem.id)
+        .select();
+
+      if (error) {
+        console.error('Error updating item:', error);
+        throw error;
+      }
+
+      console.log('Item updated successfully:', data);
+
+      // Update local state
+      setInventory(prev => prev.map(item => 
+        item.id === editingItem.id 
+          ? {
+              ...item,
+              bin_name: editBinName.trim(),
+              bin_location: editBinLocation.trim(),
+              tools: editTools.filter(t => t.trim().length > 0),
+            }
+          : item
+      ));
+
+      Alert.alert('Success', 'Changes saved successfully!');
+      closeEditModal();
+    } catch (error) {
+      console.error('Error saving changes:', error);
+      Alert.alert('Error', 'Failed to save changes. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const deleteItem = async (id: string) => {
@@ -190,19 +313,145 @@ export default function InventoryScreen() {
                       Added: {new Date(item.created_at).toLocaleDateString()} at {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </Text>
                     
-                    <Pressable
-                      style={styles.deleteButton}
-                      onPress={() => deleteItem(item.id)}
-                    >
-                      <IconSymbol name="trash" color="#FF3B30" size={18} />
-                      <Text style={styles.deleteButtonText}>Delete</Text>
-                    </Pressable>
+                    <View style={styles.actionButtons}>
+                      <Pressable
+                        style={styles.editButton}
+                        onPress={() => openEditModal(item)}
+                      >
+                        <IconSymbol name="pencil" color={colors.primary} size={18} />
+                        <Text style={styles.editButtonText}>Edit</Text>
+                      </Pressable>
+                      
+                      <Pressable
+                        style={styles.deleteButton}
+                        onPress={() => deleteItem(item.id)}
+                      >
+                        <IconSymbol name="trash" color="#FF3B30" size={18} />
+                        <Text style={styles.deleteButtonText}>Delete</Text>
+                      </Pressable>
+                    </View>
                   </View>
                 </View>
               ))}
             </>
           )}
         </ScrollView>
+
+        {/* Edit Modal */}
+        <Modal
+          visible={editModalVisible}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={closeEditModal}
+        >
+          <KeyboardAvoidingView
+            style={[styles.modalContainer, { backgroundColor: colors.background }]}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+          >
+            <View style={styles.modalHeader}>
+              <Pressable onPress={closeEditModal} style={styles.modalCloseButton}>
+                <IconSymbol name="xmark" color={colors.text} size={24} />
+              </Pressable>
+              <Text style={styles.modalTitle}>Edit Inventory</Text>
+              <View style={{ width: 40 }} />
+            </View>
+
+            <ScrollView
+              contentContainerStyle={styles.modalScrollContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              {editingItem && (
+                <>
+                  <Image source={{ uri: editingItem.image_url }} style={styles.modalImage} />
+
+                  <View style={styles.modalSection}>
+                    <Text style={styles.modalSectionTitle}>Storage Information</Text>
+                    
+                    <Text style={styles.modalLabel}>Bin Name</Text>
+                    <TextInput
+                      style={styles.modalInput}
+                      placeholder="e.g., Red Toolbox, Bin A3"
+                      placeholderTextColor={colors.textSecondary}
+                      value={editBinName}
+                      onChangeText={setEditBinName}
+                      returnKeyType="next"
+                    />
+
+                    <Text style={styles.modalLabel}>Bin Location</Text>
+                    <TextInput
+                      style={styles.modalInput}
+                      placeholder="e.g., Top shelf, Garage wall"
+                      placeholderTextColor={colors.textSecondary}
+                      value={editBinLocation}
+                      onChangeText={setEditBinLocation}
+                      returnKeyType="done"
+                    />
+                  </View>
+
+                  <View style={styles.modalSection}>
+                    <Text style={styles.modalSectionTitle}>Tools List</Text>
+                    
+                    {editTools.map((tool, index) => (
+                      <View key={index} style={styles.toolEditItem}>
+                        <TextInput
+                          style={styles.toolEditInput}
+                          value={tool}
+                          onChangeText={(text) => updateTool(index, text)}
+                          placeholder="Tool name"
+                          placeholderTextColor={colors.textSecondary}
+                        />
+                        <Pressable
+                          style={styles.removeToolButton}
+                          onPress={() => removeTool(index)}
+                        >
+                          <IconSymbol name="minus.circle.fill" color="#FF3B30" size={24} />
+                        </Pressable>
+                      </View>
+                    ))}
+
+                    <View style={styles.addToolContainer}>
+                      <TextInput
+                        style={styles.addToolInput}
+                        placeholder="Add new tool..."
+                        placeholderTextColor={colors.textSecondary}
+                        value={newToolText}
+                        onChangeText={setNewToolText}
+                        onSubmitEditing={addNewTool}
+                        returnKeyType="done"
+                      />
+                      <Pressable
+                        style={[styles.addToolButton, !newToolText.trim() && styles.addToolButtonDisabled]}
+                        onPress={addNewTool}
+                        disabled={!newToolText.trim()}
+                      >
+                        <IconSymbol name="plus.circle.fill" color={newToolText.trim() ? colors.primary : colors.textSecondary} size={28} />
+                      </Pressable>
+                    </View>
+                  </View>
+
+                  <Pressable
+                    style={[styles.saveChangesButton, saving && styles.saveChangesButtonDisabled]}
+                    onPress={saveChanges}
+                    disabled={saving}
+                  >
+                    {saving ? (
+                      <ActivityIndicator color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <IconSymbol name="checkmark.circle.fill" color="#FFFFFF" size={24} />
+                        <Text style={styles.saveChangesButtonText}>Save Changes</Text>
+                      </>
+                    )}
+                  </Pressable>
+
+                  <View style={styles.bottomSpacer} />
+                </>
+              )}
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </Modal>
       </View>
     </>
   );
@@ -338,6 +587,22 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 8,
   },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 16,
+    marginTop: 4,
+  },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    gap: 6,
+  },
+  editButtonText: {
+    fontSize: 15,
+    color: colors.primary,
+    fontWeight: '500',
+  },
   deleteButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -351,5 +616,125 @@ const styles = StyleSheet.create({
   },
   headerButtonContainer: {
     padding: 6,
+  },
+  // Modal styles
+  modalContainer: {
+    flex: 1,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.background,
+  },
+  modalCloseButton: {
+    padding: 4,
+    width: 40,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  modalScrollContent: {
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+  },
+  modalImage: {
+    width: '100%',
+    height: 200,
+    borderRadius: 12,
+    backgroundColor: colors.background,
+    marginBottom: 20,
+  },
+  modalSection: {
+    marginBottom: 24,
+  },
+  modalSectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 12,
+  },
+  modalLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: 8,
+    marginTop: 12,
+  },
+  modalInput: {
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.background,
+  },
+  toolEditItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 8,
+  },
+  toolEditInput: {
+    flex: 1,
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 16,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.background,
+  },
+  removeToolButton: {
+    padding: 4,
+  },
+  addToolContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
+  addToolInput: {
+    flex: 1,
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 16,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.background,
+  },
+  addToolButton: {
+    padding: 4,
+  },
+  addToolButtonDisabled: {
+    opacity: 0.4,
+  },
+  saveChangesButton: {
+    backgroundColor: colors.accent,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    borderRadius: 12,
+    gap: 8,
+    marginTop: 8,
+  },
+  saveChangesButtonDisabled: {
+    opacity: 0.6,
+  },
+  saveChangesButtonText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  bottomSpacer: {
+    height: 100,
   },
 });
