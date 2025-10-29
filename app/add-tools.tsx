@@ -119,6 +119,10 @@ export default function AddToolsScreen() {
     }
 
     console.log(`🤖 Starting image analysis${userFeedback ? ' with user feedback' : ''}`);
+    if (userFeedback) {
+      console.log(`💬 User feedback: "${userFeedback}"`);
+      console.log(`📝 Previous response: ${JSON.stringify(previousResponse)}`);
+    }
     setAnalyzing(true);
     
     try {
@@ -162,7 +166,10 @@ export default function AddToolsScreen() {
       if (userFeedback && previousResponse.length > 0) {
         requestBody.previousResponse = previousResponse;
         requestBody.userFeedback = userFeedback;
-        console.log('📝 Including previous response and user feedback');
+        console.log('📝 Including previous response and user feedback in API call');
+        console.log('📦 Request body keys:', Object.keys(requestBody));
+        console.log('📦 Previous response length:', requestBody.previousResponse.length);
+        console.log('📦 User feedback:', requestBody.userFeedback);
       }
 
       // Call with timeout
@@ -170,6 +177,13 @@ export default function AddToolsScreen() {
       const timeoutId = setTimeout(() => controller.abort(), 60000);
 
       try {
+        console.log('🚀 Invoking Edge Function with body:', {
+          hasImageBase64: !!requestBody.imageBase64,
+          hasPreviousResponse: !!requestBody.previousResponse,
+          hasUserFeedback: !!requestBody.userFeedback,
+          previousResponseCount: requestBody.previousResponse?.length || 0,
+        });
+
         const { data, error } = await supabase.functions.invoke('analyze-tools-image', {
           body: requestBody,
         });
@@ -198,8 +212,9 @@ export default function AddToolsScreen() {
           const toolsText = data.tools.join('\n');
           setToolsList(toolsText);
           
+          const analysisType = data.isReanalysis ? 'Re-analysis' : 'Analysis';
           Alert.alert(
-            '✨ AI Analysis Complete!',
+            `✨ AI ${analysisType} Complete!`,
             `Gemini identified ${data.tools.length} tool${data.tools.length === 1 ? '' : 's'}. You can edit the list or re-analyze if needed.`
           );
         } else {
@@ -259,6 +274,9 @@ export default function AddToolsScreen() {
       Alert.alert('Missing Reason', 'Please provide a reason for re-analysis (e.g., "you missed 2 tools" or "that is not a hammer")');
       return;
     }
+    
+    console.log('🔄 User submitted re-analysis request');
+    console.log('💬 Reason:', reanalyzeReason.trim());
     
     setShowReanalyzeModal(false);
     analyzeImage(imageUri, reanalyzeReason.trim());
@@ -556,7 +574,7 @@ export default function AddToolsScreen() {
       <Modal
         visible={showReanalyzeModal}
         transparent={true}
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => setShowReanalyzeModal(false)}
       >
         <KeyboardAvoidingView
@@ -567,70 +585,76 @@ export default function AddToolsScreen() {
             <View style={styles.modalOverlay}>
               <TouchableWithoutFeedback>
                 <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
-                  <View style={styles.modalHeader}>
-                    <Text style={styles.modalTitle}>Re-Analyze Image</Text>
-                    <Pressable
-                      onPress={() => setShowReanalyzeModal(false)}
-                      style={styles.modalCloseButton}
-                    >
-                      <IconSymbol name="xmark.circle.fill" color={colors.textSecondary} size={28} />
-                    </Pressable>
-                  </View>
+                  <ScrollView
+                    contentContainerStyle={styles.modalScrollContent}
+                    showsVerticalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
+                  >
+                    <View style={styles.modalHeader}>
+                      <Text style={styles.modalTitle}>Re-Analyze Image</Text>
+                      <Pressable
+                        onPress={() => setShowReanalyzeModal(false)}
+                        style={styles.modalCloseButton}
+                      >
+                        <IconSymbol name="xmark.circle.fill" color={colors.textSecondary} size={28} />
+                      </Pressable>
+                    </View>
 
-                  <Text style={styles.modalDescription}>
-                    Please provide a reason for re-analysis. This helps the AI understand what to look for or correct.
-                  </Text>
+                    <Text style={styles.modalDescription}>
+                      Please provide a reason for re-analysis. This helps the AI understand what to look for or correct.
+                    </Text>
 
-                  <View style={styles.examplesContainer}>
-                    <Text style={styles.examplesTitle}>Examples:</Text>
-                    <Pressable
-                      style={styles.exampleChip}
-                      onPress={() => setReanalyzeReason('You missed 2 tools')}
-                    >
-                      <Text style={styles.exampleChipText}>You missed 2 tools</Text>
-                    </Pressable>
-                    <Pressable
-                      style={styles.exampleChip}
-                      onPress={() => setReanalyzeReason('That is not a hammer')}
-                    >
-                      <Text style={styles.exampleChipText}>That is not a hammer</Text>
-                    </Pressable>
-                    <Pressable
-                      style={styles.exampleChip}
-                      onPress={() => setReanalyzeReason('Be more specific with tool names')}
-                    >
-                      <Text style={styles.exampleChipText}>Be more specific with tool names</Text>
-                    </Pressable>
-                  </View>
+                    <View style={styles.examplesContainer}>
+                      <Text style={styles.examplesTitle}>Examples:</Text>
+                      <Pressable
+                        style={styles.exampleChip}
+                        onPress={() => setReanalyzeReason('You missed 2 tools')}
+                      >
+                        <Text style={styles.exampleChipText}>You missed 2 tools</Text>
+                      </Pressable>
+                      <Pressable
+                        style={styles.exampleChip}
+                        onPress={() => setReanalyzeReason('That is not a hammer')}
+                      >
+                        <Text style={styles.exampleChipText}>That is not a hammer</Text>
+                      </Pressable>
+                      <Pressable
+                        style={styles.exampleChip}
+                        onPress={() => setReanalyzeReason('Be more specific with tool names')}
+                      >
+                        <Text style={styles.exampleChipText}>Be more specific with tool names</Text>
+                      </Pressable>
+                    </View>
 
-                  <TextInput
-                    ref={reanalyzeReasonRef}
-                    style={[styles.modalInput, { backgroundColor: colors.background, color: colors.text }]}
-                    placeholder="e.g., you missed 2 tools, that is not a hammer"
-                    placeholderTextColor={colors.textSecondary}
-                    value={reanalyzeReason}
-                    onChangeText={setReanalyzeReason}
-                    multiline
-                    numberOfLines={3}
-                    textAlignVertical="top"
-                    autoFocus={true}
-                  />
+                    <TextInput
+                      ref={reanalyzeReasonRef}
+                      style={[styles.modalInput, { backgroundColor: colors.background, color: colors.text }]}
+                      placeholder="e.g., you missed 2 tools, that is not a hammer"
+                      placeholderTextColor={colors.textSecondary}
+                      value={reanalyzeReason}
+                      onChangeText={setReanalyzeReason}
+                      multiline
+                      numberOfLines={3}
+                      textAlignVertical="top"
+                      autoFocus={true}
+                    />
 
-                  <View style={styles.modalButtons}>
-                    <Pressable
-                      style={[styles.modalButton, styles.modalButtonCancel]}
-                      onPress={() => setShowReanalyzeModal(false)}
-                    >
-                      <Text style={styles.modalButtonTextCancel}>Cancel</Text>
-                    </Pressable>
-                    <Pressable
-                      style={[styles.modalButton, styles.modalButtonSubmit]}
-                      onPress={handleReanalyzeSubmit}
-                    >
-                      <IconSymbol name="arrow.clockwise" color="#FFFFFF" size={18} />
-                      <Text style={styles.modalButtonTextSubmit}>Re-Analyze</Text>
-                    </Pressable>
-                  </View>
+                    <View style={styles.modalButtons}>
+                      <Pressable
+                        style={[styles.modalButton, styles.modalButtonCancel]}
+                        onPress={() => setShowReanalyzeModal(false)}
+                      >
+                        <Text style={styles.modalButtonTextCancel}>Cancel</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[styles.modalButton, styles.modalButtonSubmit]}
+                        onPress={handleReanalyzeSubmit}
+                      >
+                        <IconSymbol name="arrow.clockwise" color="#FFFFFF" size={18} />
+                        <Text style={styles.modalButtonTextSubmit}>Re-Analyze</Text>
+                      </Pressable>
+                    </View>
+                  </ScrollView>
                 </View>
               </TouchableWithoutFeedback>
             </View>
@@ -826,19 +850,19 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+    justifyContent: 'flex-end',
   },
   modalContent: {
     width: '100%',
-    maxWidth: 500,
-    borderRadius: 16,
-    padding: 24,
+    maxHeight: '85%',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 24,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
+        shadowOffset: { width: 0, height: -4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
       },
@@ -846,6 +870,10 @@ const styles = StyleSheet.create({
         elevation: 8,
       },
     }),
+  },
+  modalScrollContent: {
+    paddingHorizontal: 24,
+    paddingTop: 16,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -864,49 +892,51 @@ const styles = StyleSheet.create({
   modalDescription: {
     fontSize: 15,
     color: colors.textSecondary,
-    marginBottom: 16,
+    marginBottom: 20,
     lineHeight: 22,
   },
   examplesContainer: {
-    marginBottom: 16,
+    marginBottom: 20,
   },
   examplesTitle: {
     fontSize: 14,
     fontWeight: '600',
     color: colors.text,
-    marginBottom: 8,
+    marginBottom: 10,
   },
   exampleChip: {
     backgroundColor: `${colors.primary}15`,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
     marginBottom: 8,
   },
   exampleChipText: {
     fontSize: 14,
     color: colors.primary,
+    fontWeight: '500',
   },
   modalInput: {
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
-    minHeight: 80,
+    minHeight: 100,
     borderWidth: 1,
     borderColor: colors.background,
-    marginBottom: 20,
+    marginBottom: 24,
   },
   modalButtons: {
     flexDirection: 'row',
     gap: 12,
+    marginBottom: 8,
   },
   modalButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 10,
+    paddingVertical: 16,
+    borderRadius: 12,
     gap: 6,
   },
   modalButtonCancel: {
