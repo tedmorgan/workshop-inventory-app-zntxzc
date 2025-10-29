@@ -47,7 +47,7 @@ Deno.serve(async (req: Request) => {
     const body = await req.json();
     console.log('✅ Body parsed, keys:', Object.keys(body));
     
-    const { imageBase64 } = body;
+    const { imageBase64, previousResponse, userFeedback } = body;
 
     if (!imageBase64) {
       console.error('❌ Missing imageBase64 field');
@@ -68,6 +68,14 @@ Deno.serve(async (req: Request) => {
     }
 
     console.log('✅ imageBase64 received, length:', imageBase64.length);
+
+    // Check if this is a re-analysis request
+    const isReanalysis = previousResponse && userFeedback;
+    if (isReanalysis) {
+      console.log('🔄 Re-analysis request detected');
+      console.log('📝 Previous response:', previousResponse);
+      console.log('💬 User feedback:', userFeedback);
+    }
 
     // Remove data URL prefix if present
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
@@ -121,10 +129,27 @@ Deno.serve(async (req: Request) => {
     // Use Gemini 2.5 Flash model
     const model = 'gemini-2.5-flash';
     
+    // Prepare the prompt based on whether this is a re-analysis
+    let promptText: string;
+    
+    if (isReanalysis) {
+      // Re-analysis with context
+      promptText = `You previously analyzed this image and identified these tools:
+${JSON.stringify(previousResponse, null, 2)}
+
+However, the user has provided this feedback:
+"${userFeedback}"
+
+Please re-analyze the image taking the user's feedback into account. Correct any mistakes, add any missed tools, or adjust tool names as requested. Return ONLY a JSON array of tool names, nothing else. Format: ["tool1", "tool2", "tool3"]. Be specific with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver") and make sure to capture every tool in the image based on the user's feedback.`;
+    } else {
+      // Initial analysis
+      promptText = 'Analyze this image and identify all tools visible. Return ONLY a JSON array of tool names, nothing else. Format: ["tool1", "tool2", "tool3"]. Be specific with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver") and make sure to capture every tool in the image.';
+    }
+    
     // Prepare the request parts
     const parts = [
       {
-        text: 'Analyze this image and identify all tools visible. Return ONLY a JSON array of tool names, nothing else. Format: ["tool1", "tool2", "tool3"]. Be specific with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver") make sure to capture every tool in the image.',
+        text: promptText,
       },
       {
         inlineData: {
@@ -135,6 +160,7 @@ Deno.serve(async (req: Request) => {
     ];
 
     console.log('📤 Sending request to Gemini 2.5...');
+    console.log('📝 Prompt:', promptText.substring(0, 200) + '...');
     
     // Call Gemini API using the new SDK
     const response = await ai.models.generateContent({
@@ -215,10 +241,13 @@ Deno.serve(async (req: Request) => {
         success: true,
         tools,
         rawResponse: textResponse,
+        isReanalysis: isReanalysis,
         metadata: {
           toolCount: tools.length,
           imageSizeMB: sizeInMB.toFixed(2),
           model: model,
+          hadPreviousResponse: !!previousResponse,
+          hadUserFeedback: !!userFeedback,
         },
       }),
       {

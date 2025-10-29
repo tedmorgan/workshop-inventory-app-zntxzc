@@ -14,6 +14,7 @@ import {
   KeyboardAvoidingView,
   TouchableWithoutFeedback,
   Keyboard,
+  Modal,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -31,9 +32,16 @@ export default function AddToolsScreen() {
   const [binLocation, setBinLocation] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
   const [saving, setSaving] = useState(false);
+  
+  // State for re-analysis
+  const [showReanalyzeModal, setShowReanalyzeModal] = useState(false);
+  const [reanalyzeReason, setReanalyzeReason] = useState('');
+  const [previousResponse, setPreviousResponse] = useState<string[]>([]);
+  const [imageBase64, setImageBase64] = useState<string>('');
 
   // Refs for TextInputs to enable keyboard navigation
   const binLocationRef = useRef<TextInput>(null);
+  const reanalyzeReasonRef = useRef<TextInput>(null);
 
   const pickImage = async () => {
     try {
@@ -57,6 +65,7 @@ export default function AddToolsScreen() {
         const uri = result.assets[0].uri;
         console.log(`✅ Image captured: ${uri.substring(0, 50)}...`);
         setImageUri(uri);
+        setPreviousResponse([]); // Reset previous response for new image
         analyzeImage(uri);
       }
     } catch (error) {
@@ -87,6 +96,7 @@ export default function AddToolsScreen() {
         const uri = result.assets[0].uri;
         console.log(`✅ Image selected: ${uri.substring(0, 50)}...`);
         setImageUri(uri);
+        setPreviousResponse([]); // Reset previous response for new image
         analyzeImage(uri);
       }
     } catch (error) {
@@ -95,7 +105,7 @@ export default function AddToolsScreen() {
     }
   };
 
-  const analyzeImage = async (uri: string | null) => {
+  const analyzeImage = async (uri: string | null, userFeedback?: string) => {
     if (!uri) {
       console.log('❌ No image URI provided');
       Alert.alert('Error', 'No image selected');
@@ -108,9 +118,8 @@ export default function AddToolsScreen() {
       return;
     }
 
-    console.log(`🤖 Starting image analysis`);
+    console.log(`🤖 Starting image analysis${userFeedback ? ' with user feedback' : ''}`);
     setAnalyzing(true);
-    setToolsList('');
     
     try {
       console.log('📁 Checking file exists');
@@ -126,6 +135,9 @@ export default function AddToolsScreen() {
       });
 
       console.log(`✅ Base64 ready (${base64.length} chars)`);
+      
+      // Store base64 for re-analysis
+      setImageBase64(base64);
 
       // Validate size (20MB limit to match Gemini API)
       const sizeInMB = (base64.length * 0.75) / (1024 * 1024);
@@ -137,13 +149,29 @@ export default function AddToolsScreen() {
       console.log(`📊 Image size: ${sizeInMB.toFixed(2)}MB`);
       console.log('🌐 Calling Edge Function');
 
+      // Prepare request body
+      const requestBody: {
+        imageBase64: string;
+        previousResponse?: string[];
+        userFeedback?: string;
+      } = {
+        imageBase64: base64,
+      };
+
+      // Add context for re-analysis
+      if (userFeedback && previousResponse.length > 0) {
+        requestBody.previousResponse = previousResponse;
+        requestBody.userFeedback = userFeedback;
+        console.log('📝 Including previous response and user feedback');
+      }
+
       // Call with timeout
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 60000);
 
       try {
         const { data, error } = await supabase.functions.invoke('analyze-tools-image', {
-          body: { imageBase64: base64 },
+          body: requestBody,
         });
 
         clearTimeout(timeoutId);
@@ -163,18 +191,22 @@ export default function AddToolsScreen() {
 
         if (data.tools && Array.isArray(data.tools) && data.tools.length > 0) {
           console.log(`✅ Found ${data.tools.length} tools`);
+          
+          // Store the response for potential re-analysis
+          setPreviousResponse(data.tools);
+          
           const toolsText = data.tools.join('\n');
           setToolsList(toolsText);
           
           Alert.alert(
             '✨ AI Analysis Complete!',
-            `Gemini identified ${data.tools.length} tool${data.tools.length === 1 ? '' : 's'}. You can edit the list if needed.`
+            `Gemini identified ${data.tools.length} tool${data.tools.length === 1 ? '' : 's'}. You can edit the list or re-analyze if needed.`
           );
         } else {
           console.log('⚠️ No tools found');
           Alert.alert(
             'No Tools Found',
-            'Gemini couldn\'t identify any tools. Please enter them manually.'
+            'Gemini couldn\'t identify any tools. Please enter them manually or try re-analyzing.'
           );
         }
       } catch (fetchError) {
@@ -203,6 +235,33 @@ export default function AddToolsScreen() {
       console.log('🏁 Analysis complete');
       setAnalyzing(false);
     }
+  };
+
+  const handleReanalyzePress = () => {
+    if (!imageUri) {
+      Alert.alert('Error', 'No image to re-analyze');
+      return;
+    }
+    
+    if (previousResponse.length === 0) {
+      // If no previous response, just re-analyze without feedback
+      analyzeImage(imageUri);
+      return;
+    }
+    
+    // Show modal to get user feedback
+    setShowReanalyzeModal(true);
+    setReanalyzeReason('');
+  };
+
+  const handleReanalyzeSubmit = () => {
+    if (!reanalyzeReason.trim()) {
+      Alert.alert('Missing Reason', 'Please provide a reason for re-analysis (e.g., "you missed 2 tools" or "that is not a hammer")');
+      return;
+    }
+    
+    setShowReanalyzeModal(false);
+    analyzeImage(imageUri, reanalyzeReason.trim());
   };
 
   const uploadImageToSupabase = async (uri: string): Promise<string> => {
@@ -375,6 +434,8 @@ export default function AddToolsScreen() {
                       onPress={() => {
                         setImageUri(null);
                         setToolsList('');
+                        setPreviousResponse([]);
+                        setImageBase64('');
                       }}
                     >
                       <IconSymbol name="xmark.circle.fill" color="#FFFFFF" size={24} />
@@ -404,7 +465,7 @@ export default function AddToolsScreen() {
                   {imageUri && !analyzing && (
                     <Pressable
                       style={styles.reanalyzeButton}
-                      onPress={() => analyzeImage(imageUri)}
+                      onPress={handleReanalyzePress}
                     >
                       <IconSymbol name="arrow.clockwise" color={colors.primary} size={18} />
                       <Text style={styles.reanalyzeText}>Re-analyze</Text>
@@ -490,6 +551,92 @@ export default function AddToolsScreen() {
           </View>
         </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
+
+      {/* Re-analyze Modal */}
+      <Modal
+        visible={showReanalyzeModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowReanalyzeModal(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.modalOverlay}>
+              <TouchableWithoutFeedback>
+                <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+                  <View style={styles.modalHeader}>
+                    <Text style={styles.modalTitle}>Re-Analyze Image</Text>
+                    <Pressable
+                      onPress={() => setShowReanalyzeModal(false)}
+                      style={styles.modalCloseButton}
+                    >
+                      <IconSymbol name="xmark.circle.fill" color={colors.textSecondary} size={28} />
+                    </Pressable>
+                  </View>
+
+                  <Text style={styles.modalDescription}>
+                    Please provide a reason for re-analysis. This helps the AI understand what to look for or correct.
+                  </Text>
+
+                  <View style={styles.examplesContainer}>
+                    <Text style={styles.examplesTitle}>Examples:</Text>
+                    <Pressable
+                      style={styles.exampleChip}
+                      onPress={() => setReanalyzeReason('You missed 2 tools')}
+                    >
+                      <Text style={styles.exampleChipText}>You missed 2 tools</Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.exampleChip}
+                      onPress={() => setReanalyzeReason('That is not a hammer')}
+                    >
+                      <Text style={styles.exampleChipText}>That is not a hammer</Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.exampleChip}
+                      onPress={() => setReanalyzeReason('Be more specific with tool names')}
+                    >
+                      <Text style={styles.exampleChipText}>Be more specific with tool names</Text>
+                    </Pressable>
+                  </View>
+
+                  <TextInput
+                    ref={reanalyzeReasonRef}
+                    style={[styles.modalInput, { backgroundColor: colors.background, color: colors.text }]}
+                    placeholder="e.g., you missed 2 tools, that is not a hammer"
+                    placeholderTextColor={colors.textSecondary}
+                    value={reanalyzeReason}
+                    onChangeText={setReanalyzeReason}
+                    multiline
+                    numberOfLines={3}
+                    textAlignVertical="top"
+                    autoFocus={true}
+                  />
+
+                  <View style={styles.modalButtons}>
+                    <Pressable
+                      style={[styles.modalButton, styles.modalButtonCancel]}
+                      onPress={() => setShowReanalyzeModal(false)}
+                    >
+                      <Text style={styles.modalButtonTextCancel}>Cancel</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.modalButton, styles.modalButtonSubmit]}
+                      onPress={handleReanalyzeSubmit}
+                    >
+                      <IconSymbol name="arrow.clockwise" color="#FFFFFF" size={18} />
+                      <Text style={styles.modalButtonTextSubmit}>Re-Analyze</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
+      </Modal>
     </>
   );
 }
@@ -674,5 +821,108 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '700',
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 500,
+    borderRadius: 16,
+    padding: 24,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  modalCloseButton: {
+    padding: 4,
+  },
+  modalDescription: {
+    fontSize: 15,
+    color: colors.textSecondary,
+    marginBottom: 16,
+    lineHeight: 22,
+  },
+  examplesContainer: {
+    marginBottom: 16,
+  },
+  examplesTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: 8,
+  },
+  exampleChip: {
+    backgroundColor: `${colors.primary}15`,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  exampleChipText: {
+    fontSize: 14,
+    color: colors.primary,
+  },
+  modalInput: {
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    minHeight: 80,
+    borderWidth: 1,
+    borderColor: colors.background,
+    marginBottom: 20,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 10,
+    gap: 6,
+  },
+  modalButtonCancel: {
+    backgroundColor: colors.background,
+  },
+  modalButtonSubmit: {
+    backgroundColor: colors.primary,
+  },
+  modalButtonTextCancel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  modalButtonTextSubmit: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });
