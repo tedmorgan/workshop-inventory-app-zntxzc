@@ -11,6 +11,9 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
+  KeyboardAvoidingView,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -282,6 +285,9 @@ export default function AddToolsScreen() {
       return;
     }
 
+    // Dismiss keyboard before saving
+    Keyboard.dismiss();
+
     setSaving(true);
     addDebugLog('💾 Starting save process');
     
@@ -360,134 +366,151 @@ export default function AddToolsScreen() {
           headerBackTitle: 'Back',
         }}
       />
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {debugLog.length > 0 && (
-            <View style={styles.debugSection}>
-              <Text style={styles.debugTitle}>🔍 Debug Log</Text>
-              <ScrollView style={styles.debugLogContainer} nestedScrollEnabled>
-                {debugLog.map((log, index) => (
-                  <Text key={index} style={styles.debugLogText}>{log}</Text>
-                ))}
-              </ScrollView>
-            </View>
-          )}
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>1. Take a Photo</Text>
-            {imageUri ? (
-              <View style={styles.imageContainer}>
-                <Image source={{ uri: imageUri }} style={styles.image} />
-                <Pressable
-                  style={styles.changeImageButton}
-                  onPress={() => {
-                    setImageUri(null);
-                    setToolsList('');
-                  }}
-                >
-                  <IconSymbol name="xmark.circle.fill" color="#FFFFFF" size={24} />
-                </Pressable>
-              </View>
-            ) : (
-              <View style={styles.imagePlaceholder}>
-                <IconSymbol name="camera.fill" color={colors.textSecondary} size={48} />
-                <Text style={styles.placeholderText}>No photo taken yet</Text>
-                <View style={styles.buttonRow}>
-                  <Pressable style={styles.imageButton} onPress={pickImage}>
-                    <IconSymbol name="camera" color="#FFFFFF" size={20} />
-                    <Text style={styles.imageButtonText}>Camera</Text>
-                  </Pressable>
-                  <Pressable style={[styles.imageButton, styles.galleryButton]} onPress={pickFromGallery}>
-                    <IconSymbol name="photo" color="#FFFFFF" size={20} />
-                    <Text style={styles.imageButtonText}>Gallery</Text>
-                  </Pressable>
+      <KeyboardAvoidingView
+        style={[styles.container, { backgroundColor: colors.background }]}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.innerContainer}>
+            <ScrollView
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+            >
+              {debugLog.length > 0 && (
+                <View style={styles.debugSection}>
+                  <Text style={styles.debugTitle}>🔍 Debug Log</Text>
+                  <ScrollView style={styles.debugLogContainer} nestedScrollEnabled>
+                    {debugLog.map((log, index) => (
+                      <Text key={index} style={styles.debugLogText}>{log}</Text>
+                    ))}
+                  </ScrollView>
                 </View>
-              </View>
-            )}
-          </View>
-
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>2. List of Tools</Text>
-              {imageUri && !analyzing && (
-                <Pressable
-                  style={styles.reanalyzeButton}
-                  onPress={() => analyzeImage(imageUri)}
-                >
-                  <IconSymbol name="arrow.clockwise" color={colors.primary} size={18} />
-                  <Text style={styles.reanalyzeText}>Re-analyze</Text>
-                </Pressable>
               )}
-            </View>
-            {analyzing ? (
-              <View style={styles.analyzingContainer}>
-                <ActivityIndicator size="large" color={colors.primary} />
-                <Text style={styles.analyzingText}>🤖 Analyzing with Gemini AI...</Text>
-                <Text style={styles.analyzingSubtext}>This may take 10-60 seconds</Text>
+
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>1. Take a Photo</Text>
+                {imageUri ? (
+                  <View style={styles.imageContainer}>
+                    <Image source={{ uri: imageUri }} style={styles.image} />
+                    <Pressable
+                      style={styles.changeImageButton}
+                      onPress={() => {
+                        setImageUri(null);
+                        setToolsList('');
+                      }}
+                    >
+                      <IconSymbol name="xmark.circle.fill" color="#FFFFFF" size={24} />
+                    </Pressable>
+                  </View>
+                ) : (
+                  <View style={styles.imagePlaceholder}>
+                    <IconSymbol name="camera.fill" color={colors.textSecondary} size={48} />
+                    <Text style={styles.placeholderText}>No photo taken yet</Text>
+                    <View style={styles.buttonRow}>
+                      <Pressable style={styles.imageButton} onPress={pickImage}>
+                        <IconSymbol name="camera" color="#FFFFFF" size={20} />
+                        <Text style={styles.imageButtonText}>Camera</Text>
+                      </Pressable>
+                      <Pressable style={[styles.imageButton, styles.galleryButton]} onPress={pickFromGallery}>
+                        <IconSymbol name="photo" color="#FFFFFF" size={20} />
+                        <Text style={styles.imageButtonText}>Gallery</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                )}
               </View>
-            ) : (
-              <>
-                <View style={styles.aiInfoBadge}>
-                  <IconSymbol name="sparkles" color={colors.accent} size={16} />
-                  <Text style={styles.aiInfoText}>AI-powered by Google Gemini</Text>
+
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>2. List of Tools</Text>
+                  {imageUri && !analyzing && (
+                    <Pressable
+                      style={styles.reanalyzeButton}
+                      onPress={() => analyzeImage(imageUri)}
+                    >
+                      <IconSymbol name="arrow.clockwise" color={colors.primary} size={18} />
+                      <Text style={styles.reanalyzeText}>Re-analyze</Text>
+                    </Pressable>
+                  )}
                 </View>
-                <Text style={styles.helperText}>
-                  Enter each tool on a new line. AI will identify tools automatically when you take a photo.
-                </Text>
+                {analyzing ? (
+                  <View style={styles.analyzingContainer}>
+                    <ActivityIndicator size="large" color={colors.primary} />
+                    <Text style={styles.analyzingText}>🤖 Analyzing with Gemini AI...</Text>
+                    <Text style={styles.analyzingSubtext}>This may take 10-60 seconds</Text>
+                  </View>
+                ) : (
+                  <>
+                    <View style={styles.aiInfoBadge}>
+                      <IconSymbol name="sparkles" color={colors.accent} size={16} />
+                      <Text style={styles.aiInfoText}>AI-powered by Google Gemini</Text>
+                    </View>
+                    <Text style={styles.helperText}>
+                      Enter each tool on a new line. AI will identify tools automatically when you take a photo.
+                    </Text>
+                    <TextInput
+                      style={styles.textArea}
+                      placeholder="Example:&#10;Hammer&#10;Screwdriver set&#10;Wrench&#10;Pliers"
+                      placeholderTextColor={colors.textSecondary}
+                      multiline
+                      numberOfLines={8}
+                      value={toolsList}
+                      onChangeText={setToolsList}
+                      textAlignVertical="top"
+                    />
+                  </>
+                )}
+              </View>
+
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>3. Storage Information</Text>
+                <Text style={styles.label}>Bin Name/ID</Text>
                 <TextInput
-                  style={styles.textArea}
-                  placeholder="Example:&#10;Hammer&#10;Screwdriver set&#10;Wrench&#10;Pliers"
+                  style={styles.input}
+                  placeholder="e.g., Red Toolbox, Bin A3"
                   placeholderTextColor={colors.textSecondary}
-                  multiline
-                  numberOfLines={8}
-                  value={toolsList}
-                  onChangeText={setToolsList}
-                  textAlignVertical="top"
+                  value={binName}
+                  onChangeText={setBinName}
+                  returnKeyType="next"
+                  blurOnSubmit={false}
                 />
-              </>
-            )}
+
+                <Text style={styles.label}>Bin Location</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g., Top shelf, Garage wall"
+                  placeholderTextColor={colors.textSecondary}
+                  value={binLocation}
+                  onChangeText={setBinLocation}
+                  returnKeyType="done"
+                  onSubmitEditing={Keyboard.dismiss}
+                />
+              </View>
+
+              <Pressable
+                style={[styles.saveButton, (saving || analyzing) && styles.saveButtonDisabled]}
+                onPress={saveInventory}
+                disabled={saving || analyzing}
+              >
+                {saving ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <>
+                    <IconSymbol name="checkmark.circle.fill" color="#FFFFFF" size={24} />
+                    <Text style={styles.saveButtonText}>Save to Inventory</Text>
+                  </>
+                )}
+              </Pressable>
+
+              {/* Extra padding at bottom to ensure content is visible above keyboard */}
+              <View style={styles.bottomSpacer} />
+            </ScrollView>
           </View>
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>3. Storage Information</Text>
-            <Text style={styles.label}>Bin Name/ID</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g., Red Toolbox, Bin A3"
-              placeholderTextColor={colors.textSecondary}
-              value={binName}
-              onChangeText={setBinName}
-            />
-
-            <Text style={styles.label}>Bin Location</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g., Top shelf, Garage wall"
-              placeholderTextColor={colors.textSecondary}
-              value={binLocation}
-              onChangeText={setBinLocation}
-            />
-          </View>
-
-          <Pressable
-            style={[styles.saveButton, (saving || analyzing) && styles.saveButtonDisabled]}
-            onPress={saveInventory}
-            disabled={saving || analyzing}
-          >
-            {saving ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <>
-                <IconSymbol name="checkmark.circle.fill" color="#FFFFFF" size={24} />
-                <Text style={styles.saveButtonText}>Save to Inventory</Text>
-              </>
-            )}
-          </Pressable>
-        </ScrollView>
-      </View>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
     </>
   );
 }
@@ -496,10 +519,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  innerContainer: {
+    flex: 1,
+  },
   scrollContent: {
     paddingVertical: 20,
     paddingHorizontal: 16,
-    paddingBottom: 40,
+  },
+  bottomSpacer: {
+    height: 100,
   },
   debugSection: {
     backgroundColor: '#1a1a1a',

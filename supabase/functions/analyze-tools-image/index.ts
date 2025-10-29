@@ -124,7 +124,7 @@ Deno.serve(async (req: Request) => {
     // Prepare the request parts
     const parts = [
       {
-        text: 'Analyze this image and identify all tools visible. Return ONLY a JSON array of tool names, nothing else. Format: ["tool1", "tool2", "tool3"]. Be specific with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver").',
+        text: 'Analyze this image and identify all tools visible. Return ONLY a JSON array of tool names, nothing else. Format: ["tool1", "tool2", "tool3"]. Be specific with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver") make sure to capture every tool in the image.',
       },
       {
         inlineData: {
