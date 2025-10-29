@@ -87,22 +87,6 @@ export default function HomeScreen() {
               </View>
               <IconSymbol name="chevron.right" color={colors.textSecondary} size={20} />
             </Pressable>
-
-            <Pressable
-              style={[styles.actionCard, { backgroundColor: '#FFF3E0' }]}
-              onPress={() => router.push('/test-gemini')}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: '#FF9800' }]}>
-                <IconSymbol name="flask.fill" color="#FFFFFF" size={28} />
-              </View>
-              <View style={styles.actionContent}>
-                <Text style={styles.actionTitle}>Test Gemini API</Text>
-                <Text style={styles.actionDescription}>
-                  Run tests to verify AI integration is working
-                </Text>
-              </View>
-              <IconSymbol name="chevron.right" color={colors.textSecondary} size={20} />
-            </Pressable>
           </View>
 
           {/* Features */}
