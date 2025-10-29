@@ -11,11 +11,15 @@ if (!GEMINI_API_KEY) {
 console.log('🚀 Edge Function initialized - analyze-tools-image');
 
 Deno.serve(async (req: Request) => {
-  console.log('📥 Request received:', req.method, req.url);
+  const requestId = crypto.randomUUID().substring(0, 8);
+  console.log(`\n${'='.repeat(80)}`);
+  console.log(`[${requestId}] 📥 NEW REQUEST: ${req.method} ${req.url}`);
+  console.log(`[${requestId}] Timestamp: ${new Date().toISOString()}`);
+  console.log('='.repeat(80));
   
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
-    console.log('✅ Handling CORS preflight');
+    console.log(`[${requestId}] ✅ Handling CORS preflight`);
     return new Response(null, {
       status: 200,
       headers: {
@@ -28,7 +32,7 @@ Deno.serve(async (req: Request) => {
 
   // Only allow POST requests
   if (req.method !== 'POST') {
-    console.log('❌ Method not allowed:', req.method);
+    console.log(`[${requestId}] ❌ Method not allowed: ${req.method}`);
     return new Response(
       JSON.stringify({ error: 'Method not allowed. Use POST.' }),
       {
@@ -43,14 +47,15 @@ Deno.serve(async (req: Request) => {
 
   try {
     // Parse JSON body
-    console.log('📦 Parsing request body...');
+    console.log(`[${requestId}] 📦 Parsing request body...`);
     const body = await req.json();
-    console.log('✅ Body parsed, keys:', Object.keys(body));
+    console.log(`[${requestId}] ✅ Body parsed successfully`);
+    console.log(`[${requestId}] Body keys: ${Object.keys(body).join(', ')}`);
     
     const { imageBase64, previousResponse, userFeedback } = body;
 
     if (!imageBase64) {
-      console.error('❌ Missing imageBase64 field');
+      console.error(`[${requestId}] ❌ Missing imageBase64 field`);
       return new Response(
         JSON.stringify({
           error: 'Missing imageBase64 in request body',
@@ -67,28 +72,27 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    console.log('✅ imageBase64 received, length:', imageBase64.length);
+    console.log(`[${requestId}] ✅ imageBase64 received, length: ${imageBase64.length} chars`);
 
     // Check if this is a re-analysis request
     const isReanalysis = previousResponse && userFeedback;
+    console.log(`[${requestId}] Request type: ${isReanalysis ? '🔄 RE-ANALYSIS' : '🆕 INITIAL ANALYSIS'}`);
+    
     if (isReanalysis) {
-      console.log('🔄 Re-analysis request detected');
-      console.log('📝 Previous response:', JSON.stringify(previousResponse));
-      console.log('💬 User feedback:', userFeedback);
-    } else {
-      console.log('🆕 Initial analysis request');
+      console.log(`[${requestId}] 📋 Previous response provided: ${JSON.stringify(previousResponse)}`);
+      console.log(`[${requestId}] 💬 User feedback: "${userFeedback}"`);
     }
 
     // Remove data URL prefix if present
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
-    console.log('✅ Cleaned base64, length:', base64Data.length);
+    console.log(`[${requestId}] ✅ Cleaned base64 data, length: ${base64Data.length} chars`);
 
     // Validate size (20MB limit for Gemini API)
     const sizeInMB = (base64Data.length * 0.75) / (1024 * 1024);
     const maxSize = 20;
     
     if (sizeInMB > maxSize) {
-      console.error(`❌ Image too large: ${sizeInMB.toFixed(2)}MB`);
+      console.error(`[${requestId}] ❌ Image too large: ${sizeInMB.toFixed(2)}MB (max: ${maxSize}MB)`);
       return new Response(
         JSON.stringify({
           error: `Image too large. Maximum ${maxSize}MB.`,
@@ -104,10 +108,10 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    console.log(`📊 Image size: ${sizeInMB.toFixed(2)}MB`);
+    console.log(`[${requestId}] 📊 Image size: ${sizeInMB.toFixed(2)}MB (within limits)`);
 
     if (!GEMINI_API_KEY) {
-      console.error('❌ GEMINI_API_KEY not configured');
+      console.error(`[${requestId}] ❌ GEMINI_API_KEY not configured`);
       return new Response(
         JSON.stringify({
           error: 'Server configuration error: GEMINI_API_KEY not set',
@@ -123,13 +127,14 @@ Deno.serve(async (req: Request) => {
     }
 
     // Initialize Gemini AI with the new SDK
-    console.log('🤖 Initializing Gemini 2.5 API...');
+    console.log(`[${requestId}] 🤖 Initializing Gemini AI client...`);
     const ai = new GoogleGenAI({
       apiKey: GEMINI_API_KEY,
     });
 
     // Use Gemini 2.5 Flash model
     const model = 'gemini-2.5-flash';
+    console.log(`[${requestId}] 🎯 Using model: ${model}`);
     
     // Prepare the prompt based on whether this is a re-analysis
     let promptText: string;
@@ -162,54 +167,34 @@ Please re-analyze the image taking the user's feedback into account. Correct any
     ];
 
     // Log the complete Gemini API request payload
-    console.log('');
-    console.log('═══════════════════════════════════════════════════════════');
-    console.log('🚀 GEMINI API CALL PAYLOAD');
-    console.log('═══════════════════════════════════════════════════════════');
-    console.log('Model:', model);
-    console.log('Is Re-analysis:', isReanalysis);
-    console.log('');
-    console.log('📝 PROMPT TEXT:');
-    console.log('-----------------------------------------------------------');
+    console.log(`\n[${requestId}] ${'═'.repeat(70)}`);
+    console.log(`[${requestId}] 🚀 GEMINI API REQUEST DETAILS`);
+    console.log(`[${requestId}] ${'═'.repeat(70)}`);
+    console.log(`[${requestId}] Model: ${model}`);
+    console.log(`[${requestId}] Is Re-analysis: ${isReanalysis}`);
+    console.log(`[${requestId}] Image Size: ${sizeInMB.toFixed(2)}MB`);
+    console.log(`[${requestId}] Base64 Length: ${base64Data.length} chars`);
+    console.log(`[${requestId}] ${'─'.repeat(70)}`);
+    console.log(`[${requestId}] 📝 FULL PROMPT TEXT:`);
+    console.log(`[${requestId}] ${'─'.repeat(70)}`);
     console.log(promptText);
-    console.log('-----------------------------------------------------------');
-    console.log('');
-    console.log('📊 REQUEST STRUCTURE:');
-    console.log('- Number of parts:', parts.length);
-    console.log('- Part 1 (text):', parts[0].text.substring(0, 100) + '...');
-    console.log('- Part 2 (image): base64 data, length:', base64Data.length, 'chars');
-    console.log('- Image size:', sizeInMB.toFixed(2), 'MB');
-    console.log('');
+    console.log(`[${requestId}] ${'─'.repeat(70)}`);
+    
     if (isReanalysis) {
-      console.log('🔄 RE-ANALYSIS CONTEXT:');
-      console.log('- Previous Response:', JSON.stringify(previousResponse));
-      console.log('- User Feedback:', userFeedback);
-      console.log('');
+      console.log(`[${requestId}] 🔄 RE-ANALYSIS CONTEXT:`);
+      console.log(`[${requestId}]   - Previous Response: ${JSON.stringify(previousResponse)}`);
+      console.log(`[${requestId}]   - User Feedback: "${userFeedback}"`);
+      console.log(`[${requestId}] ${'─'.repeat(70)}`);
     }
-    console.log('📤 Full API Request Object:');
-    console.log(JSON.stringify({
-      model,
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              text: promptText,
-            },
-            {
-              inlineData: {
-                data: '[BASE64_IMAGE_DATA_' + base64Data.length + '_CHARS]',
-                mimeType: 'image/jpeg',
-              },
-            },
-          ],
-        },
-      ],
-    }, null, 2));
-    console.log('═══════════════════════════════════════════════════════════');
-    console.log('');
+    
+    console.log(`[${requestId}] 📦 REQUEST STRUCTURE:`);
+    console.log(`[${requestId}]   - Number of parts: ${parts.length}`);
+    console.log(`[${requestId}]   - Part 1 (text): ${parts[0].text.substring(0, 100)}...`);
+    console.log(`[${requestId}]   - Part 2 (image): [BASE64_IMAGE_DATA_${base64Data.length}_CHARS]`);
+    console.log(`[${requestId}] ${'═'.repeat(70)}\n`);
 
-    console.log('📤 Sending request to Gemini 2.5...');
+    console.log(`[${requestId}] 📤 Sending request to Gemini API...`);
+    const startTime = Date.now();
     
     // Call Gemini API using the new SDK
     const response = await ai.models.generateContent({
@@ -222,22 +207,26 @@ Please re-analyze the image taking the user's feedback into account. Correct any
       ],
     });
 
-    console.log('✅ Gemini 2.5 response received');
-    console.log('');
-    console.log('═══════════════════════════════════════════════════════════');
-    console.log('📥 GEMINI API RESPONSE');
-    console.log('═══════════════════════════════════════════════════════════');
-    console.log('Full response structure:', JSON.stringify(response, null, 2));
-    console.log('═══════════════════════════════════════════════════════════');
-    console.log('');
+    const endTime = Date.now();
+    const duration = endTime - startTime;
+    console.log(`[${requestId}] ✅ Gemini API response received in ${duration}ms`);
+
+    console.log(`\n[${requestId}] ${'═'.repeat(70)}`);
+    console.log(`[${requestId}] 📥 GEMINI API RESPONSE`);
+    console.log(`[${requestId}] ${'═'.repeat(70)}`);
+    console.log(`[${requestId}] Response time: ${duration}ms`);
+    console.log(`[${requestId}] ${'─'.repeat(70)}`);
+    console.log(`[${requestId}] Full response structure:`);
+    console.log(JSON.stringify(response, null, 2));
+    console.log(`[${requestId}] ${'═'.repeat(70)}\n`);
 
     // Extract the text response
     const candidate = response.candidates?.[0];
     const textResponse = candidate?.content?.parts?.[0]?.text;
 
     if (!textResponse) {
-      console.error('❌ No text response from Gemini');
-      console.error('Full response:', JSON.stringify(response, null, 2));
+      console.error(`[${requestId}] ❌ No text response from Gemini`);
+      console.error(`[${requestId}] Full response: ${JSON.stringify(response, null, 2)}`);
       return new Response(
         JSON.stringify({
           error: 'No response from Gemini',
@@ -253,7 +242,8 @@ Please re-analyze the image taking the user's feedback into account. Correct any
       );
     }
 
-    console.log('📝 Text response:', textResponse);
+    console.log(`[${requestId}] 📝 Text response from Gemini:`);
+    console.log(`[${requestId}] ${textResponse}`);
 
     // Parse the JSON array from the response
     let tools: string[] = [];
@@ -262,9 +252,9 @@ Please re-analyze the image taking the user's feedback into account. Correct any
       const jsonMatch = textResponse.match(/\[.*\]/s);
       if (jsonMatch) {
         tools = JSON.parse(jsonMatch[0]);
-        console.log('✅ Parsed JSON array:', tools);
+        console.log(`[${requestId}] ✅ Successfully parsed JSON array: ${JSON.stringify(tools)}`);
       } else {
-        console.log('⚠️ No JSON array found, using fallback parsing');
+        console.log(`[${requestId}] ⚠️ No JSON array found in response, using fallback parsing`);
         // Fallback: split by newlines and clean up
         tools = textResponse
           .split('\n')
@@ -277,34 +267,43 @@ Please re-analyze the image taking the user's feedback into account. Correct any
               .trim()
           )
           .filter((line: string) => line.length > 0);
-        console.log('✅ Fallback parsed tools:', tools);
+        console.log(`[${requestId}] ✅ Fallback parsed tools: ${JSON.stringify(tools)}`);
       }
     } catch (parseError) {
-      console.error('❌ Error parsing tools:', parseError);
+      console.error(`[${requestId}] ❌ Error parsing tools: ${parseError}`);
       // Last resort: split by common delimiters
       tools = textResponse
         .split(/[\n,]/)
         .map((item: string) => item.trim())
         .filter((item: string) => item.length > 0);
-      console.log('✅ Last resort parsed tools:', tools);
+      console.log(`[${requestId}] ✅ Last resort parsed tools: ${JSON.stringify(tools)}`);
     }
 
-    console.log('🎉 Returning', tools.length, 'tools');
+    console.log(`[${requestId}] 🎉 Successfully extracted ${tools.length} tools`);
+    console.log(`[${requestId}] Tools: ${JSON.stringify(tools)}`);
+
+    const responsePayload = {
+      success: true,
+      tools,
+      rawResponse: textResponse,
+      isReanalysis: isReanalysis,
+      metadata: {
+        requestId,
+        toolCount: tools.length,
+        imageSizeMB: sizeInMB.toFixed(2),
+        model: model,
+        hadPreviousResponse: !!previousResponse,
+        hadUserFeedback: !!userFeedback,
+        processingTimeMs: duration,
+      },
+    };
+
+    console.log(`[${requestId}] 📤 Sending response to client:`);
+    console.log(`[${requestId}] ${JSON.stringify(responsePayload, null, 2)}`);
+    console.log(`[${requestId}] ${'='.repeat(80)}\n`);
 
     return new Response(
-      JSON.stringify({
-        success: true,
-        tools,
-        rawResponse: textResponse,
-        isReanalysis: isReanalysis,
-        metadata: {
-          toolCount: tools.length,
-          imageSizeMB: sizeInMB.toFixed(2),
-          model: model,
-          hadPreviousResponse: !!previousResponse,
-          hadUserFeedback: !!userFeedback,
-        },
-      }),
+      JSON.stringify(responsePayload),
       {
         status: 200,
         headers: {
@@ -314,13 +313,18 @@ Please re-analyze the image taking the user's feedback into account. Correct any
       }
     );
   } catch (error) {
-    console.error('❌ Unexpected error:', error);
+    console.error(`[${requestId}] ❌ UNEXPECTED ERROR:`);
+    console.error(`[${requestId}] Error type: ${error?.constructor?.name}`);
+    console.error(`[${requestId}] Error message: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error(`[${requestId}] Error stack: ${error instanceof Error ? error.stack : 'No stack trace'}`);
+    console.error(`[${requestId}] Full error object: ${JSON.stringify(error, null, 2)}`);
     
     return new Response(
       JSON.stringify({
         error: 'Internal server error',
         message: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined,
+        requestId,
       }),
       {
         status: 500,
