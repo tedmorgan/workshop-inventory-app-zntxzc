@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -32,6 +32,9 @@ export default function AddToolsScreen() {
   const [analyzing, setAnalyzing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [debugLog, setDebugLog] = useState<string[]>([]);
+
+  // Refs for TextInputs to enable keyboard navigation
+  const binLocationRef = useRef<TextInput>(null);
 
   const addDebugLog = (message: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -476,10 +479,14 @@ export default function AddToolsScreen() {
                   onChangeText={setBinName}
                   returnKeyType="next"
                   blurOnSubmit={false}
+                  onSubmitEditing={() => {
+                    binLocationRef.current?.focus();
+                  }}
                 />
 
                 <Text style={styles.label}>Bin Location</Text>
                 <TextInput
+                  ref={binLocationRef}
                   style={styles.input}
                   placeholder="e.g., Top shelf, Garage wall"
                   placeholderTextColor={colors.textSecondary}
