@@ -105,7 +105,7 @@ export default function AddToolsScreen() {
     }
   };
 
-  const analyzeImage = async (uri: string | null, userFeedback?: string) => {
+  const analyzeImage = async (uri: string | null, userFeedback?: string, previousTools?: string[]) => {
     if (!uri) {
       console.log('❌ No image URI provided');
       Alert.alert('Error', 'No image selected');
@@ -118,11 +118,16 @@ export default function AddToolsScreen() {
       return;
     }
 
-    console.log(`🤖 Starting image analysis${userFeedback ? ' with user feedback' : ''}`);
+    console.log('🤖 Starting image analysis');
+    console.log(`📊 Has userFeedback: ${!!userFeedback}`);
+    console.log(`📊 Has previousTools: ${!!previousTools}`);
+    console.log(`📊 previousTools length: ${previousTools?.length || 0}`);
+    
     if (userFeedback) {
       console.log(`💬 User feedback: "${userFeedback}"`);
-      console.log(`📝 Previous response: ${JSON.stringify(previousResponse)}`);
+      console.log(`📝 Previous tools: ${JSON.stringify(previousTools)}`);
     }
+    
     setAnalyzing(true);
     
     try {
@@ -163,13 +168,17 @@ export default function AddToolsScreen() {
       };
 
       // Add context for re-analysis
-      if (userFeedback && previousResponse.length > 0) {
-        requestBody.previousResponse = previousResponse;
+      if (userFeedback && previousTools && previousTools.length > 0) {
+        requestBody.previousResponse = previousTools;
         requestBody.userFeedback = userFeedback;
+        console.log('🔄 RE-ANALYSIS MODE ACTIVATED');
         console.log('📝 Including previous response and user feedback in API call');
         console.log('📦 Request body keys:', Object.keys(requestBody));
         console.log('📦 Previous response length:', requestBody.previousResponse.length);
+        console.log('📦 Previous response:', JSON.stringify(requestBody.previousResponse));
         console.log('📦 User feedback:', requestBody.userFeedback);
+      } else {
+        console.log('🆕 INITIAL ANALYSIS MODE');
       }
 
       // Call with timeout
@@ -179,9 +188,12 @@ export default function AddToolsScreen() {
       try {
         console.log('🚀 Invoking Edge Function with body:', {
           hasImageBase64: !!requestBody.imageBase64,
+          imageBase64Length: requestBody.imageBase64.length,
           hasPreviousResponse: !!requestBody.previousResponse,
           hasUserFeedback: !!requestBody.userFeedback,
           previousResponseCount: requestBody.previousResponse?.length || 0,
+          previousResponseData: requestBody.previousResponse,
+          userFeedbackData: requestBody.userFeedback,
         });
 
         const { data, error } = await supabase.functions.invoke('analyze-tools-image', {
@@ -196,7 +208,7 @@ export default function AddToolsScreen() {
         }
 
         console.log(`✅ Response received`);
-        console.log('Full response data:', data);
+        console.log('Full response data:', JSON.stringify(data, null, 2));
 
         if (data.error) {
           console.log(`❌ API error: ${data.error}`);
@@ -205,9 +217,11 @@ export default function AddToolsScreen() {
 
         if (data.tools && Array.isArray(data.tools) && data.tools.length > 0) {
           console.log(`✅ Found ${data.tools.length} tools`);
+          console.log(`📝 Tools: ${JSON.stringify(data.tools)}`);
           
           // Store the response for potential re-analysis
           setPreviousResponse(data.tools);
+          console.log('💾 Stored tools in previousResponse state');
           
           const toolsText = data.tools.join('\n');
           setToolsList(toolsText);
@@ -258,13 +272,19 @@ export default function AddToolsScreen() {
       return;
     }
     
+    console.log('🔄 Re-analyze button pressed');
+    console.log(`📊 Current previousResponse state: ${JSON.stringify(previousResponse)}`);
+    console.log(`📊 previousResponse length: ${previousResponse.length}`);
+    
     if (previousResponse.length === 0) {
+      console.log('⚠️ No previous response, doing fresh analysis');
       // If no previous response, just re-analyze without feedback
       analyzeImage(imageUri);
       return;
     }
     
     // Show modal to get user feedback
+    console.log('✅ Opening re-analyze modal');
     setShowReanalyzeModal(true);
     setReanalyzeReason('');
   };
@@ -277,9 +297,25 @@ export default function AddToolsScreen() {
     
     console.log('🔄 User submitted re-analysis request');
     console.log('💬 Reason:', reanalyzeReason.trim());
+    console.log('📝 Current previousResponse state:', JSON.stringify(previousResponse));
+    console.log('📊 previousResponse length:', previousResponse.length);
+    
+    if (previousResponse.length === 0) {
+      console.error('❌ ERROR: previousResponse is empty when it should have data!');
+      Alert.alert('Error', 'Previous analysis data is missing. Please try analyzing the image again.');
+      setShowReanalyzeModal(false);
+      return;
+    }
     
     setShowReanalyzeModal(false);
-    analyzeImage(imageUri, reanalyzeReason.trim());
+    
+    // CRITICAL FIX: Pass previousResponse explicitly as the third parameter
+    console.log('🚀 Calling analyzeImage with:');
+    console.log('  - imageUri:', imageUri);
+    console.log('  - userFeedback:', reanalyzeReason.trim());
+    console.log('  - previousTools:', JSON.stringify(previousResponse));
+    
+    analyzeImage(imageUri, reanalyzeReason.trim(), previousResponse);
   };
 
   const uploadImageToSupabase = async (uri: string): Promise<string> => {
