@@ -220,7 +220,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   scrollContentWithTabBar: {
-    paddingBottom: 100,
+    paddingBottom: 140,
   },
   headerContainer: {
     flexDirection: 'row',
