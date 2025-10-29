@@ -18,7 +18,7 @@ import {
   Keyboard,
   ActivityIndicator,
 } from "react-native";
-import { Stack, useRouter, useFocusEffect } from "expo-router";
+import { Stack, useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { IconSymbol } from "@/components/IconSymbol";
 import { colors } from "@/styles/commonStyles";
 import { supabase } from "@integrations/supabase/client";
@@ -35,6 +35,7 @@ type ToolInventoryItem = {
 export default function InventoryScreen() {
   const theme = useTheme();
   const router = useRouter();
+  const params = useLocalSearchParams();
   const [inventory, setInventory] = useState<ToolInventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -52,6 +53,19 @@ export default function InventoryScreen() {
       loadInventory();
     }, [])
   );
+
+  // Check if we need to open a specific bin for editing
+  useEffect(() => {
+    if (params.editBinId && inventory.length > 0) {
+      console.log('Opening edit modal for bin ID:', params.editBinId);
+      const binToEdit = inventory.find(item => item.id === params.editBinId);
+      if (binToEdit) {
+        openEditModal(binToEdit);
+        // Clear the parameter after opening the modal
+        router.setParams({ editBinId: undefined });
+      }
+    }
+  }, [params.editBinId, inventory]);
 
   const loadInventory = async () => {
     try {

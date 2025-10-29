@@ -88,10 +88,14 @@ export default function FindToolScreen() {
 
   const openViewInventory = () => {
     if (selectedBin) {
-      // Close the modal and navigate to inventory screen
+      console.log('Navigating to inventory with bin ID:', selectedBin.id);
+      // Close the modal and navigate to inventory screen with the bin ID
       setSelectedBin(null);
-      // Navigate to inventory tab which will show all items including the selected one
-      router.push('/(tabs)/inventory');
+      // Pass the bin ID as a parameter to open it directly in edit mode
+      router.push({
+        pathname: '/(tabs)/inventory',
+        params: { editBinId: selectedBin.id }
+      });
     }
   };
 
