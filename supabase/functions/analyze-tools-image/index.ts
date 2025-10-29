@@ -73,8 +73,10 @@ Deno.serve(async (req: Request) => {
     const isReanalysis = previousResponse && userFeedback;
     if (isReanalysis) {
       console.log('🔄 Re-analysis request detected');
-      console.log('📝 Previous response:', previousResponse);
+      console.log('📝 Previous response:', JSON.stringify(previousResponse));
       console.log('💬 User feedback:', userFeedback);
+    } else {
+      console.log('🆕 Initial analysis request');
     }
 
     // Remove data URL prefix if present
@@ -159,8 +161,55 @@ Please re-analyze the image taking the user's feedback into account. Correct any
       },
     ];
 
+    // Log the complete Gemini API request payload
+    console.log('');
+    console.log('═══════════════════════════════════════════════════════════');
+    console.log('🚀 GEMINI API CALL PAYLOAD');
+    console.log('═══════════════════════════════════════════════════════════');
+    console.log('Model:', model);
+    console.log('Is Re-analysis:', isReanalysis);
+    console.log('');
+    console.log('📝 PROMPT TEXT:');
+    console.log('-----------------------------------------------------------');
+    console.log(promptText);
+    console.log('-----------------------------------------------------------');
+    console.log('');
+    console.log('📊 REQUEST STRUCTURE:');
+    console.log('- Number of parts:', parts.length);
+    console.log('- Part 1 (text):', parts[0].text.substring(0, 100) + '...');
+    console.log('- Part 2 (image): base64 data, length:', base64Data.length, 'chars');
+    console.log('- Image size:', sizeInMB.toFixed(2), 'MB');
+    console.log('');
+    if (isReanalysis) {
+      console.log('🔄 RE-ANALYSIS CONTEXT:');
+      console.log('- Previous Response:', JSON.stringify(previousResponse));
+      console.log('- User Feedback:', userFeedback);
+      console.log('');
+    }
+    console.log('📤 Full API Request Object:');
+    console.log(JSON.stringify({
+      model,
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              text: promptText,
+            },
+            {
+              inlineData: {
+                data: '[BASE64_IMAGE_DATA_' + base64Data.length + '_CHARS]',
+                mimeType: 'image/jpeg',
+              },
+            },
+          ],
+        },
+      ],
+    }, null, 2));
+    console.log('═══════════════════════════════════════════════════════════');
+    console.log('');
+
     console.log('📤 Sending request to Gemini 2.5...');
-    console.log('📝 Prompt:', promptText.substring(0, 200) + '...');
     
     // Call Gemini API using the new SDK
     const response = await ai.models.generateContent({
@@ -174,7 +223,13 @@ Please re-analyze the image taking the user's feedback into account. Correct any
     });
 
     console.log('✅ Gemini 2.5 response received');
-    console.log('📝 Response structure:', JSON.stringify(response, null, 2));
+    console.log('');
+    console.log('═══════════════════════════════════════════════════════════');
+    console.log('📥 GEMINI API RESPONSE');
+    console.log('═══════════════════════════════════════════════════════════');
+    console.log('Full response structure:', JSON.stringify(response, null, 2));
+    console.log('═══════════════════════════════════════════════════════════');
+    console.log('');
 
     // Extract the text response
     const candidate = response.candidates?.[0];
