@@ -31,34 +31,22 @@ export default function AddToolsScreen() {
   const [binLocation, setBinLocation] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [debugLog, setDebugLog] = useState<string[]>([]);
 
   // Refs for TextInputs to enable keyboard navigation
   const binLocationRef = useRef<TextInput>(null);
 
-  const addDebugLog = (message: string) => {
-    const timestamp = new Date().toLocaleTimeString();
-    const logMessage = `[${timestamp}] ${message}`;
-    console.log(logMessage);
-    setDebugLog(prev => [...prev, logMessage].slice(-10));
-  };
-
-  useEffect(() => {
-    addDebugLog('🚀 AddToolsScreen mounted');
-  }, []);
-
   const pickImage = async () => {
     try {
-      addDebugLog('📸 Requesting camera permissions');
+      console.log('📸 Requesting camera permissions');
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       
       if (status !== 'granted') {
-        addDebugLog('❌ Camera permission denied');
+        console.log('❌ Camera permission denied');
         Alert.alert('Permission Required', 'Camera permission is needed to take photos');
         return;
       }
 
-      addDebugLog('✅ Launching camera');
+      console.log('✅ Launching camera');
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: 'images',
         allowsEditing: true,
@@ -67,29 +55,28 @@ export default function AddToolsScreen() {
 
       if (!result.canceled && result.assets[0]) {
         const uri = result.assets[0].uri;
-        addDebugLog(`✅ Image captured: ${uri.substring(0, 50)}...`);
+        console.log(`✅ Image captured: ${uri.substring(0, 50)}...`);
         setImageUri(uri);
         analyzeImage(uri);
       }
     } catch (error) {
-      addDebugLog(`❌ Error in pickImage: ${error}`);
-      console.error('Error picking image:', error);
+      console.error(`❌ Error in pickImage: ${error}`);
       Alert.alert('Error', 'Failed to take photo');
     }
   };
 
   const pickFromGallery = async () => {
     try {
-      addDebugLog('🖼️ Requesting gallery permissions');
+      console.log('🖼️ Requesting gallery permissions');
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       
       if (status !== 'granted') {
-        addDebugLog('❌ Gallery permission denied');
+        console.log('❌ Gallery permission denied');
         Alert.alert('Permission Required', 'Photo library permission is needed');
         return;
       }
 
-      addDebugLog('✅ Launching gallery');
+      console.log('✅ Launching gallery');
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: 'images',
         allowsEditing: true,
@@ -98,58 +85,57 @@ export default function AddToolsScreen() {
 
       if (!result.canceled && result.assets[0]) {
         const uri = result.assets[0].uri;
-        addDebugLog(`✅ Image selected: ${uri.substring(0, 50)}...`);
+        console.log(`✅ Image selected: ${uri.substring(0, 50)}...`);
         setImageUri(uri);
         analyzeImage(uri);
       }
     } catch (error) {
-      addDebugLog(`❌ Error in pickFromGallery: ${error}`);
-      console.error('Error picking from gallery:', error);
+      console.error(`❌ Error in pickFromGallery: ${error}`);
       Alert.alert('Error', 'Failed to select photo');
     }
   };
 
   const analyzeImage = async (uri: string | null) => {
     if (!uri) {
-      addDebugLog('❌ No image URI provided');
+      console.log('❌ No image URI provided');
       Alert.alert('Error', 'No image selected');
       return;
     }
 
     if (Platform.OS === 'web') {
-      addDebugLog('⚠️ Image analysis not supported on web');
+      console.log('⚠️ Image analysis not supported on web');
       Alert.alert('Not Supported', 'Image analysis is not supported on web. Please enter tools manually.');
       return;
     }
 
-    addDebugLog(`🤖 Starting image analysis`);
+    console.log(`🤖 Starting image analysis`);
     setAnalyzing(true);
     setToolsList('');
     
     try {
-      addDebugLog('📁 Checking file exists');
+      console.log('📁 Checking file exists');
       const fileInfo = await FileSystem.getInfoAsync(uri);
       
       if (!fileInfo.exists) {
         throw new Error('Image file does not exist');
       }
 
-      addDebugLog('🔄 Converting to base64');
+      console.log('🔄 Converting to base64');
       const base64 = await FileSystem.readAsStringAsync(uri, {
         encoding: FileSystem.EncodingType.Base64,
       });
 
-      addDebugLog(`✅ Base64 ready (${base64.length} chars)`);
+      console.log(`✅ Base64 ready (${base64.length} chars)`);
 
       // Validate size (20MB limit to match Gemini API)
       const sizeInMB = (base64.length * 0.75) / (1024 * 1024);
       if (sizeInMB > 20) {
-        addDebugLog(`❌ Image too large: ${sizeInMB.toFixed(2)}MB`);
+        console.log(`❌ Image too large: ${sizeInMB.toFixed(2)}MB`);
         throw new Error(`Image is too large (${sizeInMB.toFixed(1)}MB). Maximum is 20MB. Please use a smaller image.`);
       }
 
-      addDebugLog(`📊 Image size: ${sizeInMB.toFixed(2)}MB`);
-      addDebugLog('🌐 Calling Edge Function');
+      console.log(`📊 Image size: ${sizeInMB.toFixed(2)}MB`);
+      console.log('🌐 Calling Edge Function');
 
       // Call with timeout
       const controller = new AbortController();
@@ -163,20 +149,20 @@ export default function AddToolsScreen() {
         clearTimeout(timeoutId);
 
         if (error) {
-          addDebugLog(`❌ Edge Function error: ${JSON.stringify(error)}`);
+          console.log(`❌ Edge Function error: ${JSON.stringify(error)}`);
           throw new Error(`API Error: ${error.message || 'Unknown error'}`);
         }
 
-        addDebugLog(`✅ Response received`);
+        console.log(`✅ Response received`);
         console.log('Full response data:', data);
 
         if (data.error) {
-          addDebugLog(`❌ API error: ${data.error}`);
+          console.log(`❌ API error: ${data.error}`);
           throw new Error(data.error);
         }
 
         if (data.tools && Array.isArray(data.tools) && data.tools.length > 0) {
-          addDebugLog(`✅ Found ${data.tools.length} tools`);
+          console.log(`✅ Found ${data.tools.length} tools`);
           const toolsText = data.tools.join('\n');
           setToolsList(toolsText);
           
@@ -185,7 +171,7 @@ export default function AddToolsScreen() {
             `Gemini identified ${data.tools.length} tool${data.tools.length === 1 ? '' : 's'}. You can edit the list if needed.`
           );
         } else {
-          addDebugLog('⚠️ No tools found');
+          console.log('⚠️ No tools found');
           Alert.alert(
             'No Tools Found',
             'Gemini couldn\'t identify any tools. Please enter them manually.'
@@ -199,8 +185,7 @@ export default function AddToolsScreen() {
       }
       
     } catch (error) {
-      addDebugLog(`❌ Analysis error: ${error}`);
-      console.error('Error analyzing image:', error);
+      console.error(`❌ Analysis error: ${error}`);
       
       let errorMessage = 'Failed to analyze image. ';
       if (error instanceof Error) {
@@ -215,29 +200,29 @@ export default function AddToolsScreen() {
         [{ text: 'OK' }]
       );
     } finally {
-      addDebugLog('🏁 Analysis complete');
+      console.log('🏁 Analysis complete');
       setAnalyzing(false);
     }
   };
 
   const uploadImageToSupabase = async (uri: string): Promise<string> => {
     try {
-      addDebugLog('☁️ Starting image upload to Supabase');
+      console.log('☁️ Starting image upload to Supabase');
       
       // Read the file as base64
       const base64 = await FileSystem.readAsStringAsync(uri, {
         encoding: FileSystem.EncodingType.Base64,
       });
 
-      addDebugLog(`📦 Base64 size: ${(base64.length * 0.75 / 1024).toFixed(2)} KB`);
+      console.log(`📦 Base64 size: ${(base64.length * 0.75 / 1024).toFixed(2)} KB`);
 
       // Convert base64 to ArrayBuffer using decode
       const arrayBuffer = decode(base64);
 
-      addDebugLog(`📦 ArrayBuffer size: ${(arrayBuffer.byteLength / 1024).toFixed(2)} KB`);
+      console.log(`📦 ArrayBuffer size: ${(arrayBuffer.byteLength / 1024).toFixed(2)} KB`);
 
       const fileName = `tool-${Date.now()}.jpg`;
-      addDebugLog(`📝 Uploading as: ${fileName}`);
+      console.log(`📝 Uploading as: ${fileName}`);
 
       const { data, error } = await supabase.storage
         .from('tool-images')
@@ -247,22 +232,21 @@ export default function AddToolsScreen() {
         });
 
       if (error) {
-        addDebugLog(`❌ Upload error: ${error.message}`);
+        console.log(`❌ Upload error: ${error.message}`);
         console.error('Storage upload error:', error);
         throw new Error(`Failed to upload image: ${error.message}`);
       }
 
-      addDebugLog(`✅ Upload successful: ${data.path}`);
+      console.log(`✅ Upload successful: ${data.path}`);
 
       const { data: urlData } = supabase.storage
         .from('tool-images')
         .getPublicUrl(fileName);
 
-      addDebugLog(`✅ Public URL: ${urlData.publicUrl}`);
+      console.log(`✅ Public URL: ${urlData.publicUrl}`);
       return urlData.publicUrl;
     } catch (error) {
-      addDebugLog(`❌ Upload failed: ${error}`);
-      console.error('Error uploading image:', error);
+      console.error(`❌ Upload failed: ${error}`);
       throw error;
     }
   };
@@ -292,18 +276,18 @@ export default function AddToolsScreen() {
     Keyboard.dismiss();
 
     setSaving(true);
-    addDebugLog('💾 Starting save process');
+    console.log('💾 Starting save process');
     
     try {
       // Step 1: Upload image
-      addDebugLog('📤 Step 1: Uploading image');
+      console.log('📤 Step 1: Uploading image');
       const imageUrl = await uploadImageToSupabase(imageUri);
       
       if (!imageUrl) {
         throw new Error('Image upload returned empty URL');
       }
 
-      addDebugLog(`✅ Image uploaded: ${imageUrl.substring(0, 50)}...`);
+      console.log(`✅ Image uploaded: ${imageUrl.substring(0, 50)}...`);
 
       // Step 2: Prepare tools array
       const tools = toolsList
@@ -311,10 +295,10 @@ export default function AddToolsScreen() {
         .map(t => t.trim())
         .filter(t => t.length > 0);
 
-      addDebugLog(`📝 Prepared ${tools.length} tools`);
+      console.log(`📝 Prepared ${tools.length} tools`);
 
       // Step 3: Insert into database
-      addDebugLog('💾 Step 2: Inserting into database');
+      console.log('💾 Step 2: Inserting into database');
       const insertData = {
         image_url: imageUrl,
         tools: tools,
@@ -330,12 +314,12 @@ export default function AddToolsScreen() {
         .select();
 
       if (error) {
-        addDebugLog(`❌ Database error: ${error.message}`);
+        console.log(`❌ Database error: ${error.message}`);
         console.error('Database insert error:', error);
         throw new Error(`Database error: ${error.message}`);
       }
 
-      addDebugLog('✅ Saved successfully to database');
+      console.log('✅ Saved successfully to database');
       console.log('Inserted data:', data);
 
       Alert.alert(
@@ -344,8 +328,7 @@ export default function AddToolsScreen() {
         [{ text: 'OK', onPress: () => router.back() }]
       );
     } catch (error) {
-      addDebugLog(`❌ Save failed: ${error}`);
-      console.error('Error saving inventory:', error);
+      console.error(`❌ Save failed: ${error}`);
       
       let errorMessage = 'Failed to save inventory. ';
       if (error instanceof Error) {
@@ -357,7 +340,7 @@ export default function AddToolsScreen() {
       Alert.alert('Error', errorMessage);
     } finally {
       setSaving(false);
-      addDebugLog('🏁 Save process complete');
+      console.log('🏁 Save process complete');
     }
   };
 
@@ -382,17 +365,6 @@ export default function AddToolsScreen() {
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
             >
-              {debugLog.length > 0 && (
-                <View style={styles.debugSection}>
-                  <Text style={styles.debugTitle}>🔍 Debug Log</Text>
-                  <ScrollView style={styles.debugLogContainer} nestedScrollEnabled>
-                    {debugLog.map((log, index) => (
-                      <Text key={index} style={styles.debugLogText}>{log}</Text>
-                    ))}
-                  </ScrollView>
-                </View>
-              )}
-
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>1. Take a Photo</Text>
                 {imageUri ? (
@@ -535,27 +507,6 @@ const styles = StyleSheet.create({
   },
   bottomSpacer: {
     height: 100,
-  },
-  debugSection: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-  },
-  debugTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#00ff00',
-    marginBottom: 8,
-  },
-  debugLogContainer: {
-    maxHeight: 200,
-  },
-  debugLogText: {
-    fontSize: 11,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    color: '#00ff00',
-    marginBottom: 2,
   },
   section: {
     marginBottom: 24,
