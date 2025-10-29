@@ -125,10 +125,7 @@ export default function InventoryScreen() {
       )}
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <ScrollView
-          contentContainerStyle={[
-            styles.scrollContent,
-            Platform.OS !== 'ios' && styles.scrollContentWithTabBar
-          ]}
+          contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -218,9 +215,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingVertical: 20,
     paddingHorizontal: 16,
-  },
-  scrollContentWithTabBar: {
-    paddingBottom: 140,
+    paddingBottom: 160,
   },
   headerContainer: {
     flexDirection: 'row',
