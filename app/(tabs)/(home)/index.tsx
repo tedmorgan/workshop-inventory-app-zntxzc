@@ -74,9 +74,25 @@ export default function HomeScreen() {
 
             <Pressable
               style={styles.actionCard}
-              onPress={() => router.push('/(tabs)/inventory')}
+              onPress={() => router.push('/find-tool')}
             >
               <View style={[styles.actionIcon, { backgroundColor: colors.accent }]}>
+                <IconSymbol name="magnifyingglass" color="#FFFFFF" size={28} />
+              </View>
+              <View style={styles.actionContent}>
+                <Text style={styles.actionTitle}>Find Tool</Text>
+                <Text style={styles.actionDescription}>
+                  Search for a tool and see which bin it&apos;s in
+                </Text>
+              </View>
+              <IconSymbol name="chevron.right" color={colors.textSecondary} size={20} />
+            </Pressable>
+
+            <Pressable
+              style={styles.actionCard}
+              onPress={() => router.push('/(tabs)/inventory')}
+            >
+              <View style={[styles.actionIcon, { backgroundColor: colors.secondary }]}>
                 <IconSymbol name="list.bullet" color="#FFFFFF" size={28} />
               </View>
               <View style={styles.actionContent}>
@@ -99,6 +115,16 @@ export default function HomeScreen() {
                 <Text style={styles.featureTitle}>AI-Powered Recognition</Text>
                 <Text style={styles.featureDescription}>
                   Automatically identify tools from photos using advanced AI
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.featureCard}>
+              <IconSymbol name="magnifyingglass" color={colors.accent} size={24} />
+              <View style={styles.featureContent}>
+                <Text style={styles.featureTitle}>Quick Tool Search</Text>
+                <Text style={styles.featureDescription}>
+                  Find any tool instantly and see exactly where it&apos;s stored
                 </Text>
               </View>
             </View>
