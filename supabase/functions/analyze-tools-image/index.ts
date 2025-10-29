@@ -79,7 +79,8 @@ Deno.serve(async (req: Request) => {
     console.log(`[${requestId}] Request type: ${isReanalysis ? '🔄 RE-ANALYSIS' : '🆕 INITIAL ANALYSIS'}`);
     
     if (isReanalysis) {
-      console.log(`[${requestId}] 📋 Previous response provided: ${JSON.stringify(previousResponse)}`);
+      console.log(`[${requestId}] 📋 Previous response provided (${Array.isArray(previousResponse) ? previousResponse.length : 0} items):`);
+      console.log(`[${requestId}] ${JSON.stringify(previousResponse)}`);
       console.log(`[${requestId}] 💬 User feedback: "${userFeedback}"`);
     }
 
@@ -167,33 +168,44 @@ Please re-analyze the image taking the user's feedback into account. Correct any
     ];
 
     // Log the complete Gemini API request payload
-    console.log(`\n[${requestId}] ${'═'.repeat(70)}`);
-    console.log(`[${requestId}] 🚀 GEMINI API REQUEST DETAILS`);
-    console.log(`[${requestId}] ${'═'.repeat(70)}`);
+    console.log(`\n[${requestId}] ${'═'.repeat(80)}`);
+    console.log(`[${requestId}] 🚀 GEMINI API REQUEST - COMPLETE DETAILS`);
+    console.log(`[${requestId}] ${'═'.repeat(80)}`);
     console.log(`[${requestId}] Model: ${model}`);
     console.log(`[${requestId}] Is Re-analysis: ${isReanalysis}`);
     console.log(`[${requestId}] Image Size: ${sizeInMB.toFixed(2)}MB`);
     console.log(`[${requestId}] Base64 Length: ${base64Data.length} chars`);
-    console.log(`[${requestId}] ${'─'.repeat(70)}`);
-    console.log(`[${requestId}] 📝 FULL PROMPT TEXT:`);
-    console.log(`[${requestId}] ${'─'.repeat(70)}`);
+    console.log(`[${requestId}] ${'─'.repeat(80)}`);
+    console.log(`[${requestId}] 📝 COMPLETE PROMPT TEXT (FULL - NOT TRUNCATED):`);
+    console.log(`[${requestId}] ${'─'.repeat(80)}`);
     console.log(promptText);
-    console.log(`[${requestId}] ${'─'.repeat(70)}`);
+    console.log(`[${requestId}] ${'─'.repeat(80)}`);
     
     if (isReanalysis) {
-      console.log(`[${requestId}] 🔄 RE-ANALYSIS CONTEXT:`);
-      console.log(`[${requestId}]   - Previous Response: ${JSON.stringify(previousResponse)}`);
-      console.log(`[${requestId}]   - User Feedback: "${userFeedback}"`);
-      console.log(`[${requestId}] ${'─'.repeat(70)}`);
+      console.log(`[${requestId}] 🔄 RE-ANALYSIS CONTEXT DETAILS:`);
+      console.log(`[${requestId}]   - Previous Response Type: ${typeof previousResponse}`);
+      console.log(`[${requestId}]   - Previous Response Is Array: ${Array.isArray(previousResponse)}`);
+      console.log(`[${requestId}]   - Previous Response Length: ${Array.isArray(previousResponse) ? previousResponse.length : 'N/A'}`);
+      console.log(`[${requestId}]   - Previous Response Full Data: ${JSON.stringify(previousResponse, null, 2)}`);
+      console.log(`[${requestId}]   - User Feedback Type: ${typeof userFeedback}`);
+      console.log(`[${requestId}]   - User Feedback Length: ${userFeedback?.length || 0} chars`);
+      console.log(`[${requestId}]   - User Feedback Full Text: "${userFeedback}"`);
+      console.log(`[${requestId}] ${'─'.repeat(80)}`);
     }
     
-    console.log(`[${requestId}] 📦 REQUEST STRUCTURE:`);
+    console.log(`[${requestId}] 📦 REQUEST STRUCTURE TO GEMINI:`);
     console.log(`[${requestId}]   - Number of parts: ${parts.length}`);
-    console.log(`[${requestId}]   - Part 1 (text): ${parts[0].text.substring(0, 100)}...`);
-    console.log(`[${requestId}]   - Part 2 (image): [BASE64_IMAGE_DATA_${base64Data.length}_CHARS]`);
-    console.log(`[${requestId}] ${'═'.repeat(70)}\n`);
+    console.log(`[${requestId}]   - Part 1 (text prompt):`);
+    console.log(`[${requestId}]     Type: text`);
+    console.log(`[${requestId}]     Length: ${parts[0].text.length} chars`);
+    console.log(`[${requestId}]     FULL TEXT: "${parts[0].text}"`);
+    console.log(`[${requestId}]   - Part 2 (image):`);
+    console.log(`[${requestId}]     Type: inlineData`);
+    console.log(`[${requestId}]     MIME Type: ${parts[1].inlineData.mimeType}`);
+    console.log(`[${requestId}]     Data Length: ${parts[1].inlineData.data.length} chars`);
+    console.log(`[${requestId}] ${'═'.repeat(80)}\n`);
 
-    console.log(`[${requestId}] 📤 Sending request to Gemini API...`);
+    console.log(`[${requestId}] 📤 Sending request to Gemini API NOW...`);
     const startTime = Date.now();
     
     // Call Gemini API using the new SDK
@@ -211,14 +223,14 @@ Please re-analyze the image taking the user's feedback into account. Correct any
     const duration = endTime - startTime;
     console.log(`[${requestId}] ✅ Gemini API response received in ${duration}ms`);
 
-    console.log(`\n[${requestId}] ${'═'.repeat(70)}`);
+    console.log(`\n[${requestId}] ${'═'.repeat(80)}`);
     console.log(`[${requestId}] 📥 GEMINI API RESPONSE`);
-    console.log(`[${requestId}] ${'═'.repeat(70)}`);
+    console.log(`[${requestId}] ${'═'.repeat(80)}`);
     console.log(`[${requestId}] Response time: ${duration}ms`);
-    console.log(`[${requestId}] ${'─'.repeat(70)}`);
+    console.log(`[${requestId}] ${'─'.repeat(80)}`);
     console.log(`[${requestId}] Full response structure:`);
     console.log(JSON.stringify(response, null, 2));
-    console.log(`[${requestId}] ${'═'.repeat(70)}\n`);
+    console.log(`[${requestId}] ${'═'.repeat(80)}\n`);
 
     // Extract the text response
     const candidate = response.candidates?.[0];
