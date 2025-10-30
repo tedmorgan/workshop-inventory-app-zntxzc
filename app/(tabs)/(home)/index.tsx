@@ -17,7 +17,7 @@ import { IconSymbol } from "@/components/IconSymbol";
 import { colors } from "@/styles/commonStyles";
 import { LinearGradient } from "expo-linear-gradient";
 import { supabase } from "@integrations/supabase/client";
-import { File, Directory, Paths } from "expo-file-system";
+import * as Clipboard from 'expo-clipboard';
 
 type ToolInventoryItem = {
   id: string;
@@ -77,73 +77,65 @@ export default function HomeScreen() {
         tools: Array.isArray(item.tools) ? item.tools : [],
       }));
 
-      // Create a temporary directory for downloads
-      const tempDir = new Directory(Paths.cache, 'inventory_export');
-      tempDir.create({ intermediates: true, overwrite: true });
+      // Generate plain text content with proper formatting
+      const textContent = generateTextContent(parsedInventory);
 
-      // Download all images as base64
-      console.log('Downloading images...');
-      const inventoryWithImages = await Promise.all(
-        parsedInventory.map(async (item) => {
-          try {
-            // Download image to temporary directory
-            const downloadedFile = await File.downloadFileAsync(
-              item.image_url,
-              tempDir
-            );
-            
-            console.log(`Downloaded image for item ${item.id} to ${downloadedFile.uri}`);
-            
-            // Read as base64
-            const base64 = await downloadedFile.base64();
-            
-            return {
-              ...item,
-              imageBase64: base64,
-            };
-          } catch (error) {
-            console.error(`Error downloading image for item ${item.id}:`, error);
-            return {
-              ...item,
-              imageBase64: null,
-            };
+      // Show options to user
+      Alert.alert(
+        'Export Inventory',
+        'Choose how you want to export your inventory:',
+        [
+          {
+            text: 'Copy to Clipboard',
+            onPress: async () => {
+              try {
+                await Clipboard.setStringAsync(textContent);
+                Alert.alert(
+                  'Copied!',
+                  'Your inventory has been copied to the clipboard.\n\n' +
+                  '1. Open the Notes app\n' +
+                  '2. Create a new note or open an existing one\n' +
+                  '3. Tap and hold, then select "Paste"\n\n' +
+                  'Note: Images are included as links. Tap them in Notes to view.',
+                  [{ text: 'OK' }]
+                );
+              } catch (error) {
+                console.error('Error copying to clipboard:', error);
+                Alert.alert('Error', 'Failed to copy to clipboard');
+              }
+            }
+          },
+          {
+            text: 'Share as Text',
+            onPress: async () => {
+              try {
+                const shareResult = await Share.share({
+                  message: textContent,
+                  title: 'Workshop Tool Inventory',
+                });
+
+                console.log('Share result:', shareResult);
+
+                if (shareResult.action === Share.sharedAction) {
+                  Alert.alert(
+                    'Export Successful',
+                    'Select the Notes app to save your inventory.\n\n' +
+                    'Note: Images are included as links. You can tap them to view.',
+                    [{ text: 'OK' }]
+                  );
+                }
+              } catch (error) {
+                console.error('Error sharing:', error);
+                Alert.alert('Error', 'Failed to share inventory');
+              }
+            }
+          },
+          {
+            text: 'Cancel',
+            style: 'cancel'
           }
-        })
+        ]
       );
-
-      // Create HTML content with embedded images
-      const htmlContent = generateHTMLContent(inventoryWithImages);
-
-      // Save to temporary file
-      const htmlFile = new File(Paths.cache, 'workshop_inventory.html');
-      htmlFile.write(htmlContent);
-
-      console.log('HTML file created at:', htmlFile.uri);
-
-      // Share the file using iOS Share Sheet
-      // User can select Notes app and choose folder
-      const shareResult = await Share.share({
-        url: htmlFile.uri,
-        title: 'Workshop Tool Inventory',
-        message: 'My Workshop Tool Inventory - Generated from Workshop Inventory App',
-      });
-
-      console.log('Share result:', shareResult);
-
-      if (shareResult.action === Share.sharedAction) {
-        Alert.alert(
-          'Export Successful',
-          'Your inventory has been exported! You can now save it to your Notes app and select the folder.',
-          [{ text: 'OK' }]
-        );
-      }
-
-      // Clean up temporary directory
-      try {
-        tempDir.delete();
-      } catch (cleanupError) {
-        console.log('Error cleaning up temp directory:', cleanupError);
-      }
 
     } catch (error) {
       console.error('Error exporting inventory:', error);
@@ -157,7 +149,7 @@ export default function HomeScreen() {
     }
   };
 
-  const generateHTMLContent = (inventory: any[]): string => {
+  const generateTextContent = (inventory: ToolInventoryItem[]): string => {
     const totalTools = inventory.reduce((sum, item) => sum + item.tools.length, 0);
     const date = new Date().toLocaleDateString('en-US', { 
       year: 'numeric', 
@@ -165,139 +157,12 @@ export default function HomeScreen() {
       day: 'numeric' 
     });
 
-    let html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Workshop Tool Inventory</title>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      line-height: 1.6;
-      color: #333;
-      max-width: 800px;
-      margin: 0 auto;
-      padding: 20px;
-      background-color: #f5f5f5;
-    }
-    .header {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      padding: 30px;
-      border-radius: 12px;
-      margin-bottom: 30px;
-      text-align: center;
-    }
-    .header h1 {
-      margin: 0 0 10px 0;
-      font-size: 32px;
-    }
-    .header p {
-      margin: 5px 0;
-      opacity: 0.9;
-    }
-    .stats {
-      display: flex;
-      justify-content: space-around;
-      margin: 20px 0;
-      padding: 20px;
-      background: white;
-      border-radius: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    }
-    .stat {
-      text-align: center;
-    }
-    .stat-number {
-      font-size: 36px;
-      font-weight: bold;
-      color: #667eea;
-    }
-    .stat-label {
-      font-size: 14px;
-      color: #666;
-      margin-top: 5px;
-    }
-    .inventory-item {
-      background: white;
-      border-radius: 12px;
-      padding: 20px;
-      margin-bottom: 20px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    }
-    .inventory-image {
-      width: 100%;
-      max-width: 600px;
-      height: auto;
-      border-radius: 8px;
-      margin-bottom: 15px;
-    }
-    .location-badge {
-      display: inline-block;
-      background: #e8eaf6;
-      color: #667eea;
-      padding: 8px 16px;
-      border-radius: 20px;
-      font-size: 14px;
-      font-weight: 600;
-      margin-bottom: 15px;
-    }
-    .tools-title {
-      font-size: 18px;
-      font-weight: 600;
-      margin: 15px 0 10px 0;
-      color: #333;
-    }
-    .tool-list {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-    }
-    .tool-list li {
-      padding: 8px 0;
-      border-bottom: 1px solid #f0f0f0;
-      font-size: 15px;
-    }
-    .tool-list li:last-child {
-      border-bottom: none;
-    }
-    .tool-list li:before {
-      content: "🔧 ";
-      margin-right: 8px;
-    }
-    .date-text {
-      font-size: 13px;
-      color: #999;
-      margin-top: 15px;
-    }
-    .footer {
-      text-align: center;
-      margin-top: 40px;
-      padding: 20px;
-      color: #999;
-      font-size: 14px;
-    }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <h1>🔧 Workshop Tool Inventory</h1>
-    <p>Complete inventory export</p>
-    <p>Generated on ${date}</p>
-  </div>
-
-  <div class="stats">
-    <div class="stat">
-      <div class="stat-number">${inventory.length}</div>
-      <div class="stat-label">Collections</div>
-    </div>
-    <div class="stat">
-      <div class="stat-number">${totalTools}</div>
-      <div class="stat-label">Total Tools</div>
-    </div>
-  </div>
-`;
+    let text = `🔧 WORKSHOP TOOL INVENTORY\n`;
+    text += `═══════════════════════════════════\n\n`;
+    text += `Generated: ${date}\n`;
+    text += `Total Collections: ${inventory.length}\n`;
+    text += `Total Tools: ${totalTools}\n\n`;
+    text += `═══════════════════════════════════\n\n`;
 
     // Add each inventory item
     inventory.forEach((item, index) => {
@@ -309,47 +174,30 @@ export default function HomeScreen() {
         minute: '2-digit',
       });
 
-      html += `
-  <div class="inventory-item">
-    <h2 style="margin-top: 0; color: #333;">Collection ${index + 1}</h2>
-`;
-
-      // Add image if available
-      if (item.imageBase64) {
-        html += `    <img src="data:image/jpeg;base64,${item.imageBase64}" alt="Tool collection ${index + 1}" class="inventory-image" />
-`;
-      }
-
-      html += `    <div class="location-badge">
-      📍 ${item.bin_name} - ${item.bin_location}
-    </div>
-    
-    <div class="tools-title">Tools (${item.tools.length}):</div>
-    <ul class="tool-list">
-`;
-
+      text += `📦 COLLECTION ${index + 1}\n`;
+      text += `───────────────────────────────────\n\n`;
+      
+      // Add image link
+      text += `📷 Image: ${item.image_url}\n\n`;
+      
+      // Add location
+      text += `📍 Location: ${item.bin_name} - ${item.bin_location}\n\n`;
+      
       // Add tools
-      item.tools.forEach((tool: string) => {
-        html += `      <li>${tool}</li>
-`;
+      text += `🔧 Tools (${item.tools.length}):\n`;
+      item.tools.forEach((tool: string, toolIndex: number) => {
+        text += `   ${toolIndex + 1}. ${tool}\n`;
       });
-
-      html += `    </ul>
-    
-    <div class="date-text">Added: ${itemDate}</div>
-  </div>
-`;
+      
+      text += `\n📅 Added: ${itemDate}\n\n`;
+      text += `═══════════════════════════════════\n\n`;
     });
 
-    html += `
-  <div class="footer">
-    <p>Generated by Workshop Inventory App</p>
-    <p>Total: ${inventory.length} collections with ${totalTools} tools</p>
-  </div>
-</body>
-</html>`;
+    text += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    text += `Generated by Workshop Inventory App\n`;
+    text += `${inventory.length} collections • ${totalTools} tools\n`;
 
-    return html;
+    return text;
   };
 
   return (
@@ -449,11 +297,11 @@ export default function HomeScreen() {
                 )}
               </View>
               <View style={styles.actionContent}>
-                <Text style={styles.actionTitle}>Download Inventory</Text>
+                <Text style={styles.actionTitle}>Export to Notes</Text>
                 <Text style={styles.actionDescription}>
                   {exportingInventory 
-                    ? 'Exporting your inventory...' 
-                    : 'Export to iOS Notes with images'}
+                    ? 'Preparing your inventory...' 
+                    : 'Copy or share to iOS Notes'}
                 </Text>
               </View>
               <IconSymbol name="chevron.right" color={colors.textSecondary} size={20} />
@@ -509,10 +357,20 @@ export default function HomeScreen() {
               <View style={styles.featureContent}>
                 <Text style={styles.featureTitle}>Export to Notes</Text>
                 <Text style={styles.featureDescription}>
-                  Download your complete inventory with images to iOS Notes
+                  Copy or share your inventory to iOS Notes with image links
                 </Text>
               </View>
             </View>
+          </View>
+
+          {/* Info Box */}
+          <View style={styles.infoBox}>
+            <IconSymbol name="info.circle.fill" color={colors.primary} size={20} />
+            <Text style={styles.infoText}>
+              <Text style={styles.infoBold}>Export Tip: </Text>
+              When you export to Notes, images are included as clickable links. 
+              Tap any image link in your note to view the full photo.
+            </Text>
           </View>
         </ScrollView>
       </View>
@@ -623,5 +481,26 @@ const styles = StyleSheet.create({
   },
   headerButtonContainer: {
     padding: 6,
+  },
+  infoBox: {
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 24,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.primary,
+  },
+  infoText: {
+    flex: 1,
+    marginLeft: 12,
+    fontSize: 14,
+    color: colors.textSecondary,
+    lineHeight: 20,
+  },
+  infoBold: {
+    fontWeight: '600',
+    color: colors.text,
   },
 });
