@@ -17,7 +17,7 @@ import { IconSymbol } from "@/components/IconSymbol";
 import { colors } from "@/styles/commonStyles";
 import { LinearGradient } from "expo-linear-gradient";
 import { supabase } from "@integrations/supabase/client";
-import * as FileSystem from "expo-file-system";
+import { File, Directory, Paths } from "expo-file-system";
 
 type ToolInventoryItem = {
   id: string;
@@ -77,21 +77,25 @@ export default function HomeScreen() {
         tools: Array.isArray(item.tools) ? item.tools : [],
       }));
 
+      // Create a temporary directory for downloads
+      const tempDir = new Directory(Paths.cache, 'inventory_export');
+      tempDir.create({ intermediates: true, overwrite: true });
+
       // Download all images as base64
       console.log('Downloading images...');
       const inventoryWithImages = await Promise.all(
         parsedInventory.map(async (item) => {
           try {
-            // Download image from URL
-            const imageUri = await FileSystem.downloadAsync(
+            // Download image to temporary directory
+            const downloadedFile = await File.downloadFileAsync(
               item.image_url,
-              FileSystem.cacheDirectory + `temp_${item.id}.jpg`
+              tempDir
             );
             
+            console.log(`Downloaded image for item ${item.id} to ${downloadedFile.uri}`);
+            
             // Read as base64
-            const base64 = await FileSystem.readAsStringAsync(imageUri.uri, {
-              encoding: FileSystem.EncodingType.Base64,
-            });
+            const base64 = await downloadedFile.base64();
             
             return {
               ...item,
@@ -111,17 +115,15 @@ export default function HomeScreen() {
       const htmlContent = generateHTMLContent(inventoryWithImages);
 
       // Save to temporary file
-      const fileUri = FileSystem.cacheDirectory + 'workshop_inventory.html';
-      await FileSystem.writeAsStringAsync(fileUri, htmlContent, {
-        encoding: FileSystem.EncodingType.UTF8,
-      });
+      const htmlFile = new File(Paths.cache, 'workshop_inventory.html');
+      htmlFile.write(htmlContent);
 
-      console.log('HTML file created at:', fileUri);
+      console.log('HTML file created at:', htmlFile.uri);
 
       // Share the file using iOS Share Sheet
       // User can select Notes app and choose folder
       const shareResult = await Share.share({
-        url: fileUri,
+        url: htmlFile.uri,
         title: 'Workshop Tool Inventory',
         message: 'My Workshop Tool Inventory - Generated from Workshop Inventory App',
       });
@@ -134,6 +136,13 @@ export default function HomeScreen() {
           'Your inventory has been exported! You can now save it to your Notes app and select the folder.',
           [{ text: 'OK' }]
         );
+      }
+
+      // Clean up temporary directory
+      try {
+        tempDir.delete();
+      } catch (cleanupError) {
+        console.log('Error cleaning up temp directory:', cleanupError);
       }
 
     } catch (error) {
