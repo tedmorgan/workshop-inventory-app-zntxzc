@@ -18,11 +18,16 @@ import {
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system/legacy';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import { supabase } from '@integrations/supabase/client';
 import { decode } from 'base64-arraybuffer';
+
+// Conditionally import FileSystem only for native platforms
+let FileSystem: any = null;
+if (Platform.OS !== 'web') {
+  FileSystem = require('expo-file-system/legacy');
+}
 
 export default function AddToolsScreen() {
   const router = useRouter();
@@ -44,6 +49,15 @@ export default function AddToolsScreen() {
   const reanalyzeReasonRef = useRef<TextInput>(null);
 
   const pickImage = async () => {
+    if (Platform.OS === 'web') {
+      Alert.alert(
+        'Web Preview',
+        'Camera is not available in web preview. Please use the gallery option or test on a mobile device.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     try {
       console.log('📸 Requesting camera permissions');
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -77,12 +91,15 @@ export default function AddToolsScreen() {
   const pickFromGallery = async () => {
     try {
       console.log('🖼️ Requesting gallery permissions');
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       
-      if (status !== 'granted') {
-        console.log('❌ Gallery permission denied');
-        Alert.alert('Permission Required', 'Photo library permission is needed');
-        return;
+      if (Platform.OS !== 'web') {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        
+        if (status !== 'granted') {
+          console.log('❌ Gallery permission denied');
+          Alert.alert('Permission Required', 'Photo library permission is needed');
+          return;
+        }
       }
 
       console.log('✅ Launching gallery');
@@ -97,7 +114,16 @@ export default function AddToolsScreen() {
         console.log(`✅ Image selected: ${uri.substring(0, 50)}...`);
         setImageUri(uri);
         setPreviousResponse([]); // Reset previous response for new image
-        analyzeImage(uri);
+        
+        if (Platform.OS === 'web') {
+          Alert.alert(
+            'Web Preview',
+            'AI image analysis is not available in web preview. Please enter tools manually or test on a mobile device.',
+            [{ text: 'OK' }]
+          );
+        } else {
+          analyzeImage(uri);
+        }
       }
     } catch (error) {
       console.error(`❌ Error in pickFromGallery: ${error}`);
@@ -115,6 +141,12 @@ export default function AddToolsScreen() {
     if (Platform.OS === 'web') {
       console.log('⚠️ Image analysis not supported on web');
       Alert.alert('Not Supported', 'Image analysis is not supported on web. Please enter tools manually.');
+      return;
+    }
+
+    if (!FileSystem) {
+      console.log('⚠️ FileSystem not available');
+      Alert.alert('Not Supported', 'Image analysis is not available. Please enter tools manually.');
       return;
     }
 
@@ -272,6 +304,11 @@ export default function AddToolsScreen() {
       return;
     }
     
+    if (Platform.OS === 'web') {
+      Alert.alert('Not Supported', 'Re-analysis is not supported on web. Please test on a mobile device.');
+      return;
+    }
+    
     console.log('🔄 Re-analyze button pressed');
     console.log(`📊 Current previousResponse state: ${JSON.stringify(previousResponse)}`);
     console.log(`📊 previousResponse length: ${previousResponse.length}`);
@@ -322,10 +359,32 @@ export default function AddToolsScreen() {
     try {
       console.log('☁️ Starting image upload to Supabase');
       
-      // Read the file as base64
-      const base64 = await FileSystem.readAsStringAsync(uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
+      let base64: string;
+      
+      if (Platform.OS === 'web') {
+        // For web, fetch the blob and convert to base64
+        const response = await fetch(uri);
+        const blob = await response.blob();
+        base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const result = reader.result as string;
+            // Remove data URL prefix
+            const base64String = result.split(',')[1];
+            resolve(base64String);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      } else {
+        if (!FileSystem) {
+          throw new Error('FileSystem not available');
+        }
+        // Read the file as base64
+        base64 = await FileSystem.readAsStringAsync(uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+      }
 
       console.log(`📦 Base64 size: ${(base64.length * 0.75 / 1024).toFixed(2)} KB`);
 
@@ -478,6 +537,15 @@ export default function AddToolsScreen() {
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
             >
+              {Platform.OS === 'web' && (
+                <View style={styles.webNotice}>
+                  <IconSymbol name="info.circle.fill" color={colors.primary} size={20} />
+                  <Text style={styles.webNoticeText}>
+                    You&apos;re viewing the web preview. AI analysis and camera features work best on mobile devices.
+                  </Text>
+                </View>
+              )}
+
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>1. Take a Photo</Text>
                 {imageUri ? (
@@ -500,10 +568,12 @@ export default function AddToolsScreen() {
                     <IconSymbol name="camera.fill" color={colors.textSecondary} size={48} />
                     <Text style={styles.placeholderText}>No photo taken yet</Text>
                     <View style={styles.buttonRow}>
-                      <Pressable style={styles.imageButton} onPress={pickImage}>
-                        <IconSymbol name="camera" color="#FFFFFF" size={20} />
-                        <Text style={styles.imageButtonText}>Camera</Text>
-                      </Pressable>
+                      {Platform.OS !== 'web' && (
+                        <Pressable style={styles.imageButton} onPress={pickImage}>
+                          <IconSymbol name="camera" color="#FFFFFF" size={20} />
+                          <Text style={styles.imageButtonText}>Camera</Text>
+                        </Pressable>
+                      )}
                       <Pressable style={[styles.imageButton, styles.galleryButton]} onPress={pickFromGallery}>
                         <IconSymbol name="photo" color="#FFFFFF" size={20} />
                         <Text style={styles.imageButtonText}>Gallery</Text>
@@ -516,7 +586,7 @@ export default function AddToolsScreen() {
               <View style={styles.section}>
                 <View style={styles.sectionHeader}>
                   <Text style={styles.sectionTitle}>2. List of Tools</Text>
-                  {imageUri && !analyzing && (
+                  {imageUri && !analyzing && Platform.OS !== 'web' && (
                     <Pressable
                       style={styles.reanalyzeButton}
                       onPress={handleReanalyzePress}
@@ -534,12 +604,14 @@ export default function AddToolsScreen() {
                   </View>
                 ) : (
                   <>
-                    <View style={styles.aiInfoBadge}>
-                      <IconSymbol name="sparkles" color={colors.accent} size={16} />
-                      <Text style={styles.aiInfoText}>AI-powered by Google Gemini</Text>
-                    </View>
+                    {Platform.OS !== 'web' && (
+                      <View style={styles.aiInfoBadge}>
+                        <IconSymbol name="sparkles" color={colors.accent} size={16} />
+                        <Text style={styles.aiInfoText}>AI-powered by Google Gemini</Text>
+                      </View>
+                    )}
                     <Text style={styles.helperText}>
-                      Enter each tool on a new line. AI will identify tools automatically when you take a photo.
+                      Enter each tool on a new line. {Platform.OS !== 'web' ? 'AI will identify tools automatically when you take a photo.' : 'Enter tools manually in web preview.'}
                     </Text>
                     <TextInput
                       style={styles.textArea}
@@ -714,6 +786,21 @@ const styles = StyleSheet.create({
   },
   bottomSpacer: {
     height: 100,
+  },
+  webNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: `${colors.primary}15`,
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 16,
+    gap: 10,
+  },
+  webNoticeText: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.text,
+    lineHeight: 20,
   },
   section: {
     marginBottom: 24,

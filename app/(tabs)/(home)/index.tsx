@@ -43,6 +43,15 @@ export default function HomeScreen() {
   );
 
   const downloadInventory = async () => {
+    if (Platform.OS === 'web') {
+      Alert.alert(
+        'Web Preview',
+        'Export to Notes is designed for iOS devices. In web preview, you can view and manage your inventory, but export features work best on mobile.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     if (Platform.OS !== 'ios') {
       Alert.alert('iOS Only', 'This feature is currently only available on iOS devices.');
       return;
@@ -218,6 +227,18 @@ export default function HomeScreen() {
           ]}
           showsVerticalScrollIndicator={false}
         >
+          {Platform.OS === 'web' && (
+            <View style={styles.webNotice}>
+              <IconSymbol name="info.circle.fill" color={colors.primary} size={24} />
+              <View style={styles.webNoticeContent}>
+                <Text style={styles.webNoticeTitle}>Web Preview Mode</Text>
+                <Text style={styles.webNoticeText}>
+                  You&apos;re viewing the web preview. For the full experience with AI-powered tool recognition and camera features, please test on an iOS or Android device.
+                </Text>
+              </View>
+            </View>
+          )}
+
           {/* Hero Section */}
           <LinearGradient
             colors={[colors.primary, colors.secondary]}
@@ -246,7 +267,9 @@ export default function HomeScreen() {
               <View style={styles.actionContent}>
                 <Text style={styles.actionTitle}>Add Tools</Text>
                 <Text style={styles.actionDescription}>
-                  Take a photo and let AI identify your tools
+                  {Platform.OS === 'web' 
+                    ? 'Add tools manually or upload images'
+                    : 'Take a photo and let AI identify your tools'}
                 </Text>
               </View>
               <IconSymbol name="chevron.right" color={colors.textSecondary} size={20} />
@@ -284,43 +307,47 @@ export default function HomeScreen() {
               <IconSymbol name="chevron.right" color={colors.textSecondary} size={20} />
             </Pressable>
 
-            <Pressable
-              style={[styles.actionCard, styles.downloadCard]}
-              onPress={downloadInventory}
-              disabled={exportingInventory}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: colors.highlight }]}>
-                {exportingInventory ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
-                ) : (
-                  <IconSymbol name="square.and.arrow.down.fill" color="#FFFFFF" size={28} />
-                )}
-              </View>
-              <View style={styles.actionContent}>
-                <Text style={styles.actionTitle}>Export to Notes</Text>
-                <Text style={styles.actionDescription}>
-                  {exportingInventory 
-                    ? 'Preparing your inventory...' 
-                    : 'Copy or share to iOS Notes'}
-                </Text>
-              </View>
-              <IconSymbol name="chevron.right" color={colors.textSecondary} size={20} />
-            </Pressable>
+            {Platform.OS !== 'web' && (
+              <Pressable
+                style={[styles.actionCard, styles.downloadCard]}
+                onPress={downloadInventory}
+                disabled={exportingInventory}
+              >
+                <View style={[styles.actionIcon, { backgroundColor: colors.highlight }]}>
+                  {exportingInventory ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <IconSymbol name="square.and.arrow.down.fill" color="#FFFFFF" size={28} />
+                  )}
+                </View>
+                <View style={styles.actionContent}>
+                  <Text style={styles.actionTitle}>Export to Notes</Text>
+                  <Text style={styles.actionDescription}>
+                    {exportingInventory 
+                      ? 'Preparing your inventory...' 
+                      : 'Copy or share to iOS Notes'}
+                  </Text>
+                </View>
+                <IconSymbol name="chevron.right" color={colors.textSecondary} size={20} />
+              </Pressable>
+            )}
           </View>
 
           {/* Features */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Features</Text>
             
-            <View style={styles.featureCard}>
-              <IconSymbol name="sparkles" color={colors.highlight} size={24} />
-              <View style={styles.featureContent}>
-                <Text style={styles.featureTitle}>AI-Powered Recognition</Text>
-                <Text style={styles.featureDescription}>
-                  Automatically identify tools from photos using advanced AI
-                </Text>
+            {Platform.OS !== 'web' && (
+              <View style={styles.featureCard}>
+                <IconSymbol name="sparkles" color={colors.highlight} size={24} />
+                <View style={styles.featureContent}>
+                  <Text style={styles.featureTitle}>AI-Powered Recognition</Text>
+                  <Text style={styles.featureDescription}>
+                    Automatically identify tools from photos using advanced AI
+                  </Text>
+                </View>
               </View>
-            </View>
+            )}
 
             <View style={styles.featureCard}>
               <IconSymbol name="magnifyingglass" color={colors.accent} size={24} />
@@ -352,26 +379,30 @@ export default function HomeScreen() {
               </View>
             </View>
 
-            <View style={styles.featureCard}>
-              <IconSymbol name="square.and.arrow.down" color={colors.highlight} size={24} />
-              <View style={styles.featureContent}>
-                <Text style={styles.featureTitle}>Export to Notes</Text>
-                <Text style={styles.featureDescription}>
-                  Copy or share your inventory to iOS Notes with image links
-                </Text>
+            {Platform.OS !== 'web' && (
+              <View style={styles.featureCard}>
+                <IconSymbol name="square.and.arrow.down" color={colors.highlight} size={24} />
+                <View style={styles.featureContent}>
+                  <Text style={styles.featureTitle}>Export to Notes</Text>
+                  <Text style={styles.featureDescription}>
+                    Copy or share your inventory to iOS Notes with image links
+                  </Text>
+                </View>
               </View>
-            </View>
+            )}
           </View>
 
           {/* Info Box */}
-          <View style={styles.infoBox}>
-            <IconSymbol name="info.circle.fill" color={colors.primary} size={20} />
-            <Text style={styles.infoText}>
-              <Text style={styles.infoBold}>Export Tip: </Text>
-              When you export to Notes, images are included as clickable links. 
-              Tap any image link in your note to view the full photo.
-            </Text>
-          </View>
+          {Platform.OS !== 'web' && (
+            <View style={styles.infoBox}>
+              <IconSymbol name="info.circle.fill" color={colors.primary} size={20} />
+              <Text style={styles.infoText}>
+                <Text style={styles.infoBold}>Export Tip: </Text>
+                When you export to Notes, images are included as clickable links. 
+                Tap any image link in your note to view the full photo.
+              </Text>
+            </View>
+          )}
         </ScrollView>
       </View>
     </>
@@ -388,6 +419,31 @@ const styles = StyleSheet.create({
   },
   scrollContentWithTabBar: {
     paddingBottom: 100,
+  },
+  webNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: `${colors.primary}15`,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+    gap: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.primary,
+  },
+  webNoticeContent: {
+    flex: 1,
+  },
+  webNoticeTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 4,
+  },
+  webNoticeText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    lineHeight: 20,
   },
   heroCard: {
     borderRadius: 16,
