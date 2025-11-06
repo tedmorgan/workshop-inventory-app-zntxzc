@@ -217,14 +217,58 @@ export default function AddToolsScreen() {
 
         if (error) {
           console.log(`❌ Edge Function error: ${JSON.stringify(error)}`);
-          throw new Error(`API Error: ${error.message || 'Unknown error'}`);
+          
+          // Enhanced error handling with specific messages
+          let errorTitle = 'AI Analysis Error';
+          let errorMessage = 'Failed to analyze image.';
+          
+          if (error.message) {
+            const errorStr = error.message.toLowerCase();
+            
+            if (errorStr.includes('401') || errorStr.includes('unauthorized')) {
+              errorTitle = '🔑 API Key Not Configured';
+              errorMessage = 'The Gemini API key is not set up correctly.\n\nPlease contact the app administrator to configure the GEMINI_API_KEY in Supabase.\n\nYou can still enter tools manually.';
+            } else if (errorStr.includes('403') || errorStr.includes('forbidden')) {
+              errorTitle = '🚫 Permission Denied';
+              errorMessage = 'The API key does not have the required permissions.\n\nPlease contact the app administrator.\n\nYou can still enter tools manually.';
+            } else if (errorStr.includes('429') || errorStr.includes('rate limit')) {
+              errorTitle = '⏱️ Too Many Requests';
+              errorMessage = 'The API rate limit has been exceeded.\n\nPlease wait a moment and try again, or enter tools manually.';
+            } else if (errorStr.includes('timeout')) {
+              errorTitle = '⏰ Request Timeout';
+              errorMessage = 'The request took too long.\n\nPlease try again with a smaller image or enter tools manually.';
+            } else {
+              errorMessage = `${error.message}\n\nYou can still enter tools manually.`;
+            }
+          }
+          
+          Alert.alert(errorTitle, errorMessage);
+          return;
         }
 
         console.log(`✅ Response received`);
 
         if (data.error) {
           console.log(`❌ API error: ${data.error}`);
-          throw new Error(data.error);
+          
+          // Enhanced error handling for API errors
+          let errorTitle = 'AI Analysis Error';
+          let errorMessage = data.error;
+          
+          if (data.hint) {
+            errorMessage += `\n\n💡 ${data.hint}`;
+          }
+          
+          if (data.error.includes('GEMINI_API_KEY')) {
+            errorTitle = '🔑 API Key Missing';
+            errorMessage = 'The Gemini API key is not configured in Supabase.\n\n';
+            errorMessage += 'Administrator: Please run:\n';
+            errorMessage += 'supabase secrets set GEMINI_API_KEY=your_key\n\n';
+            errorMessage += 'You can still enter tools manually.';
+          }
+          
+          Alert.alert(errorTitle, errorMessage);
+          return;
         }
 
         if (data.tools && Array.isArray(data.tools) && data.tools.length > 0) {
@@ -258,18 +302,18 @@ export default function AddToolsScreen() {
     } catch (error) {
       console.error(`❌ Analysis error: ${error}`);
       
-      let errorMessage = 'Failed to analyze image. ';
+      let errorTitle = 'AI Analysis Error';
+      let errorMessage = 'Failed to analyze image.\n\n';
+      
       if (error instanceof Error) {
         errorMessage += error.message;
       } else {
         errorMessage += 'Unknown error occurred.';
       }
       
-      Alert.alert(
-        'AI Analysis Error',
-        errorMessage + '\n\nPlease enter tools manually or try again.',
-        [{ text: 'OK' }]
-      );
+      errorMessage += '\n\nPlease enter tools manually or try again.';
+      
+      Alert.alert(errorTitle, errorMessage, [{ text: 'OK' }]);
     } finally {
       console.log('🏁 Analysis complete');
       setAnalyzing(false);

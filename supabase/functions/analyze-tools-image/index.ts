@@ -6,9 +6,11 @@ const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
 
 if (!GEMINI_API_KEY) {
   console.error('❌ GEMINI_API_KEY environment variable is not set');
+  console.error('❌ Please set it using: supabase secrets set GEMINI_API_KEY=your_key_here');
 }
 
 console.log('🚀 Edge Function initialized - analyze-tools-image');
+console.log(`🔑 API Key status: ${GEMINI_API_KEY ? 'SET (length: ' + GEMINI_API_KEY.length + ')' : 'NOT SET'}`);
 
 Deno.serve(async (req: Request) => {
   const requestId = crypto.randomUUID().substring(0, 8);
@@ -46,6 +48,25 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    // Check API key first
+    if (!GEMINI_API_KEY) {
+      console.error(`[${requestId}] ❌ GEMINI_API_KEY not configured`);
+      return new Response(
+        JSON.stringify({
+          error: 'Server configuration error: GEMINI_API_KEY not set',
+          hint: 'The administrator needs to set the GEMINI_API_KEY environment variable in Supabase',
+          documentation: 'Run: supabase secrets set GEMINI_API_KEY=your_key_here',
+        }),
+        {
+          status: 500,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+        }
+      );
+    }
+
     // Parse JSON body
     console.log(`[${requestId}] 📦 Parsing request body...`);
     const body = await req.json();
@@ -111,11 +132,23 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[${requestId}] 📊 Image size: ${sizeInMB.toFixed(2)}MB (within limits)`);
 
-    if (!GEMINI_API_KEY) {
-      console.error(`[${requestId}] ❌ GEMINI_API_KEY not configured`);
+    // Initialize Gemini AI with the new SDK
+    console.log(`[${requestId}] 🤖 Initializing Gemini AI client...`);
+    console.log(`[${requestId}] 🔑 Using API key (first 10 chars): ${GEMINI_API_KEY.substring(0, 10)}...`);
+    
+    let ai;
+    try {
+      ai = new GoogleGenAI({
+        apiKey: GEMINI_API_KEY,
+      });
+      console.log(`[${requestId}] ✅ Gemini AI client initialized successfully`);
+    } catch (initError) {
+      console.error(`[${requestId}] ❌ Failed to initialize Gemini AI client:`, initError);
       return new Response(
         JSON.stringify({
-          error: 'Server configuration error: GEMINI_API_KEY not set',
+          error: 'Failed to initialize Gemini AI',
+          message: initError instanceof Error ? initError.message : 'Unknown error',
+          hint: 'Check if the GEMINI_API_KEY is valid',
         }),
         {
           status: 500,
@@ -126,12 +159,6 @@ Deno.serve(async (req: Request) => {
         }
       );
     }
-
-    // Initialize Gemini AI with the new SDK
-    console.log(`[${requestId}] 🤖 Initializing Gemini AI client...`);
-    const ai = new GoogleGenAI({
-      apiKey: GEMINI_API_KEY,
-    });
 
     // Use Gemini 2.5 Flash model
     const model = 'gemini-2.5-flash';
@@ -208,16 +235,71 @@ Please re-analyze the image taking the user's feedback into account. Correct any
     console.log(`[${requestId}] 📤 Sending request to Gemini API NOW...`);
     const startTime = Date.now();
     
-    // Call Gemini API using the new SDK
-    const response = await ai.models.generateContent({
-      model,
-      contents: [
+    // Call Gemini API using the new SDK with enhanced error handling
+    let response;
+    try {
+      response = await ai.models.generateContent({
+        model,
+        contents: [
+          {
+            role: 'user',
+            parts,
+          },
+        ],
+      });
+    } catch (apiError) {
+      const endTime = Date.now();
+      const duration = endTime - startTime;
+      
+      console.error(`[${requestId}] ❌ GEMINI API ERROR after ${duration}ms:`);
+      console.error(`[${requestId}] Error type: ${apiError?.constructor?.name}`);
+      console.error(`[${requestId}] Error message: ${apiError instanceof Error ? apiError.message : 'Unknown error'}`);
+      console.error(`[${requestId}] Error stack: ${apiError instanceof Error ? apiError.stack : 'No stack trace'}`);
+      console.error(`[${requestId}] Full error object: ${JSON.stringify(apiError, null, 2)}`);
+      
+      // Check for specific error types
+      let errorMessage = 'Failed to call Gemini API';
+      let errorHint = 'Please try again later';
+      
+      if (apiError instanceof Error) {
+        const errorStr = apiError.message.toLowerCase();
+        
+        if (errorStr.includes('401') || errorStr.includes('unauthorized') || errorStr.includes('api key')) {
+          errorMessage = 'Invalid or missing Gemini API key';
+          errorHint = 'The GEMINI_API_KEY environment variable is not set correctly. Please contact the administrator to set it using: supabase secrets set GEMINI_API_KEY=your_key_here';
+        } else if (errorStr.includes('403') || errorStr.includes('forbidden')) {
+          errorMessage = 'API key does not have permission';
+          errorHint = 'The Gemini API key does not have the required permissions. Please check the API key settings in Google AI Studio.';
+        } else if (errorStr.includes('429') || errorStr.includes('quota') || errorStr.includes('rate limit')) {
+          errorMessage = 'API rate limit exceeded';
+          errorHint = 'Too many requests. Please wait a moment and try again.';
+        } else if (errorStr.includes('timeout')) {
+          errorMessage = 'Request timeout';
+          errorHint = 'The Gemini API took too long to respond. Please try again.';
+        } else if (errorStr.includes('network')) {
+          errorMessage = 'Network error';
+          errorHint = 'Could not connect to Gemini API. Please check your internet connection.';
+        }
+      }
+      
+      return new Response(
+        JSON.stringify({
+          error: errorMessage,
+          hint: errorHint,
+          details: apiError instanceof Error ? apiError.message : 'Unknown error',
+          requestId,
+          apiKeyStatus: GEMINI_API_KEY ? 'SET' : 'NOT SET',
+          apiKeyLength: GEMINI_API_KEY ? GEMINI_API_KEY.length : 0,
+        }),
         {
-          role: 'user',
-          parts,
-        },
-      ],
-    });
+          status: 500,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+        }
+      );
+    }
 
     const endTime = Date.now();
     const duration = endTime - startTime;
