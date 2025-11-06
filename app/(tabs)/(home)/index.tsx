@@ -1,6 +1,12 @@
 
 import React, { useState } from "react";
 import { useTheme } from "@react-navigation/native";
+import { colors } from "@/styles/commonStyles";
+import { Stack, useRouter } from "expo-router";
+import * as Clipboard from 'expo-clipboard';
+import { IconSymbol } from "@/components/IconSymbol";
+import { supabase } from "@integrations/supabase/client";
+import { LinearGradient } from "expo-linear-gradient";
 import { 
   ScrollView, 
   Pressable, 
@@ -12,12 +18,7 @@ import {
   ActivityIndicator,
   Share,
 } from "react-native";
-import { Stack, useRouter } from "expo-router";
-import { IconSymbol } from "@/components/IconSymbol";
-import { colors } from "@/styles/commonStyles";
-import { LinearGradient } from "expo-linear-gradient";
-import { supabase } from "@integrations/supabase/client";
-import * as Clipboard from 'expo-clipboard';
+import { getDeviceId } from "@/utils/deviceId";
 
 type ToolInventoryItem = {
   id: string;
@@ -26,385 +27,207 @@ type ToolInventoryItem = {
   bin_name: string;
   bin_location: string;
   created_at: string;
+  device_id: string;
 };
 
 export default function HomeScreen() {
-  const theme = useTheme();
+  const { colors: themeColors } = useTheme();
+  const [downloading, setDownloading] = useState(false);
   const router = useRouter();
-  const [exportingInventory, setExportingInventory] = useState(false);
 
   const renderHeaderRight = () => (
     <Pressable
-      onPress={() => router.push('/add-tools')}
-      style={styles.headerButtonContainer}
+      onPress={downloadInventory}
+      style={{ marginRight: 16 }}
+      disabled={downloading}
     >
-      <IconSymbol name="plus" color={colors.primary} />
+      {downloading ? (
+        <ActivityIndicator size="small" color={colors.primary} />
+      ) : (
+        <IconSymbol name="square.and.arrow.down" size={24} color={colors.primary} />
+      )}
     </Pressable>
   );
 
   const downloadInventory = async () => {
-    if (Platform.OS === 'web') {
-      Alert.alert(
-        'Web Preview',
-        'Export to Notes is designed for iOS devices. In web preview, you can view and manage your inventory, but export features work best on mobile.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-
-    if (Platform.OS !== 'ios') {
-      Alert.alert('iOS Only', 'This feature is currently only available on iOS devices.');
-      return;
-    }
-
-    setExportingInventory(true);
-    console.log('Starting inventory export...');
-
     try {
-      // Fetch all inventory data
+      setDownloading(true);
+      console.log('📥 Starting inventory download');
+
+      // Get device ID
+      const deviceId = await getDeviceId();
+      console.log('📱 Device ID:', deviceId.substring(0, 8) + '...');
+
+      // Query with device_id filter
       const { data: inventory, error } = await supabase
         .from('tool_inventory')
         .select('*')
+        .eq('device_id', deviceId)
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('Error fetching inventory:', error);
-        throw error;
-      }
-
-      if (!inventory || inventory.length === 0) {
-        Alert.alert('No Inventory', 'You don\'t have any tools in your inventory yet. Add some tools first!');
-        setExportingInventory(false);
+        console.error('❌ Error fetching inventory:', error);
+        Alert.alert('Error', 'Failed to fetch inventory');
         return;
       }
 
-      console.log(`Exporting ${inventory.length} inventory items...`);
+      if (!inventory || inventory.length === 0) {
+        Alert.alert('No Data', 'Your inventory is empty. Add some tools first!');
+        return;
+      }
 
-      // Parse tools from JSON
-      const parsedInventory: ToolInventoryItem[] = inventory.map(item => ({
-        ...item,
-        tools: Array.isArray(item.tools) ? item.tools : [],
-      }));
+      console.log(`✅ Fetched ${inventory.length} items`);
 
-      // Generate plain text content with proper formatting
-      const textContent = generateTextContent(parsedInventory);
+      const textContent = generateTextContent(inventory);
 
-      // Show options to user
-      Alert.alert(
-        'Export Inventory',
-        'Choose how you want to export your inventory:',
-        [
-          {
-            text: 'Copy to Clipboard',
-            onPress: async () => {
-              try {
-                await Clipboard.setStringAsync(textContent);
-                Alert.alert(
-                  'Copied!',
-                  'Your inventory has been copied to the clipboard.\n\n' +
-                  '1. Open the Notes app\n' +
-                  '2. Create a new note or open an existing one\n' +
-                  '3. Tap and hold, then select "Paste"\n\n' +
-                  'Note: Images are included as links. Tap them in Notes to view.',
-                  [{ text: 'OK' }]
-                );
-              } catch (error) {
-                console.error('Error copying to clipboard:', error);
-                Alert.alert('Error', 'Failed to copy to clipboard');
-              }
-            }
-          },
-          {
-            text: 'Share as Text',
-            onPress: async () => {
-              try {
-                const shareResult = await Share.share({
-                  message: textContent,
-                  title: 'Workshop Tool Inventory',
-                });
-
-                console.log('Share result:', shareResult);
-
-                if (shareResult.action === Share.sharedAction) {
-                  Alert.alert(
-                    'Export Successful',
-                    'Select the Notes app to save your inventory.\n\n' +
-                    'Note: Images are included as links. You can tap them to view.',
-                    [{ text: 'OK' }]
-                  );
-                }
-              } catch (error) {
-                console.error('Error sharing:', error);
-                Alert.alert('Error', 'Failed to share inventory');
-              }
-            }
-          },
-          {
-            text: 'Cancel',
-            style: 'cancel'
-          }
-        ]
-      );
-
+      if (Platform.OS === 'web') {
+        await Clipboard.setStringAsync(textContent);
+        Alert.alert('Copied!', 'Your inventory has been copied to clipboard');
+      } else {
+        try {
+          await Share.share({
+            message: textContent,
+            title: 'My Tool Inventory',
+          });
+        } catch (shareError) {
+          console.log('Share cancelled or failed, copying to clipboard instead');
+          await Clipboard.setStringAsync(textContent);
+          Alert.alert('Copied!', 'Your inventory has been copied to clipboard');
+        }
+      }
     } catch (error) {
-      console.error('Error exporting inventory:', error);
-      Alert.alert(
-        'Export Failed',
-        'Failed to export inventory. Please try again.',
-        [{ text: 'OK' }]
-      );
+      console.error('❌ Download error:', error);
+      Alert.alert('Error', 'Failed to download inventory');
     } finally {
-      setExportingInventory(false);
+      setDownloading(false);
     }
   };
 
   const generateTextContent = (inventory: ToolInventoryItem[]): string => {
-    const totalTools = inventory.reduce((sum, item) => sum + item.tools.length, 0);
-    const date = new Date().toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    });
+    let content = '🔧 MY TOOL INVENTORY 🔧\n';
+    content += `Generated: ${new Date().toLocaleDateString()}\n`;
+    content += `Total Bins: ${inventory.length}\n`;
+    content += `Total Tools: ${inventory.reduce((sum, item) => sum + item.tools.length, 0)}\n`;
+    content += '\n' + '='.repeat(40) + '\n\n';
 
-    let text = `🔧 WORKSHOP TOOL INVENTORY\n`;
-    text += `═══════════════════════════════════\n\n`;
-    text += `Generated: ${date}\n`;
-    text += `Total Collections: ${inventory.length}\n`;
-    text += `Total Tools: ${totalTools}\n\n`;
-    text += `═══════════════════════════════════\n\n`;
-
-    // Add each inventory item
     inventory.forEach((item, index) => {
-      const itemDate = new Date(item.created_at).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
+      content += `📦 BIN ${index + 1}: ${item.bin_name}\n`;
+      content += `📍 Location: ${item.bin_location}\n`;
+      content += `🔧 Tools (${item.tools.length}):\n`;
+      item.tools.forEach((tool, toolIndex) => {
+        content += `   ${toolIndex + 1}. ${tool}\n`;
       });
-
-      text += `📦 COLLECTION ${index + 1}\n`;
-      text += `───────────────────────────────────\n\n`;
-      
-      // Add image link
-      text += `📷 Image: ${item.image_url}\n\n`;
-      
-      // Add location
-      text += `📍 Location: ${item.bin_name} - ${item.bin_location}\n\n`;
-      
-      // Add tools
-      text += `🔧 Tools (${item.tools.length}):\n`;
-      item.tools.forEach((tool: string, toolIndex: number) => {
-        text += `   ${toolIndex + 1}. ${tool}\n`;
-      });
-      
-      text += `\n📅 Added: ${itemDate}\n\n`;
-      text += `═══════════════════════════════════\n\n`;
+      content += '\n' + '-'.repeat(40) + '\n\n';
     });
 
-    text += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-    text += `Generated by Workshop Inventory App\n`;
-    text += `${inventory.length} collections • ${totalTools} tools\n`;
-
-    return text;
+    return content;
   };
 
   return (
     <>
-      {Platform.OS === 'ios' && (
-        <Stack.Screen
-          options={{
-            title: "Workshop Inventory",
-            headerRight: renderHeaderRight,
-          }}
-        />
-      )}
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <ScrollView
-          contentContainerStyle={[
-            styles.scrollContent,
-            Platform.OS !== 'ios' && styles.scrollContentWithTabBar
-          ]}
-          showsVerticalScrollIndicator={false}
+      <Stack.Screen
+        options={{
+          title: "Workshop Inventory",
+          headerRight: renderHeaderRight,
+        }}
+      />
+      <ScrollView
+        style={[styles.container, { backgroundColor: colors.background }]}
+        contentContainerStyle={styles.scrollContent}
+      >
+        <LinearGradient
+          colors={[colors.primary, colors.accent]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.heroCard}
         >
-          {Platform.OS === 'web' && (
-            <View style={styles.webNotice}>
-              <IconSymbol name="info.circle.fill" color={colors.primary} size={24} />
-              <View style={styles.webNoticeContent}>
-                <Text style={styles.webNoticeTitle}>Web Preview Mode</Text>
-                <Text style={styles.webNoticeText}>
-                  You&apos;re viewing the web preview. For the full experience with AI-powered tool recognition and camera features, please test on an iOS or Android device.
-                </Text>
-              </View>
-            </View>
-          )}
+          <Text style={styles.heroTitle}>Workshop Tool Inventory</Text>
+          <Text style={styles.heroSubtitle}>
+            Organize, track, and find your tools with AI-powered image recognition
+          </Text>
+        </LinearGradient>
 
-          {/* Hero Section */}
-          <LinearGradient
-            colors={[colors.primary, colors.secondary]}
-            style={styles.heroCard}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
+        <View style={styles.actionsGrid}>
+          <Pressable
+            style={[styles.actionCard, { backgroundColor: colors.card }]}
+            onPress={() => router.push('/add-tools')}
           >
-            <IconSymbol name="wrench.and.screwdriver.fill" color="#FFFFFF" size={48} />
-            <Text style={styles.heroTitle}>Workshop Tool Inventory</Text>
-            <Text style={styles.heroSubtitle}>
-              Organize and track all your workshop tools with AI-powered identification
+            <View style={[styles.iconCircle, { backgroundColor: `${colors.primary}20` }]}>
+              <IconSymbol name="plus.circle.fill" size={32} color={colors.primary} />
+            </View>
+            <Text style={[styles.actionTitle, { color: colors.text }]}>Add Tools</Text>
+            <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>
+              Take a photo and let AI identify your tools
             </Text>
-          </LinearGradient>
+          </Pressable>
 
-          {/* Quick Actions */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Quick Actions</Text>
-            
-            <Pressable
-              style={styles.actionCard}
-              onPress={() => router.push('/add-tools')}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: colors.primary }]}>
-                <IconSymbol name="camera.fill" color="#FFFFFF" size={28} />
-              </View>
-              <View style={styles.actionContent}>
-                <Text style={styles.actionTitle}>Add Tools</Text>
-                <Text style={styles.actionDescription}>
-                  {Platform.OS === 'web' 
-                    ? 'Add tools manually or upload images'
-                    : 'Take a photo and let AI identify your tools'}
-                </Text>
-              </View>
-              <IconSymbol name="chevron.right" color={colors.textSecondary} size={20} />
-            </Pressable>
+          <Pressable
+            style={[styles.actionCard, { backgroundColor: colors.card }]}
+            onPress={() => router.push('/(tabs)/inventory')}
+          >
+            <View style={[styles.iconCircle, { backgroundColor: `${colors.accent}20` }]}>
+              <IconSymbol name="tray.fill" size={32} color={colors.accent} />
+            </View>
+            <Text style={[styles.actionTitle, { color: colors.text }]}>View Inventory</Text>
+            <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>
+              Browse all your tools and storage bins
+            </Text>
+          </Pressable>
 
-            <Pressable
-              style={styles.actionCard}
-              onPress={() => router.push('/find-tool')}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: colors.accent }]}>
-                <IconSymbol name="magnifyingglass" color="#FFFFFF" size={28} />
-              </View>
-              <View style={styles.actionContent}>
-                <Text style={styles.actionTitle}>Find Tool</Text>
-                <Text style={styles.actionDescription}>
-                  Search for a tool and see which bin it&apos;s in
-                </Text>
-              </View>
-              <IconSymbol name="chevron.right" color={colors.textSecondary} size={20} />
-            </Pressable>
+          <Pressable
+            style={[styles.actionCard, { backgroundColor: colors.card }]}
+            onPress={() => router.push('/find-tool')}
+          >
+            <View style={[styles.iconCircle, { backgroundColor: `${colors.secondary}20` }]}>
+              <IconSymbol name="magnifyingglass" size={32} color={colors.secondary} />
+            </View>
+            <Text style={[styles.actionTitle, { color: colors.text }]}>Find Tool</Text>
+            <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>
+              Search for any tool in your inventory
+            </Text>
+          </Pressable>
 
-            <Pressable
-              style={styles.actionCard}
-              onPress={() => router.push('/(tabs)/inventory')}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: colors.secondary }]}>
-                <IconSymbol name="list.bullet" color="#FFFFFF" size={28} />
-              </View>
-              <View style={styles.actionContent}>
-                <Text style={styles.actionTitle}>View Inventory</Text>
-                <Text style={styles.actionDescription}>
-                  Browse all your tools and storage locations
-                </Text>
-              </View>
-              <IconSymbol name="chevron.right" color={colors.textSecondary} size={20} />
-            </Pressable>
+          <Pressable
+            style={[styles.actionCard, { backgroundColor: colors.card }]}
+            onPress={downloadInventory}
+            disabled={downloading}
+          >
+            <View style={[styles.iconCircle, { backgroundColor: `${colors.primary}20` }]}>
+              {downloading ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <IconSymbol name="square.and.arrow.down" size={32} color={colors.primary} />
+              )}
+            </View>
+            <Text style={[styles.actionTitle, { color: colors.text }]}>Export</Text>
+            <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>
+              Download your inventory as text
+            </Text>
+          </Pressable>
+        </View>
 
-            {Platform.OS !== 'web' && (
-              <Pressable
-                style={[styles.actionCard, styles.downloadCard]}
-                onPress={downloadInventory}
-                disabled={exportingInventory}
-              >
-                <View style={[styles.actionIcon, { backgroundColor: colors.highlight }]}>
-                  {exportingInventory ? (
-                    <ActivityIndicator color="#FFFFFF" size="small" />
-                  ) : (
-                    <IconSymbol name="square.and.arrow.down.fill" color="#FFFFFF" size={28} />
-                  )}
-                </View>
-                <View style={styles.actionContent}>
-                  <Text style={styles.actionTitle}>Export to Notes</Text>
-                  <Text style={styles.actionDescription}>
-                    {exportingInventory 
-                      ? 'Preparing your inventory...' 
-                      : 'Copy or share to iOS Notes'}
-                  </Text>
-                </View>
-                <IconSymbol name="chevron.right" color={colors.textSecondary} size={20} />
-              </Pressable>
-            )}
+        <View style={[styles.infoCard, { backgroundColor: colors.card }]}>
+          <View style={styles.infoHeader}>
+            <IconSymbol name="sparkles" size={24} color={colors.accent} />
+            <Text style={[styles.infoTitle, { color: colors.text }]}>AI-Powered Recognition</Text>
           </View>
+          <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+            This app uses Google Gemini AI to automatically identify tools from photos. Simply take a picture of your tools, and the AI will create a detailed list for you.
+          </Text>
+        </View>
 
-          {/* Features */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Features</Text>
-            
-            {Platform.OS !== 'web' && (
-              <View style={styles.featureCard}>
-                <IconSymbol name="sparkles" color={colors.highlight} size={24} />
-                <View style={styles.featureContent}>
-                  <Text style={styles.featureTitle}>AI-Powered Recognition</Text>
-                  <Text style={styles.featureDescription}>
-                    Automatically identify tools from photos using advanced AI
-                  </Text>
-                </View>
-              </View>
-            )}
-
-            <View style={styles.featureCard}>
-              <IconSymbol name="magnifyingglass" color={colors.accent} size={24} />
-              <View style={styles.featureContent}>
-                <Text style={styles.featureTitle}>Quick Tool Search</Text>
-                <Text style={styles.featureDescription}>
-                  Find any tool instantly and see exactly where it&apos;s stored
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.featureCard}>
-              <IconSymbol name="location.fill" color={colors.secondary} size={24} />
-              <View style={styles.featureContent}>
-                <Text style={styles.featureTitle}>Storage Tracking</Text>
-                <Text style={styles.featureDescription}>
-                  Keep track of which bin and location your tools are stored
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.featureCard}>
-              <IconSymbol name="photo.fill" color={colors.primary} size={24} />
-              <View style={styles.featureContent}>
-                <Text style={styles.featureTitle}>Photo Library</Text>
-                <Text style={styles.featureDescription}>
-                  Visual reference for all your tool collections
-                </Text>
-              </View>
-            </View>
-
-            {Platform.OS !== 'web' && (
-              <View style={styles.featureCard}>
-                <IconSymbol name="square.and.arrow.down" color={colors.highlight} size={24} />
-                <View style={styles.featureContent}>
-                  <Text style={styles.featureTitle}>Export to Notes</Text>
-                  <Text style={styles.featureDescription}>
-                    Copy or share your inventory to iOS Notes with image links
-                  </Text>
-                </View>
-              </View>
-            )}
+        <View style={[styles.infoCard, { backgroundColor: colors.card }]}>
+          <View style={styles.infoHeader}>
+            <IconSymbol name="lock.fill" size={24} color={colors.primary} />
+            <Text style={[styles.infoTitle, { color: colors.text }]}>Your Data, Your Device</Text>
           </View>
+          <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+            All your inventory data is stored securely and linked to your device. Your personal workshop inventory stays private and accessible only to you.
+          </Text>
+        </View>
 
-          {/* Info Box */}
-          {Platform.OS !== 'web' && (
-            <View style={styles.infoBox}>
-              <IconSymbol name="info.circle.fill" color={colors.primary} size={20} />
-              <Text style={styles.infoText}>
-                <Text style={styles.infoBold}>Export Tip: </Text>
-                When you export to Notes, images are included as clickable links. 
-                Tap any image link in your note to view the full photo.
-              </Text>
-            </View>
-          )}
-        </ScrollView>
-      </View>
+        <View style={styles.bottomSpacer} />
+      </ScrollView>
     </>
   );
 }
@@ -414,149 +237,77 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingVertical: 20,
-    paddingHorizontal: 16,
-  },
-  scrollContentWithTabBar: {
+    padding: 16,
     paddingBottom: 100,
   },
-  webNotice: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: `${colors.primary}15`,
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 20,
-    gap: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: colors.primary,
-  },
-  webNoticeContent: {
-    flex: 1,
-  },
-  webNoticeTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.text,
-    marginBottom: 4,
-  },
-  webNoticeText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    lineHeight: 20,
-  },
   heroCard: {
-    borderRadius: 16,
     padding: 32,
-    alignItems: 'center',
+    borderRadius: 16,
     marginBottom: 24,
   },
   heroTitle: {
     fontSize: 28,
     fontWeight: '700',
     color: '#FFFFFF',
-    marginTop: 16,
     marginBottom: 8,
-    textAlign: 'center',
   },
   heroSubtitle: {
     fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.9)',
-    textAlign: 'center',
-    lineHeight: 22,
+    color: '#FFFFFF',
+    opacity: 0.9,
+    lineHeight: 24,
   },
-  section: {
+  actionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
     marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: colors.text,
-    marginBottom: 12,
   },
   actionCard: {
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
+    width: '48%',
+    padding: 20,
+    borderRadius: 16,
     alignItems: 'center',
-    marginBottom: 12,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.08)',
-    elevation: 2,
   },
-  downloadCard: {
-    borderWidth: 2,
-    borderColor: colors.highlight,
-  },
-  actionIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+  iconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
-  },
-  actionContent: {
-    flex: 1,
+    marginBottom: 12,
   },
   actionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: colors.text,
-    marginBottom: 4,
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 6,
+    textAlign: 'center',
   },
   actionDescription: {
-    fontSize: 14,
-    color: colors.textSecondary,
+    fontSize: 13,
+    textAlign: 'center',
     lineHeight: 18,
   },
-  featureCard: {
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    padding: 16,
+  infoCard: {
+    padding: 20,
+    borderRadius: 16,
+    marginBottom: 16,
+  },
+  infoHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    gap: 12,
     marginBottom: 12,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.08)',
-    elevation: 2,
   },
-  featureContent: {
-    flex: 1,
-    marginLeft: 16,
-  },
-  featureTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.text,
-    marginBottom: 4,
-  },
-  featureDescription: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    lineHeight: 18,
-  },
-  headerButtonContainer: {
-    padding: 6,
-  },
-  infoBox: {
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 24,
-    borderLeftWidth: 4,
-    borderLeftColor: colors.primary,
+  infoTitle: {
+    fontSize: 18,
+    fontWeight: '700',
   },
   infoText: {
-    flex: 1,
-    marginLeft: 12,
-    fontSize: 14,
-    color: colors.textSecondary,
-    lineHeight: 20,
+    fontSize: 15,
+    lineHeight: 22,
   },
-  infoBold: {
-    fontWeight: '600',
-    color: colors.text,
+  bottomSpacer: {
+    height: 20,
   },
 });

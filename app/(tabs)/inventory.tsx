@@ -1,6 +1,8 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useTheme } from "@react-navigation/native";
+import { colors } from "@/styles/commonStyles";
+import { IconSymbol } from "@/components/IconSymbol";
 import { 
   View, 
   Text, 
@@ -18,10 +20,9 @@ import {
   Keyboard,
   ActivityIndicator,
 } from "react-native";
-import { Stack, useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
-import { IconSymbol } from "@/components/IconSymbol";
-import { colors } from "@/styles/commonStyles";
 import { supabase } from "@integrations/supabase/client";
+import { Stack, useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
+import { getDeviceId } from "@/utils/deviceId";
 
 type ToolInventoryItem = {
   id: string;
@@ -30,69 +31,65 @@ type ToolInventoryItem = {
   bin_name: string;
   bin_location: string;
   created_at: string;
+  device_id: string;
 };
 
 export default function InventoryScreen() {
-  const theme = useTheme();
-  const router = useRouter();
-  const params = useLocalSearchParams();
+  const { colors: themeColors } = useTheme();
   const [inventory, setInventory] = useState<ToolInventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editingItem, setEditingItem] = useState<ToolInventoryItem | null>(null);
-  const [editBinName, setEditBinName] = useState('');
-  const [editBinLocation, setEditBinLocation] = useState('');
-  const [editTools, setEditTools] = useState<string[]>([]);
-  const [newToolText, setNewToolText] = useState('');
+  const [editedTools, setEditedTools] = useState<string[]>([]);
+  const [editedBinName, setEditedBinName] = useState('');
+  const [editedBinLocation, setEditedBinLocation] = useState('');
   const [saving, setSaving] = useState(false);
+  const params = useLocalSearchParams();
+  const router = useRouter();
 
-  // Load inventory when screen comes into focus
+  useEffect(() => {
+    if (params.editBinId && inventory.length > 0) {
+      const itemToEdit = inventory.find(item => item.id === params.editBinId);
+      if (itemToEdit) {
+        openEditModal(itemToEdit);
+      }
+    }
+  }, [params.editBinId, inventory]);
+
   useFocusEffect(
     useCallback(() => {
       loadInventory();
     }, [])
   );
 
-  // Check if we need to open a specific bin for editing
-  useEffect(() => {
-    if (params.editBinId && inventory.length > 0) {
-      console.log('Opening edit modal for bin ID:', params.editBinId);
-      const binToEdit = inventory.find(item => item.id === params.editBinId);
-      if (binToEdit) {
-        openEditModal(binToEdit);
-        // Clear the parameter after opening the modal
-        router.setParams({ editBinId: undefined });
-      }
-    }
-  }, [params.editBinId, inventory]);
-
   const loadInventory = async () => {
     try {
-      console.log('Loading inventory from Supabase...');
-      
+      console.log('📦 Loading inventory');
+      setLoading(true);
+
+      // Get device ID
+      const deviceId = await getDeviceId();
+      console.log('📱 Device ID:', deviceId.substring(0, 8) + '...');
+
+      // Query with device_id filter
       const { data, error } = await supabase
         .from('tool_inventory')
         .select('*')
+        .eq('device_id', deviceId)
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('Error loading inventory:', error);
-        throw error;
+        console.error('❌ Error loading inventory:', error);
+        Alert.alert('Error', 'Failed to load inventory');
+        return;
       }
 
-      console.log('Inventory loaded:', data);
-
-      // Parse tools from JSON
-      const parsedInventory = data.map(item => ({
-        ...item,
-        tools: Array.isArray(item.tools) ? item.tools : [],
-      }));
-
-      setInventory(parsedInventory);
+      console.log(`✅ Loaded ${data?.length || 0} items`);
+      setInventory(data || []);
     } catch (error) {
-      console.error('Error loading inventory:', error);
-      Alert.alert('Error', 'Failed to load inventory. Please try again.');
+      console.error('❌ Error:', error);
+      Alert.alert('Error', 'Failed to load inventory');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -105,100 +102,82 @@ export default function InventoryScreen() {
   };
 
   const openEditModal = (item: ToolInventoryItem) => {
-    console.log('Opening edit modal for item:', item.id);
     setEditingItem(item);
-    setEditBinName(item.bin_name);
-    setEditBinLocation(item.bin_location);
-    setEditTools([...item.tools]);
-    setNewToolText('');
+    setEditedTools([...item.tools]);
+    setEditedBinName(item.bin_name);
+    setEditedBinLocation(item.bin_location);
     setEditModalVisible(true);
   };
 
   const closeEditModal = () => {
     setEditModalVisible(false);
     setEditingItem(null);
-    setEditBinName('');
-    setEditBinLocation('');
-    setEditTools([]);
-    setNewToolText('');
+    setEditedTools([]);
+    setEditedBinName('');
+    setEditedBinLocation('');
   };
 
   const addNewTool = () => {
-    if (newToolText.trim()) {
-      setEditTools([...editTools, newToolText.trim()]);
-      setNewToolText('');
-      Keyboard.dismiss();
-    }
+    setEditedTools([...editedTools, '']);
   };
 
   const removeTool = (index: number) => {
-    const updatedTools = editTools.filter((_, i) => i !== index);
-    setEditTools(updatedTools);
+    const newTools = editedTools.filter((_, i) => i !== index);
+    setEditedTools(newTools);
   };
 
   const updateTool = (index: number, newValue: string) => {
-    const updatedTools = [...editTools];
-    updatedTools[index] = newValue;
-    setEditTools(updatedTools);
+    const newTools = [...editedTools];
+    newTools[index] = newValue;
+    setEditedTools(newTools);
   };
 
   const saveChanges = async () => {
     if (!editingItem) return;
 
-    if (!editBinName.trim()) {
-      Alert.alert('Missing Bin Name', 'Please enter a bin name');
+    const filteredTools = editedTools.filter(tool => tool.trim().length > 0);
+
+    if (filteredTools.length === 0) {
+      Alert.alert('Error', 'Please add at least one tool');
       return;
     }
 
-    if (!editBinLocation.trim()) {
-      Alert.alert('Missing Location', 'Please enter a bin location');
+    if (!editedBinName.trim()) {
+      Alert.alert('Error', 'Please enter a bin name');
       return;
     }
 
-    if (editTools.length === 0) {
-      Alert.alert('No Tools', 'Please add at least one tool');
+    if (!editedBinLocation.trim()) {
+      Alert.alert('Error', 'Please enter a bin location');
       return;
     }
 
     setSaving(true);
-    console.log('Saving changes for item:', editingItem.id);
 
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('tool_inventory')
         .update({
-          bin_name: editBinName.trim(),
-          bin_location: editBinLocation.trim(),
-          tools: editTools.filter(t => t.trim().length > 0),
+          tools: filteredTools,
+          bin_name: editedBinName.trim(),
+          bin_location: editedBinLocation.trim(),
           updated_at: new Date().toISOString(),
         })
-        .eq('id', editingItem.id)
-        .select();
+        .eq('id', editingItem.id);
 
       if (error) {
-        console.error('Error updating item:', error);
-        throw error;
+        console.error('❌ Error updating:', error);
+        Alert.alert('Error', 'Failed to update inventory');
+        return;
       }
 
-      console.log('Item updated successfully:', data);
-
-      // Update local state
-      setInventory(prev => prev.map(item => 
-        item.id === editingItem.id 
-          ? {
-              ...item,
-              bin_name: editBinName.trim(),
-              bin_location: editBinLocation.trim(),
-              tools: editTools.filter(t => t.trim().length > 0),
-            }
-          : item
-      ));
-
-      Alert.alert('Success', 'Changes saved successfully!');
+      console.log('✅ Updated successfully');
+      Alert.alert('Success', 'Inventory updated successfully');
       closeEditModal();
+      loadInventory();
     } catch (error) {
-      console.error('Error saving changes:', error);
-      Alert.alert('Error', 'Failed to save changes. Please try again.');
+      console.error('❌ Error:', error);
+      Alert.alert('Error', 'Failed to update inventory');
     } finally {
       setSaving(false);
     }
@@ -215,25 +194,22 @@ export default function InventoryScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              console.log('Deleting item:', id);
-              
               const { error } = await supabase
                 .from('tool_inventory')
                 .delete()
                 .eq('id', id);
 
               if (error) {
-                console.error('Error deleting item:', error);
-                throw error;
+                console.error('❌ Error deleting:', error);
+                Alert.alert('Error', 'Failed to delete item');
+                return;
               }
 
-              // Update local state
-              setInventory(prev => prev.filter(item => item.id !== id));
-              
-              Alert.alert('Success', 'Item deleted successfully');
+              console.log('✅ Deleted successfully');
+              loadInventory();
             } catch (error) {
-              console.error('Error deleting item:', error);
-              Alert.alert('Error', 'Failed to delete item. Please try again.');
+              console.error('❌ Error:', error);
+              Alert.alert('Error', 'Failed to delete item');
             }
           },
         },
@@ -244,26 +220,42 @@ export default function InventoryScreen() {
   const renderHeaderRight = () => (
     <Pressable
       onPress={() => router.push('/add-tools')}
-      style={styles.headerButtonContainer}
+      style={{ marginRight: 16 }}
     >
-      <IconSymbol name="plus" color={colors.primary} />
+      <IconSymbol name="plus.circle.fill" size={28} color={colors.primary} />
     </Pressable>
   );
 
-  return (
-    <>
-      {Platform.OS === 'ios' && (
+  if (loading) {
+    return (
+      <>
         <Stack.Screen
           options={{
-            title: "Tool Inventory",
+            title: 'Inventory',
             headerRight: renderHeaderRight,
           }}
         />
-      )}
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={[styles.loadingText, { color: colors.text }]}>Loading inventory...</Text>
+          </View>
+        </View>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <Stack.Screen
+        options={{
+          title: 'Inventory',
+          headerRight: renderHeaderRight,
+        }}
+      />
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <ScrollView
           contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -272,77 +264,78 @@ export default function InventoryScreen() {
             />
           }
         >
-          {loading ? (
+          {inventory.length === 0 ? (
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>Loading inventory...</Text>
-            </View>
-          ) : inventory.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <IconSymbol name="wrench.and.screwdriver" color={colors.textSecondary} size={64} />
-              <Text style={styles.emptyTitle}>No Tools Yet</Text>
-              <Text style={styles.emptyText}>
-                Start by adding your first set of tools using the camera
+              <IconSymbol name="tray.fill" size={64} color={colors.textSecondary} />
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>No Tools Yet</Text>
+              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                Start building your inventory by adding your first set of tools
               </Text>
               <Pressable
                 style={styles.addButton}
                 onPress={() => router.push('/add-tools')}
               >
-                <IconSymbol name="plus" color="#FFFFFF" size={20} />
+                <IconSymbol name="plus.circle.fill" size={20} color="#FFFFFF" />
                 <Text style={styles.addButtonText}>Add Tools</Text>
               </Pressable>
             </View>
           ) : (
             <>
-              <View style={styles.headerContainer}>
-                <Text style={styles.headerText}>
-                  {inventory.length} {inventory.length === 1 ? 'Collection' : 'Collections'}
-                </Text>
-                <View style={styles.aiPoweredBadge}>
-                  <IconSymbol name="sparkles" color={colors.accent} size={14} />
-                  <Text style={styles.aiPoweredText}>AI Powered</Text>
+              <View style={styles.statsContainer}>
+                <View style={[styles.statCard, { backgroundColor: colors.card }]}>
+                  <IconSymbol name="tray.fill" size={24} color={colors.primary} />
+                  <Text style={[styles.statNumber, { color: colors.text }]}>{inventory.length}</Text>
+                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Bins</Text>
+                </View>
+                <View style={[styles.statCard, { backgroundColor: colors.card }]}>
+                  <IconSymbol name="wrench.fill" size={24} color={colors.accent} />
+                  <Text style={[styles.statNumber, { color: colors.text }]}>
+                    {inventory.reduce((sum, item) => sum + item.tools.length, 0)}
+                  </Text>
+                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Tools</Text>
                 </View>
               </View>
+
               {inventory.map((item) => (
-                <View key={item.id} style={styles.inventoryCard}>
-                  <Image source={{ uri: item.image_url }} style={styles.inventoryImage} />
-                  <View style={styles.inventoryContent}>
-                    <View style={styles.locationBadge}>
-                      <IconSymbol name="location.fill" color={colors.primary} size={14} />
-                      <Text style={styles.locationText}>
-                        {item.bin_name} - {item.bin_location}
+                <View key={item.id} style={[styles.card, { backgroundColor: colors.card }]}>
+                  <Image source={{ uri: item.image_url }} style={styles.cardImage} />
+                  <View style={styles.cardContent}>
+                    <View style={styles.cardHeader}>
+                      <View style={styles.binInfo}>
+                        <IconSymbol name="archivebox.fill" size={20} color={colors.primary} />
+                        <Text style={[styles.binName, { color: colors.text }]}>{item.bin_name}</Text>
+                      </View>
+                      <View style={styles.cardActions}>
+                        <Pressable
+                          onPress={() => openEditModal(item)}
+                          style={styles.iconButton}
+                        >
+                          <IconSymbol name="pencil" size={20} color={colors.primary} />
+                        </Pressable>
+                        <Pressable
+                          onPress={() => deleteItem(item.id)}
+                          style={styles.iconButton}
+                        >
+                          <IconSymbol name="trash" size={20} color="#FF3B30" />
+                        </Pressable>
+                      </View>
+                    </View>
+
+                    <View style={styles.locationRow}>
+                      <IconSymbol name="location.fill" size={16} color={colors.textSecondary} />
+                      <Text style={[styles.location, { color: colors.textSecondary }]}>
+                        {item.bin_location}
                       </Text>
                     </View>
-                    
-                    <Text style={styles.toolsTitle}>
-                      Tools ({item.tools.length}):
-                    </Text>
-                    {item.tools.map((tool, index) => (
-                      <View key={index} style={styles.toolItem}>
-                        <Text style={styles.toolBullet}>•</Text>
-                        <Text style={styles.toolText}>{tool}</Text>
-                      </View>
-                    ))}
-                    
-                    <Text style={styles.dateText}>
-                      Added: {new Date(item.created_at).toLocaleDateString()} at {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </Text>
-                    
-                    <View style={styles.actionButtons}>
-                      <Pressable
-                        style={styles.editButton}
-                        onPress={() => openEditModal(item)}
-                      >
-                        <IconSymbol name="pencil" color={colors.primary} size={18} />
-                        <Text style={styles.editButtonText}>Edit</Text>
-                      </Pressable>
-                      
-                      <Pressable
-                        style={styles.deleteButton}
-                        onPress={() => deleteItem(item.id)}
-                      >
-                        <IconSymbol name="trash" color="#FF3B30" size={18} />
-                        <Text style={styles.deleteButtonText}>Delete</Text>
-                      </Pressable>
+
+                    <View style={styles.toolsContainer}>
+                      <Text style={[styles.toolsTitle, { color: colors.text }]}>Tools:</Text>
+                      {item.tools.map((tool, index) => (
+                        <View key={index} style={styles.toolRow}>
+                          <Text style={[styles.toolBullet, { color: colors.primary }]}>•</Text>
+                          <Text style={[styles.toolText, { color: colors.text }]}>{tool}</Text>
+                        </View>
+                      ))}
                     </View>
                   </View>
                 </View>
@@ -350,123 +343,107 @@ export default function InventoryScreen() {
             </>
           )}
         </ScrollView>
+      </View>
 
-        {/* Edit Modal */}
-        <Modal
-          visible={editModalVisible}
-          animationType="slide"
-          presentationStyle="pageSheet"
-          onRequestClose={closeEditModal}
+      {/* Edit Modal */}
+      <Modal
+        visible={editModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={closeEditModal}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
-          <KeyboardAvoidingView
-            style={[styles.modalContainer, { backgroundColor: colors.background }]}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-          >
-            <View style={styles.modalHeader}>
-              <Pressable onPress={closeEditModal} style={styles.modalCloseButton}>
-                <IconSymbol name="xmark" color={colors.text} size={24} />
-              </Pressable>
-              <Text style={styles.modalTitle}>Edit Inventory</Text>
-              <View style={{ width: 40 }} />
-            </View>
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.modalOverlay}>
+              <TouchableWithoutFeedback>
+                <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+                  <ScrollView
+                    contentContainerStyle={styles.modalScrollContent}
+                    showsVerticalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
+                  >
+                    <View style={styles.modalHeader}>
+                      <Text style={[styles.modalTitle, { color: colors.text }]}>Edit Inventory</Text>
+                      <Pressable onPress={closeEditModal} style={styles.modalCloseButton}>
+                        <IconSymbol name="xmark.circle.fill" size={28} color={colors.textSecondary} />
+                      </Pressable>
+                    </View>
 
-            <ScrollView
-              contentContainerStyle={styles.modalScrollContent}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-            >
-              {editingItem && (
-                <>
-                  <Image source={{ uri: editingItem.image_url }} style={styles.modalImage} />
+                    {editingItem && (
+                      <Image source={{ uri: editingItem.image_url }} style={styles.modalImage} />
+                    )}
 
-                  <View style={styles.modalSection}>
-                    <Text style={styles.modalSectionTitle}>Storage Information</Text>
-                    
-                    <Text style={styles.modalLabel}>Bin Name</Text>
+                    <Text style={[styles.modalLabel, { color: colors.text }]}>Bin Name</Text>
                     <TextInput
-                      style={styles.modalInput}
-                      placeholder="e.g., Red Toolbox, Bin A3"
+                      style={[styles.modalInput, { backgroundColor: colors.background, color: colors.text }]}
+                      value={editedBinName}
+                      onChangeText={setEditedBinName}
+                      placeholder="Bin name"
                       placeholderTextColor={colors.textSecondary}
-                      value={editBinName}
-                      onChangeText={setEditBinName}
-                      returnKeyType="next"
                     />
 
-                    <Text style={styles.modalLabel}>Bin Location</Text>
+                    <Text style={[styles.modalLabel, { color: colors.text }]}>Bin Location</Text>
                     <TextInput
-                      style={styles.modalInput}
-                      placeholder="e.g., Top shelf, Garage wall"
+                      style={[styles.modalInput, { backgroundColor: colors.background, color: colors.text }]}
+                      value={editedBinLocation}
+                      onChangeText={setEditedBinLocation}
+                      placeholder="Bin location"
                       placeholderTextColor={colors.textSecondary}
-                      value={editBinLocation}
-                      onChangeText={setEditBinLocation}
-                      returnKeyType="done"
                     />
-                  </View>
 
-                  <View style={styles.modalSection}>
-                    <Text style={styles.modalSectionTitle}>Tools List</Text>
-                    
-                    {editTools.map((tool, index) => (
-                      <View key={index} style={styles.toolEditItem}>
+                    <Text style={[styles.modalLabel, { color: colors.text }]}>Tools</Text>
+                    {editedTools.map((tool, index) => (
+                      <View key={index} style={styles.toolInputRow}>
                         <TextInput
-                          style={styles.toolEditInput}
+                          style={[styles.toolInput, { backgroundColor: colors.background, color: colors.text }]}
                           value={tool}
                           onChangeText={(text) => updateTool(index, text)}
                           placeholder="Tool name"
                           placeholderTextColor={colors.textSecondary}
                         />
                         <Pressable
-                          style={styles.removeToolButton}
                           onPress={() => removeTool(index)}
+                          style={styles.removeToolButton}
                         >
-                          <IconSymbol name="minus.circle.fill" color="#FF3B30" size={24} />
+                          <IconSymbol name="minus.circle.fill" size={24} color="#FF3B30" />
                         </Pressable>
                       </View>
                     ))}
 
-                    <View style={styles.addToolContainer}>
-                      <TextInput
-                        style={styles.addToolInput}
-                        placeholder="Add new tool..."
-                        placeholderTextColor={colors.textSecondary}
-                        value={newToolText}
-                        onChangeText={setNewToolText}
-                        onSubmitEditing={addNewTool}
-                        returnKeyType="done"
-                      />
+                    <Pressable onPress={addNewTool} style={styles.addToolButton}>
+                      <IconSymbol name="plus.circle.fill" size={20} color={colors.primary} />
+                      <Text style={[styles.addToolText, { color: colors.primary }]}>Add Tool</Text>
+                    </Pressable>
+
+                    <View style={styles.modalButtons}>
                       <Pressable
-                        style={[styles.addToolButton, !newToolText.trim() && styles.addToolButtonDisabled]}
-                        onPress={addNewTool}
-                        disabled={!newToolText.trim()}
+                        style={[styles.modalButton, styles.modalButtonCancel, { backgroundColor: colors.background }]}
+                        onPress={closeEditModal}
                       >
-                        <IconSymbol name="plus.circle.fill" color={newToolText.trim() ? colors.primary : colors.textSecondary} size={28} />
+                        <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancel</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[styles.modalButton, styles.modalButtonSave]}
+                        onPress={saveChanges}
+                        disabled={saving}
+                      >
+                        {saving ? (
+                          <ActivityIndicator color="#FFFFFF" />
+                        ) : (
+                          <Text style={styles.modalButtonTextSave}>Save Changes</Text>
+                        )}
                       </Pressable>
                     </View>
-                  </View>
-
-                  <Pressable
-                    style={[styles.saveChangesButton, saving && styles.saveChangesButtonDisabled]}
-                    onPress={saveChanges}
-                    disabled={saving}
-                  >
-                    {saving ? (
-                      <ActivityIndicator color="#FFFFFF" />
-                    ) : (
-                      <>
-                        <IconSymbol name="checkmark.circle.fill" color="#FFFFFF" size={24} />
-                        <Text style={styles.saveChangesButtonText}>Save Changes</Text>
-                      </>
-                    )}
-                  </Pressable>
-
-                  <View style={styles.bottomSpacer} />
-                </>
-              )}
-            </ScrollView>
-          </KeyboardAvoidingView>
-        </Modal>
-      </View>
+                  </ScrollView>
+                </View>
+              </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
+      </Modal>
     </>
   );
 }
@@ -476,63 +453,44 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingVertical: 20,
-    paddingHorizontal: 16,
-    paddingBottom: 160,
+    padding: 16,
+    paddingBottom: 100,
   },
-  headerContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
   },
-  headerText: {
+  loadingText: {
+    marginTop: 16,
     fontSize: 16,
-    fontWeight: '600',
-    color: colors.textSecondary,
-  },
-  aiPoweredBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: `${colors.accent}15`,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    gap: 4,
-  },
-  aiPoweredText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.accent,
   },
   emptyContainer: {
     flex: 1,
-    alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 60,
-    paddingHorizontal: 32,
+    alignItems: 'center',
+    paddingTop: 100,
   },
   emptyTitle: {
     fontSize: 24,
     fontWeight: '700',
-    color: colors.text,
     marginTop: 16,
-    marginBottom: 8,
   },
   emptyText: {
     fontSize: 16,
-    color: colors.textSecondary,
     textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 24,
+    marginTop: 8,
+    marginHorizontal: 32,
+    lineHeight: 24,
   },
   addButton: {
-    backgroundColor: colors.primary,
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: colors.primary,
     paddingHorizontal: 24,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 12,
+    marginTop: 24,
     gap: 8,
   },
   addButtonText: {
@@ -540,215 +498,199 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  inventoryCard: {
-    backgroundColor: colors.card,
+  statsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
+  statCard: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  statNumber: {
+    fontSize: 28,
+    fontWeight: '700',
+    marginTop: 8,
+  },
+  statLabel: {
+    fontSize: 14,
+    marginTop: 4,
+  },
+  card: {
     borderRadius: 12,
     marginBottom: 16,
     overflow: 'hidden',
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
-    elevation: 3,
   },
-  inventoryImage: {
+  cardImage: {
     width: '100%',
     height: 200,
     backgroundColor: colors.background,
   },
-  inventoryContent: {
+  cardContent: {
     padding: 16,
   },
-  locationBadge: {
+  cardHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: `${colors.primary}15`,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    alignSelf: 'flex-start',
-    marginBottom: 12,
-    gap: 6,
-  },
-  locationText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.primary,
-  },
-  toolsTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.text,
     marginBottom: 8,
   },
-  toolItem: {
+  binInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  binName: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  cardActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  iconButton: {
+    padding: 4,
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 12,
+  },
+  location: {
+    fontSize: 14,
+  },
+  toolsContainer: {
+    marginTop: 8,
+  },
+  toolsTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  toolRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     marginBottom: 4,
   },
   toolBullet: {
     fontSize: 16,
-    color: colors.text,
     marginRight: 8,
-    lineHeight: 22,
+    marginTop: 2,
   },
   toolText: {
     fontSize: 15,
-    color: colors.text,
     flex: 1,
-    lineHeight: 22,
   },
-  dateText: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 16,
-    marginTop: 4,
-  },
-  editButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    gap: 6,
-  },
-  editButtonText: {
-    fontSize: 15,
-    color: colors.primary,
-    fontWeight: '500',
-  },
-  deleteButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    gap: 6,
-  },
-  deleteButtonText: {
-    fontSize: 15,
-    color: '#FF3B30',
-    fontWeight: '500',
-  },
-  headerButtonContainer: {
-    padding: 6,
-  },
-  // Modal styles
-  modalContainer: {
+  modalOverlay: {
     flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    width: '100%',
+    maxHeight: '90%',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 24,
+  },
+  modalScrollContent: {
+    paddingHorizontal: 24,
+    paddingTop: 16,
   },
   modalHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.background,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: '700',
   },
   modalCloseButton: {
     padding: 4,
-    width: 40,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  modalScrollContent: {
-    paddingVertical: 20,
-    paddingHorizontal: 16,
   },
   modalImage: {
     width: '100%',
     height: 200,
     borderRadius: 12,
+    marginBottom: 16,
     backgroundColor: colors.background,
-    marginBottom: 20,
-  },
-  modalSection: {
-    marginBottom: 24,
-  },
-  modalSectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.text,
-    marginBottom: 12,
   },
   modalLabel: {
     fontSize: 15,
     fontWeight: '600',
-    color: colors.text,
     marginBottom: 8,
     marginTop: 12,
   },
   modalInput: {
-    backgroundColor: colors.card,
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
-    color: colors.text,
     borderWidth: 1,
     borderColor: colors.background,
   },
-  toolEditItem: {
+  toolInputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
     gap: 8,
+    marginBottom: 8,
   },
-  toolEditInput: {
+  toolInput: {
     flex: 1,
-    backgroundColor: colors.card,
     borderRadius: 12,
-    padding: 14,
+    padding: 16,
     fontSize: 16,
-    color: colors.text,
     borderWidth: 1,
     borderColor: colors.background,
   },
   removeToolButton: {
     padding: 4,
   },
-  addToolContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 8,
-  },
-  addToolInput: {
-    flex: 1,
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 16,
-    color: colors.text,
-    borderWidth: 1,
-    borderColor: colors.background,
-  },
   addToolButton: {
-    padding: 4,
-  },
-  addToolButtonDisabled: {
-    opacity: 0.4,
-  },
-  saveChangesButton: {
-    backgroundColor: colors.accent,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    marginTop: 8,
+    marginBottom: 24,
+  },
+  addToolText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 8,
+  },
+  modalButton: {
+    flex: 1,
     paddingVertical: 16,
     borderRadius: 12,
-    gap: 8,
-    marginTop: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  saveChangesButtonDisabled: {
-    opacity: 0.6,
+  modalButtonCancel: {
+    borderWidth: 1,
+    borderColor: colors.background,
   },
-  saveChangesButtonText: {
+  modalButtonSave: {
+    backgroundColor: colors.accent,
+  },
+  modalButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalButtonTextSave: {
+    fontSize: 16,
+    fontWeight: '600',
     color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  bottomSpacer: {
-    height: 100,
   },
 });
