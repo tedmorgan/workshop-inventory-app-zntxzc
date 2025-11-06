@@ -1,5 +1,6 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { GoogleGenerativeAI } from "npm:@google/generative-ai@0.21.0";
 
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
 
@@ -131,9 +132,14 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[${requestId}] 📊 Image size: ${sizeInMB.toFixed(2)}MB (within limits)`);
 
-    // Use Gemini 2.5 Flash model
-    const model = 'gemini-2.0-flash-exp';
-    console.log(`[${requestId}] 🎯 Using model: ${model}`);
+    // Initialize Google Generative AI with API key
+    console.log(`[${requestId}] 🔧 Initializing Google Generative AI SDK...`);
+    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+    
+    // Use Gemini 2.0 Flash model
+    const modelName = 'gemini-2.0-flash-exp';
+    console.log(`[${requestId}] 🎯 Getting model: ${modelName}`);
+    const model = genAI.getGenerativeModel({ model: modelName });
     
     // Prepare the prompt based on whether this is a re-analysis
     let promptText: string;
@@ -152,30 +158,10 @@ Please re-analyze the image taking the user's feedback into account. Correct any
       promptText = 'Analyze this image and identify all tools visible. Return ONLY a JSON array of tool names, nothing else. Format: ["tool1", "tool2", "tool3"]. Be specific with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver") and make sure to capture every tool in the image.';
     }
     
-    // Prepare the request body for Gemini API
-    const requestBody = {
-      contents: [
-        {
-          parts: [
-            {
-              text: promptText,
-            },
-            {
-              inline_data: {
-                mime_type: 'image/jpeg',
-                data: base64Data,
-              },
-            },
-          ],
-        },
-      ],
-    };
-
-    // Log the complete Gemini API request payload
     console.log(`\n[${requestId}] ${'═'.repeat(80)}`);
     console.log(`[${requestId}] 🚀 GEMINI API REQUEST - COMPLETE DETAILS`);
     console.log(`[${requestId}] ${'═'.repeat(80)}`);
-    console.log(`[${requestId}] Model: ${model}`);
+    console.log(`[${requestId}] Model: ${modelName}`);
     console.log(`[${requestId}] Is Re-analysis: ${isReanalysis}`);
     console.log(`[${requestId}] Image Size: ${sizeInMB.toFixed(2)}MB`);
     console.log(`[${requestId}] Base64 Length: ${base64Data.length} chars`);
@@ -193,69 +179,23 @@ Please re-analyze the image taking the user's feedback into account. Correct any
       console.log(`[${requestId}] ${'─'.repeat(80)}`);
     }
     
-    console.log(`[${requestId}] 📦 REQUEST BODY TO GEMINI:`);
-    console.log(JSON.stringify(requestBody, null, 2));
     console.log(`[${requestId}] ${'═'.repeat(80)}\n`);
 
     console.log(`[${requestId}] 📤 Sending request to Gemini API NOW...`);
     const startTime = Date.now();
     
-    // Call Gemini API using REST API with proper authentication
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
-    
-    let response;
+    // Call Gemini API using the official SDK
+    let result;
     try {
-      const fetchResponse = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      result = await model.generateContent([
+        promptText,
+        {
+          inlineData: {
+            mimeType: 'image/jpeg',
+            data: base64Data,
+          },
         },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (!fetchResponse.ok) {
-        const errorText = await fetchResponse.text();
-        console.error(`[${requestId}] ❌ Gemini API returned error status: ${fetchResponse.status}`);
-        console.error(`[${requestId}] Error response: ${errorText}`);
-        
-        let errorMessage = 'Failed to call Gemini API';
-        let errorHint = 'Please try again later';
-        
-        if (fetchResponse.status === 401) {
-          errorMessage = 'Invalid or missing Gemini API key';
-          errorHint = 'The GEMINI_API_KEY environment variable is not set correctly. Please contact the administrator to set it using: supabase secrets set GEMINI_API_KEY=your_key_here';
-        } else if (fetchResponse.status === 403) {
-          errorMessage = 'API key does not have permission';
-          errorHint = 'The Gemini API key does not have the required permissions. Please check the API key settings in Google AI Studio.';
-        } else if (fetchResponse.status === 429) {
-          errorMessage = 'API rate limit exceeded';
-          errorHint = 'Too many requests. Please wait a moment and try again.';
-        } else if (fetchResponse.status === 400) {
-          errorMessage = 'Bad request to Gemini API';
-          errorHint = 'The request format may be incorrect. Please check the image format and size.';
-        }
-        
-        return new Response(
-          JSON.stringify({
-            error: errorMessage,
-            hint: errorHint,
-            details: errorText,
-            statusCode: fetchResponse.status,
-            requestId,
-            apiKeyStatus: GEMINI_API_KEY ? 'SET' : 'NOT SET',
-            apiKeyLength: GEMINI_API_KEY ? GEMINI_API_KEY.length : 0,
-          }),
-          {
-            status: fetchResponse.status,
-            headers: {
-              'Content-Type': 'application/json',
-              'Access-Control-Allow-Origin': '*',
-            },
-          }
-        );
-      }
-
-      response = await fetchResponse.json();
+      ]);
     } catch (apiError) {
       const endTime = Date.now();
       const duration = endTime - startTime;
@@ -267,11 +207,28 @@ Please re-analyze the image taking the user's feedback into account. Correct any
       
       let errorMessage = 'Failed to call Gemini API';
       let errorHint = 'Please try again later';
+      let statusCode = 500;
       
       if (apiError instanceof Error) {
         const errorStr = apiError.message.toLowerCase();
         
-        if (errorStr.includes('network')) {
+        if (errorStr.includes('api key') || errorStr.includes('401') || errorStr.includes('unauthorized')) {
+          errorMessage = 'Invalid or missing Gemini API key';
+          errorHint = 'The GEMINI_API_KEY environment variable is not set correctly. Please contact the administrator to set it using: supabase secrets set GEMINI_API_KEY=your_key_here';
+          statusCode = 401;
+        } else if (errorStr.includes('403') || errorStr.includes('forbidden')) {
+          errorMessage = 'API key does not have permission';
+          errorHint = 'The Gemini API key does not have the required permissions. Please check the API key settings in Google AI Studio.';
+          statusCode = 403;
+        } else if (errorStr.includes('429') || errorStr.includes('rate limit')) {
+          errorMessage = 'API rate limit exceeded';
+          errorHint = 'Too many requests. Please wait a moment and try again.';
+          statusCode = 429;
+        } else if (errorStr.includes('400') || errorStr.includes('bad request')) {
+          errorMessage = 'Bad request to Gemini API';
+          errorHint = 'The request format may be incorrect. Please check the image format and size.';
+          statusCode = 400;
+        } else if (errorStr.includes('network')) {
           errorMessage = 'Network error';
           errorHint = 'Could not connect to Gemini API. Please check your internet connection.';
         } else if (errorStr.includes('timeout')) {
@@ -290,7 +247,7 @@ Please re-analyze the image taking the user's feedback into account. Correct any
           apiKeyLength: GEMINI_API_KEY ? GEMINI_API_KEY.length : 0,
         }),
         {
-          status: 500,
+          status: statusCode,
           headers: {
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*',
@@ -308,17 +265,13 @@ Please re-analyze the image taking the user's feedback into account. Correct any
     console.log(`[${requestId}] ${'═'.repeat(80)}`);
     console.log(`[${requestId}] Response time: ${duration}ms`);
     console.log(`[${requestId}] ${'─'.repeat(80)}`);
-    console.log(`[${requestId}] Full response structure:`);
-    console.log(JSON.stringify(response, null, 2));
-    console.log(`[${requestId}] ${'═'.repeat(80)}\n`);
 
     // Extract the text response
-    const candidate = response.candidates?.[0];
-    const textResponse = candidate?.content?.parts?.[0]?.text;
+    const response = result.response;
+    const textResponse = response.text();
 
     if (!textResponse) {
       console.error(`[${requestId}] ❌ No text response from Gemini`);
-      console.error(`[${requestId}] Full response: ${JSON.stringify(response, null, 2)}`);
       return new Response(
         JSON.stringify({
           error: 'No response from Gemini',
@@ -383,7 +336,7 @@ Please re-analyze the image taking the user's feedback into account. Correct any
         requestId,
         toolCount: tools.length,
         imageSizeMB: sizeInMB.toFixed(2),
-        model: model,
+        model: modelName,
         hadPreviousResponse: !!previousResponse,
         hadUserFeedback: !!userFeedback,
         processingTimeMs: duration,
