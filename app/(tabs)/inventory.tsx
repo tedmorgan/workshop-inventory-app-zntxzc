@@ -28,12 +28,10 @@ import { getDeviceId } from "@/utils/deviceId";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  useAnimatedGestureHandler,
   withSpring,
   withTiming,
-  runOnJS,
 } from 'react-native-reanimated';
-import { PinchGestureHandler, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -64,6 +62,7 @@ export default function InventoryScreen() {
 
   // Zoom state
   const scale = useSharedValue(1);
+  const savedScale = useSharedValue(1);
   const focalX = useSharedValue(0);
   const focalY = useSharedValue(0);
 
@@ -240,6 +239,7 @@ export default function InventoryScreen() {
     console.log('🖼️ Expanding image');
     setExpandedImageUrl(imageUrl);
     scale.value = 1;
+    savedScale.value = 1;
     focalX.value = 0;
     focalY.value = 0;
   };
@@ -248,33 +248,30 @@ export default function InventoryScreen() {
     console.log('❌ Closing expanded image');
     setExpandedImageUrl(null);
     scale.value = 1;
+    savedScale.value = 1;
     focalX.value = 0;
     focalY.value = 0;
   };
 
-  const onPinchGestureEvent = useAnimatedGestureHandler({
-    onActive: (event) => {
-      scale.value = Math.max(1, Math.min(event.scale, 5));
-      focalX.value = event.focalX;
-      focalY.value = event.focalY;
-    },
-    onEnd: () => {
+  // Modern Gesture API for pinch-to-zoom
+  const pinchGesture = Gesture.Pinch()
+    .onUpdate((event) => {
+      scale.value = Math.max(1, Math.min(savedScale.value * event.scale, 5));
+    })
+    .onEnd(() => {
+      savedScale.value = scale.value;
       if (scale.value < 1.2) {
         scale.value = withSpring(1);
+        savedScale.value = 1;
         focalX.value = withSpring(0);
         focalY.value = withSpring(0);
       }
-    },
-  });
+    });
 
   const animatedStyle = useAnimatedStyle(() => {
     return {
       transform: [
-        { translateX: focalX.value },
-        { translateY: focalY.value },
         { scale: scale.value },
-        { translateX: -focalX.value },
-        { translateY: -focalY.value },
       ],
     };
   });
@@ -539,7 +536,7 @@ export default function InventoryScreen() {
             </View>
 
             {/* Zoomable Image */}
-            <PinchGestureHandler onGestureEvent={onPinchGestureEvent}>
+            <GestureDetector gesture={pinchGesture}>
               <Animated.View style={[styles.imageContainer, animatedStyle]}>
                 {expandedImageUrl && (
                   <Image
@@ -549,7 +546,7 @@ export default function InventoryScreen() {
                   />
                 )}
               </Animated.View>
-            </PinchGestureHandler>
+            </GestureDetector>
           </View>
         </GestureHandlerRootView>
       </Modal>
