@@ -56,6 +56,8 @@ export default function FindToolScreen() {
   const translateY = useSharedValue(0);
   const savedTranslateX = useSharedValue(0);
   const savedTranslateY = useSharedValue(0);
+  const originX = useSharedValue(0);
+  const originY = useSharedValue(0);
 
   const searchTools = async () => {
     if (!searchQuery.trim()) {
@@ -127,6 +129,8 @@ export default function FindToolScreen() {
     translateY.value = 0;
     savedTranslateX.value = 0;
     savedTranslateY.value = 0;
+    originX.value = 0;
+    originY.value = 0;
   };
 
   const closeExpandedImage = () => {
@@ -138,6 +142,8 @@ export default function FindToolScreen() {
     translateY.value = 0;
     savedTranslateX.value = 0;
     savedTranslateY.value = 0;
+    originX.value = 0;
+    originY.value = 0;
   };
 
   // Pan gesture for dragging the zoomed image
@@ -154,16 +160,27 @@ export default function FindToolScreen() {
       savedTranslateY.value = translateY.value;
     });
 
-  // Pinch gesture for zooming
+  // Pinch gesture for zooming with proper focal point handling
   const pinchGesture = Gesture.Pinch()
+    .onStart((event) => {
+      // Store the focal point at the start of the pinch
+      originX.value = event.focalX;
+      originY.value = event.focalY;
+    })
     .onUpdate((event) => {
+      // Calculate new scale with limits
       const newScale = Math.max(1, Math.min(savedScale.value * event.scale, 5));
       scale.value = newScale;
 
-      // Adjust translation based on focal point
-      const deltaScale = newScale / savedScale.value;
-      translateX.value = event.focalX + (savedTranslateX.value - event.focalX) * deltaScale;
-      translateY.value = event.focalY + (savedTranslateY.value - event.focalY) * deltaScale;
+      // Calculate translation to keep the focal point stationary
+      // The focal point should remain at the same screen position
+      const deltaX = event.focalX - originX.value;
+      const deltaY = event.focalY - originY.value;
+      
+      // Adjust translation based on scale change
+      const scaleChange = newScale - savedScale.value;
+      translateX.value = savedTranslateX.value + deltaX - (event.focalX - SCREEN_WIDTH / 2) * scaleChange / savedScale.value;
+      translateY.value = savedTranslateY.value + deltaY - (event.focalY - SCREEN_HEIGHT / 2) * scaleChange / savedScale.value;
     })
     .onEnd(() => {
       savedScale.value = scale.value;
@@ -196,16 +213,19 @@ export default function FindToolScreen() {
       } else {
         // Zoom in to 2x at tap location
         const newScale = 2;
-        scale.value = withSpring(newScale);
-        savedScale.value = newScale;
-        
-        // Center on tap location
         const centerX = SCREEN_WIDTH / 2;
         const centerY = SCREEN_HEIGHT / 2;
-        translateX.value = withSpring(centerX - event.x);
-        translateY.value = withSpring(centerY - event.y);
-        savedTranslateX.value = centerX - event.x;
-        savedTranslateY.value = centerY - event.y;
+        
+        // Calculate translation to center on tap point
+        const targetX = centerX - event.x;
+        const targetY = centerY - event.y;
+        
+        scale.value = withSpring(newScale);
+        savedScale.value = newScale;
+        translateX.value = withSpring(targetX * newScale);
+        translateY.value = withSpring(targetY * newScale);
+        savedTranslateX.value = targetX * newScale;
+        savedTranslateY.value = targetY * newScale;
       }
     });
 
