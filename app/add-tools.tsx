@@ -45,7 +45,10 @@ export default function AddToolsScreen() {
   const [previousResponse, setPreviousResponse] = useState<string[]>([]);
   const [imageBase64, setImageBase64] = useState<string>('');
 
-  // Refs for TextInputs to enable keyboard navigation
+  // Refs for TextInputs to enable keyboard navigation and scrolling
+  const scrollViewRef = useRef<ScrollView>(null);
+  const toolsListRef = useRef<TextInput>(null);
+  const binNameRef = useRef<TextInput>(null);
   const binLocationRef = useRef<TextInput>(null);
   const reanalyzeReasonRef = useRef<TextInput>(null);
 
@@ -536,152 +539,164 @@ export default function AddToolsScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View style={styles.innerContainer}>
-            <ScrollView
-              contentContainerStyle={styles.scrollContent}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="on-drag"
-            >
-              {Platform.OS === 'web' && (
-                <View style={styles.webNotice}>
-                  <IconSymbol name="info.circle.fill" color={colors.primary} size={20} />
-                  <Text style={styles.webNoticeText}>
-                    You&apos;re viewing the web preview. AI analysis and camera features work best on mobile devices.
-                  </Text>
-                </View>
-              )}
+        <ScrollView
+          ref={scrollViewRef}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
+          {Platform.OS === 'web' && (
+            <View style={styles.webNotice}>
+              <IconSymbol name="info.circle.fill" color={colors.primary} size={20} />
+              <Text style={styles.webNoticeText}>
+                You&apos;re viewing the web preview. AI analysis and camera features work best on mobile devices.
+              </Text>
+            </View>
+          )}
 
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>1. Take a Photo</Text>
-                {imageUri ? (
-                  <View style={styles.imageContainer}>
-                    <Image source={{ uri: imageUri }} style={styles.image} />
-                    <Pressable
-                      style={styles.changeImageButton}
-                      onPress={() => {
-                        setImageUri(null);
-                        setToolsList('');
-                        setPreviousResponse([]);
-                        setImageBase64('');
-                      }}
-                    >
-                      <IconSymbol name="xmark.circle.fill" color="#FFFFFF" size={24} />
-                    </Pressable>
-                  </View>
-                ) : (
-                  <View style={styles.imagePlaceholder}>
-                    <IconSymbol name="camera.fill" color={colors.textSecondary} size={48} />
-                    <Text style={styles.placeholderText}>No photo taken yet</Text>
-                    <View style={styles.buttonRow}>
-                      {Platform.OS !== 'web' && (
-                        <Pressable style={styles.imageButton} onPress={pickImage}>
-                          <IconSymbol name="camera" color="#FFFFFF" size={20} />
-                          <Text style={styles.imageButtonText}>Camera</Text>
-                        </Pressable>
-                      )}
-                      <Pressable style={[styles.imageButton, styles.galleryButton]} onPress={pickFromGallery}>
-                        <IconSymbol name="photo" color="#FFFFFF" size={20} />
-                        <Text style={styles.imageButtonText}>Gallery</Text>
-                      </Pressable>
-                    </View>
-                  </View>
-                )}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>1. Take a Photo</Text>
+            {imageUri ? (
+              <View style={styles.imageContainer}>
+                <Image source={{ uri: imageUri }} style={styles.image} />
+                <Pressable
+                  style={styles.changeImageButton}
+                  onPress={() => {
+                    setImageUri(null);
+                    setToolsList('');
+                    setPreviousResponse([]);
+                    setImageBase64('');
+                  }}
+                >
+                  <IconSymbol name="xmark.circle.fill" color="#FFFFFF" size={24} />
+                </Pressable>
               </View>
-
-              <View style={styles.section}>
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>2. List of Tools</Text>
-                  {imageUri && !analyzing && Platform.OS !== 'web' && (
-                    <Pressable
-                      style={styles.reanalyzeButton}
-                      onPress={handleReanalyzePress}
-                    >
-                      <IconSymbol name="arrow.clockwise" color={colors.primary} size={18} />
-                      <Text style={styles.reanalyzeText}>Re-analyze</Text>
+            ) : (
+              <View style={styles.imagePlaceholder}>
+                <IconSymbol name="camera.fill" color={colors.textSecondary} size={48} />
+                <Text style={styles.placeholderText}>No photo taken yet</Text>
+                <View style={styles.buttonRow}>
+                  {Platform.OS !== 'web' && (
+                    <Pressable style={styles.imageButton} onPress={pickImage}>
+                      <IconSymbol name="camera" color="#FFFFFF" size={20} />
+                      <Text style={styles.imageButtonText}>Camera</Text>
                     </Pressable>
                   )}
+                  <Pressable style={[styles.imageButton, styles.galleryButton]} onPress={pickFromGallery}>
+                    <IconSymbol name="photo" color="#FFFFFF" size={20} />
+                    <Text style={styles.imageButtonText}>Gallery</Text>
+                  </Pressable>
                 </View>
-                {analyzing ? (
-                  <View style={styles.analyzingContainer}>
-                    <ActivityIndicator size="large" color={colors.primary} />
-                    <Text style={styles.analyzingText}>🤖 Analyzing with Gemini AI...</Text>
-                    <Text style={styles.analyzingSubtext}>This may take 10-60 seconds</Text>
-                  </View>
-                ) : (
-                  <>
-                    {Platform.OS !== 'web' && (
-                      <View style={styles.aiInfoBadge}>
-                        <IconSymbol name="sparkles" color={colors.accent} size={16} />
-                        <Text style={styles.aiInfoText}>AI-powered by Google Gemini</Text>
-                      </View>
-                    )}
-                    <Text style={styles.helperText}>
-                      Enter each tool on a new line. {Platform.OS !== 'web' ? 'AI will identify tools automatically when you take a photo.' : 'Enter tools manually in web preview.'}
-                    </Text>
-                    <TextInput
-                      style={styles.textArea}
-                      placeholder="Example:&#10;Hammer&#10;Screwdriver set&#10;Wrench&#10;Pliers"
-                      placeholderTextColor={colors.textSecondary}
-                      multiline
-                      numberOfLines={8}
-                      value={toolsList}
-                      onChangeText={setToolsList}
-                      textAlignVertical="top"
-                    />
-                  </>
-                )}
               </View>
+            )}
+          </View>
 
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>3. Storage Information</Text>
-                <Text style={styles.label}>Bin Name/ID</Text>
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>2. List of Tools</Text>
+              {imageUri && !analyzing && Platform.OS !== 'web' && (
+                <Pressable
+                  style={styles.reanalyzeButton}
+                  onPress={handleReanalyzePress}
+                >
+                  <IconSymbol name="arrow.clockwise" color={colors.primary} size={18} />
+                  <Text style={styles.reanalyzeText}>Re-analyze</Text>
+                </Pressable>
+              )}
+            </View>
+            {analyzing ? (
+              <View style={styles.analyzingContainer}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={styles.analyzingText}>🤖 Analyzing with Gemini AI...</Text>
+                <Text style={styles.analyzingSubtext}>This may take 10-60 seconds</Text>
+              </View>
+            ) : (
+              <>
+                {Platform.OS !== 'web' && (
+                  <View style={styles.aiInfoBadge}>
+                    <IconSymbol name="sparkles" color={colors.accent} size={16} />
+                    <Text style={styles.aiInfoText}>AI-powered by Google Gemini</Text>
+                  </View>
+                )}
+                <Text style={styles.helperText}>
+                  Enter each tool on a new line. {Platform.OS !== 'web' ? 'AI will identify tools automatically when you take a photo.' : 'Enter tools manually in web preview.'}
+                </Text>
                 <TextInput
-                  style={styles.input}
-                  placeholder="e.g., Red Toolbox, Bin A3"
+                  ref={toolsListRef}
+                  style={styles.textArea}
+                  placeholder="Example:&#10;Hammer&#10;Screwdriver set&#10;Wrench&#10;Pliers"
                   placeholderTextColor={colors.textSecondary}
-                  value={binName}
-                  onChangeText={setBinName}
-                  returnKeyType="next"
-                  blurOnSubmit={false}
-                  onSubmitEditing={() => {
-                    binLocationRef.current?.focus();
+                  multiline
+                  numberOfLines={8}
+                  value={toolsList}
+                  onChangeText={setToolsList}
+                  textAlignVertical="top"
+                  onFocus={() => {
+                    // Scroll to make the text area visible when focused
+                    setTimeout(() => {
+                      toolsListRef.current?.measureLayout(
+                        scrollViewRef.current as any,
+                        (x, y) => {
+                          scrollViewRef.current?.scrollTo({ y: y - 100, animated: true });
+                        },
+                        () => console.log('Failed to measure layout')
+                      );
+                    }, 100);
                   }}
                 />
-
-                <Text style={styles.label}>Bin Location</Text>
-                <TextInput
-                  ref={binLocationRef}
-                  style={styles.input}
-                  placeholder="e.g., Top shelf, Garage wall"
-                  placeholderTextColor={colors.textSecondary}
-                  value={binLocation}
-                  onChangeText={setBinLocation}
-                  returnKeyType="done"
-                  onSubmitEditing={Keyboard.dismiss}
-                />
-              </View>
-
-              <Pressable
-                style={[styles.saveButton, (saving || analyzing) && styles.saveButtonDisabled]}
-                onPress={saveInventory}
-                disabled={saving || analyzing}
-              >
-                {saving ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <>
-                    <IconSymbol name="checkmark.circle.fill" color="#FFFFFF" size={24} />
-                    <Text style={styles.saveButtonText}>Save to Inventory</Text>
-                  </>
-                )}
-              </Pressable>
-
-              <View style={styles.bottomSpacer} />
-            </ScrollView>
+              </>
+            )}
           </View>
-        </TouchableWithoutFeedback>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>3. Storage Information</Text>
+            <Text style={styles.label}>Bin Name/ID</Text>
+            <TextInput
+              ref={binNameRef}
+              style={styles.input}
+              placeholder="e.g., Red Toolbox, Bin A3"
+              placeholderTextColor={colors.textSecondary}
+              value={binName}
+              onChangeText={setBinName}
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => {
+                binLocationRef.current?.focus();
+              }}
+            />
+
+            <Text style={styles.label}>Bin Location</Text>
+            <TextInput
+              ref={binLocationRef}
+              style={styles.input}
+              placeholder="e.g., Top shelf, Garage wall"
+              placeholderTextColor={colors.textSecondary}
+              value={binLocation}
+              onChangeText={setBinLocation}
+              returnKeyType="done"
+              onSubmitEditing={Keyboard.dismiss}
+            />
+          </View>
+
+          <Pressable
+            style={[styles.saveButton, (saving || analyzing) && styles.saveButtonDisabled]}
+            onPress={saveInventory}
+            disabled={saving || analyzing}
+          >
+            {saving ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <>
+                <IconSymbol name="checkmark.circle.fill" color="#FFFFFF" size={24} />
+                <Text style={styles.saveButtonText}>Save to Inventory</Text>
+              </>
+            )}
+          </Pressable>
+
+          {/* Extra padding at bottom to ensure content is visible above keyboard */}
+          <View style={styles.bottomSpacer} />
+        </ScrollView>
       </KeyboardAvoidingView>
 
       {/* Re-analyze Modal */}
@@ -783,15 +798,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  innerContainer: {
-    flex: 1,
-  },
   scrollContent: {
     paddingVertical: 20,
     paddingHorizontal: 16,
+    paddingBottom: Platform.OS === 'ios' ? 400 : 350, // Extra padding for keyboard
   },
   bottomSpacer: {
-    height: 100,
+    height: 50,
   },
   webNotice: {
     flexDirection: 'row',
@@ -1002,6 +1015,7 @@ const styles = StyleSheet.create({
   modalScrollContent: {
     paddingHorizontal: 24,
     paddingTop: 16,
+    paddingBottom: 20,
   },
   modalHeader: {
     flexDirection: 'row',
