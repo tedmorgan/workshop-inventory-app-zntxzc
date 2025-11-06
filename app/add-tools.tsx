@@ -209,11 +209,13 @@ export default function AddToolsScreen() {
       const timeoutId = setTimeout(() => controller.abort(), 60000);
 
       try {
+        console.log('🔑 Calling Edge Function with anon key');
         const { data, error } = await supabase.functions.invoke('analyze-tools-image', {
           body: requestBody,
         });
 
         clearTimeout(timeoutId);
+        console.log('✅ Edge Function call completed');
 
         if (error) {
           console.log(`❌ Edge Function error: ${JSON.stringify(error)}`);
