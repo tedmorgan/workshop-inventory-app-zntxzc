@@ -13,11 +13,19 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
   global: {
     headers: async () => {
-      // Get the device ID and include it in all requests
-      const deviceId = await getDeviceId();
-      return {
-        'x-device-id': deviceId,
-      };
+      try {
+        // Get the device ID and include it in all requests
+        const deviceId = await getDeviceId();
+        console.log('✅ Device ID header set:', deviceId.substring(0, 8) + '...');
+        return {
+          'x-device-id': deviceId,
+        };
+      } catch (error) {
+        console.error('❌ Error getting device ID for headers:', error);
+        // Return empty headers object instead of throwing
+        // This ensures the Authorization header is still sent
+        return {};
+      }
     },
   },
 });

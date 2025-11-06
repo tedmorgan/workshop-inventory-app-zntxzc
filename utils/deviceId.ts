@@ -98,11 +98,19 @@ export async function getDeviceInfo(): Promise<{
   try {
     const deviceId = await getDeviceId();
     
+    // Safely get device name with platform check
     let deviceName: string | null = null;
     try {
-      deviceName = await Application.getDeviceNameAsync();
+      // Check if the method exists and is available
+      if (Application.getDeviceNameAsync && typeof Application.getDeviceNameAsync === 'function') {
+        deviceName = await Application.getDeviceNameAsync();
+        console.log('📱 Device name obtained:', deviceName);
+      } else {
+        console.log('⚠️ getDeviceNameAsync not available on this platform');
+        deviceName = 'Unknown Device';
+      }
     } catch (error) {
-      console.error('Error getting device name:', error);
+      console.error('❌ Error getting device name:', error);
       deviceName = 'Unknown Device';
     }
 
@@ -120,7 +128,7 @@ export async function getDeviceInfo(): Promise<{
         osVersion = Platform.Version.toString();
       }
     } catch (error) {
-      console.error('Error accessing Platform info:', error);
+      console.error('❌ Error accessing Platform info:', error);
     }
 
     return {
