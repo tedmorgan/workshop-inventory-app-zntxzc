@@ -47,6 +47,7 @@ export default function AddToolsScreen() {
 
   // Refs for TextInputs to enable keyboard navigation and scrolling
   const scrollViewRef = useRef<ScrollView>(null);
+  const modalScrollViewRef = useRef<ScrollView>(null);
   const toolsListRef = useRef<TextInput>(null);
   const binNameRef = useRef<TextInput>(null);
   const binLocationRef = useRef<TextInput>(null);
@@ -715,6 +716,7 @@ export default function AddToolsScreen() {
               <TouchableWithoutFeedback>
                 <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
                   <ScrollView
+                    ref={modalScrollViewRef}
                     contentContainerStyle={styles.modalScrollContent}
                     showsVerticalScrollIndicator={false}
                     keyboardShouldPersistTaps="handled"
@@ -766,6 +768,18 @@ export default function AddToolsScreen() {
                       numberOfLines={3}
                       textAlignVertical="top"
                       autoFocus={true}
+                      onFocus={() => {
+                        // Scroll to make the text input visible when focused
+                        setTimeout(() => {
+                          reanalyzeReasonRef.current?.measureLayout(
+                            modalScrollViewRef.current as any,
+                            (x, y) => {
+                              modalScrollViewRef.current?.scrollTo({ y: y - 50, animated: true });
+                            },
+                            () => console.log('Failed to measure layout in modal')
+                          );
+                        }, 300);
+                      }}
                     />
 
                     <View style={styles.modalButtons}>
@@ -783,6 +797,9 @@ export default function AddToolsScreen() {
                         <Text style={styles.modalButtonTextSubmit}>Re-Analyze</Text>
                       </Pressable>
                     </View>
+
+                    {/* Extra padding at bottom to ensure content is visible above keyboard */}
+                    <View style={styles.modalBottomSpacer} />
                   </ScrollView>
                 </View>
               </TouchableWithoutFeedback>
@@ -1015,7 +1032,10 @@ const styles = StyleSheet.create({
   modalScrollContent: {
     paddingHorizontal: 24,
     paddingTop: 16,
-    paddingBottom: 20,
+    paddingBottom: Platform.OS === 'ios' ? 400 : 350, // Extra padding for keyboard
+  },
+  modalBottomSpacer: {
+    height: 50,
   },
   modalHeader: {
     flexDirection: 'row',
