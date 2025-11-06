@@ -1,6 +1,5 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { GoogleGenAI } from "npm:@google/genai";
 
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
 
@@ -132,36 +131,8 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[${requestId}] 📊 Image size: ${sizeInMB.toFixed(2)}MB (within limits)`);
 
-    // Initialize Gemini AI with the new SDK
-    console.log(`[${requestId}] 🤖 Initializing Gemini AI client...`);
-    console.log(`[${requestId}] 🔑 Using API key (first 10 chars): ${GEMINI_API_KEY.substring(0, 10)}...`);
-    
-    let ai;
-    try {
-      ai = new GoogleGenAI({
-        apiKey: GEMINI_API_KEY,
-      });
-      console.log(`[${requestId}] ✅ Gemini AI client initialized successfully`);
-    } catch (initError) {
-      console.error(`[${requestId}] ❌ Failed to initialize Gemini AI client:`, initError);
-      return new Response(
-        JSON.stringify({
-          error: 'Failed to initialize Gemini AI',
-          message: initError instanceof Error ? initError.message : 'Unknown error',
-          hint: 'Check if the GEMINI_API_KEY is valid',
-        }),
-        {
-          status: 500,
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-          },
-        }
-      );
-    }
-
     // Use Gemini 2.5 Flash model
-    const model = 'gemini-2.5-flash';
+    const model = 'gemini-2.0-flash-exp';
     console.log(`[${requestId}] 🎯 Using model: ${model}`);
     
     // Prepare the prompt based on whether this is a re-analysis
@@ -181,18 +152,24 @@ Please re-analyze the image taking the user's feedback into account. Correct any
       promptText = 'Analyze this image and identify all tools visible. Return ONLY a JSON array of tool names, nothing else. Format: ["tool1", "tool2", "tool3"]. Be specific with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver") and make sure to capture every tool in the image.';
     }
     
-    // Prepare the request parts
-    const parts = [
-      {
-        text: promptText,
-      },
-      {
-        inlineData: {
-          data: base64Data,
-          mimeType: 'image/jpeg',
+    // Prepare the request body for Gemini API
+    const requestBody = {
+      contents: [
+        {
+          parts: [
+            {
+              text: promptText,
+            },
+            {
+              inline_data: {
+                mime_type: 'image/jpeg',
+                data: base64Data,
+              },
+            },
+          ],
         },
-      },
-    ];
+      ],
+    };
 
     // Log the complete Gemini API request payload
     console.log(`\n[${requestId}] ${'═'.repeat(80)}`);
@@ -202,51 +179,83 @@ Please re-analyze the image taking the user's feedback into account. Correct any
     console.log(`[${requestId}] Is Re-analysis: ${isReanalysis}`);
     console.log(`[${requestId}] Image Size: ${sizeInMB.toFixed(2)}MB`);
     console.log(`[${requestId}] Base64 Length: ${base64Data.length} chars`);
+    console.log(`[${requestId}] API Key (first 10 chars): ${GEMINI_API_KEY.substring(0, 10)}...`);
     console.log(`[${requestId}] ${'─'.repeat(80)}`);
-    console.log(`[${requestId}] 📝 COMPLETE PROMPT TEXT (FULL - NOT TRUNCATED):`);
+    console.log(`[${requestId}] 📝 COMPLETE PROMPT TEXT:`);
     console.log(`[${requestId}] ${'─'.repeat(80)}`);
     console.log(promptText);
     console.log(`[${requestId}] ${'─'.repeat(80)}`);
     
     if (isReanalysis) {
       console.log(`[${requestId}] 🔄 RE-ANALYSIS CONTEXT DETAILS:`);
-      console.log(`[${requestId}]   - Previous Response Type: ${typeof previousResponse}`);
-      console.log(`[${requestId}]   - Previous Response Is Array: ${Array.isArray(previousResponse)}`);
-      console.log(`[${requestId}]   - Previous Response Length: ${Array.isArray(previousResponse) ? previousResponse.length : 'N/A'}`);
-      console.log(`[${requestId}]   - Previous Response Full Data: ${JSON.stringify(previousResponse, null, 2)}`);
-      console.log(`[${requestId}]   - User Feedback Type: ${typeof userFeedback}`);
-      console.log(`[${requestId}]   - User Feedback Length: ${userFeedback?.length || 0} chars`);
-      console.log(`[${requestId}]   - User Feedback Full Text: "${userFeedback}"`);
+      console.log(`[${requestId}]   - Previous Response: ${JSON.stringify(previousResponse, null, 2)}`);
+      console.log(`[${requestId}]   - User Feedback: "${userFeedback}"`);
       console.log(`[${requestId}] ${'─'.repeat(80)}`);
     }
     
-    console.log(`[${requestId}] 📦 REQUEST STRUCTURE TO GEMINI:`);
-    console.log(`[${requestId}]   - Number of parts: ${parts.length}`);
-    console.log(`[${requestId}]   - Part 1 (text prompt):`);
-    console.log(`[${requestId}]     Type: text`);
-    console.log(`[${requestId}]     Length: ${parts[0].text.length} chars`);
-    console.log(`[${requestId}]     FULL TEXT: "${parts[0].text}"`);
-    console.log(`[${requestId}]   - Part 2 (image):`);
-    console.log(`[${requestId}]     Type: inlineData`);
-    console.log(`[${requestId}]     MIME Type: ${parts[1].inlineData.mimeType}`);
-    console.log(`[${requestId}]     Data Length: ${parts[1].inlineData.data.length} chars`);
+    console.log(`[${requestId}] 📦 REQUEST BODY TO GEMINI:`);
+    console.log(JSON.stringify(requestBody, null, 2));
     console.log(`[${requestId}] ${'═'.repeat(80)}\n`);
 
     console.log(`[${requestId}] 📤 Sending request to Gemini API NOW...`);
     const startTime = Date.now();
     
-    // Call Gemini API using the new SDK with enhanced error handling
+    // Call Gemini API using REST API with proper authentication
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+    
     let response;
     try {
-      response = await ai.models.generateContent({
-        model,
-        contents: [
-          {
-            role: 'user',
-            parts,
-          },
-        ],
+      const fetchResponse = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
       });
+
+      if (!fetchResponse.ok) {
+        const errorText = await fetchResponse.text();
+        console.error(`[${requestId}] ❌ Gemini API returned error status: ${fetchResponse.status}`);
+        console.error(`[${requestId}] Error response: ${errorText}`);
+        
+        let errorMessage = 'Failed to call Gemini API';
+        let errorHint = 'Please try again later';
+        
+        if (fetchResponse.status === 401) {
+          errorMessage = 'Invalid or missing Gemini API key';
+          errorHint = 'The GEMINI_API_KEY environment variable is not set correctly. Please contact the administrator to set it using: supabase secrets set GEMINI_API_KEY=your_key_here';
+        } else if (fetchResponse.status === 403) {
+          errorMessage = 'API key does not have permission';
+          errorHint = 'The Gemini API key does not have the required permissions. Please check the API key settings in Google AI Studio.';
+        } else if (fetchResponse.status === 429) {
+          errorMessage = 'API rate limit exceeded';
+          errorHint = 'Too many requests. Please wait a moment and try again.';
+        } else if (fetchResponse.status === 400) {
+          errorMessage = 'Bad request to Gemini API';
+          errorHint = 'The request format may be incorrect. Please check the image format and size.';
+        }
+        
+        return new Response(
+          JSON.stringify({
+            error: errorMessage,
+            hint: errorHint,
+            details: errorText,
+            statusCode: fetchResponse.status,
+            requestId,
+            apiKeyStatus: GEMINI_API_KEY ? 'SET' : 'NOT SET',
+            apiKeyLength: GEMINI_API_KEY ? GEMINI_API_KEY.length : 0,
+          }),
+          {
+            status: fetchResponse.status,
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+            },
+          }
+        );
+      }
+
+      response = await fetchResponse.json();
     } catch (apiError) {
       const endTime = Date.now();
       const duration = endTime - startTime;
@@ -255,30 +264,19 @@ Please re-analyze the image taking the user's feedback into account. Correct any
       console.error(`[${requestId}] Error type: ${apiError?.constructor?.name}`);
       console.error(`[${requestId}] Error message: ${apiError instanceof Error ? apiError.message : 'Unknown error'}`);
       console.error(`[${requestId}] Error stack: ${apiError instanceof Error ? apiError.stack : 'No stack trace'}`);
-      console.error(`[${requestId}] Full error object: ${JSON.stringify(apiError, null, 2)}`);
       
-      // Check for specific error types
       let errorMessage = 'Failed to call Gemini API';
       let errorHint = 'Please try again later';
       
       if (apiError instanceof Error) {
         const errorStr = apiError.message.toLowerCase();
         
-        if (errorStr.includes('401') || errorStr.includes('unauthorized') || errorStr.includes('api key')) {
-          errorMessage = 'Invalid or missing Gemini API key';
-          errorHint = 'The GEMINI_API_KEY environment variable is not set correctly. Please contact the administrator to set it using: supabase secrets set GEMINI_API_KEY=your_key_here';
-        } else if (errorStr.includes('403') || errorStr.includes('forbidden')) {
-          errorMessage = 'API key does not have permission';
-          errorHint = 'The Gemini API key does not have the required permissions. Please check the API key settings in Google AI Studio.';
-        } else if (errorStr.includes('429') || errorStr.includes('quota') || errorStr.includes('rate limit')) {
-          errorMessage = 'API rate limit exceeded';
-          errorHint = 'Too many requests. Please wait a moment and try again.';
+        if (errorStr.includes('network')) {
+          errorMessage = 'Network error';
+          errorHint = 'Could not connect to Gemini API. Please check your internet connection.';
         } else if (errorStr.includes('timeout')) {
           errorMessage = 'Request timeout';
           errorHint = 'The Gemini API took too long to respond. Please try again.';
-        } else if (errorStr.includes('network')) {
-          errorMessage = 'Network error';
-          errorHint = 'Could not connect to Gemini API. Please check your internet connection.';
         }
       }
       
@@ -411,7 +409,6 @@ Please re-analyze the image taking the user's feedback into account. Correct any
     console.error(`[${requestId}] Error type: ${error?.constructor?.name}`);
     console.error(`[${requestId}] Error message: ${error instanceof Error ? error.message : 'Unknown error'}`);
     console.error(`[${requestId}] Error stack: ${error instanceof Error ? error.stack : 'No stack trace'}`);
-    console.error(`[${requestId}] Full error object: ${JSON.stringify(error, null, 2)}`);
     
     return new Response(
       JSON.stringify({
