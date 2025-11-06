@@ -136,8 +136,8 @@ Deno.serve(async (req: Request) => {
     console.log(`[${requestId}] 🔧 Initializing Google Generative AI SDK...`);
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
     
-    // Use Gemini 2.0 Flash model
-    const modelName = 'gemini-2.0-flash-exp';
+    // Use Gemini 2.5 Flash model
+    const modelName = 'gemini-2.5-flash';
     console.log(`[${requestId}] 🎯 Getting model: ${modelName}`);
     const model = genAI.getGenerativeModel({ model: modelName });
     
