@@ -22,6 +22,7 @@ import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import { supabase } from '@integrations/supabase/client';
 import { decode } from 'base64-arraybuffer';
+import { getDeviceId } from '@/utils/deviceId';
 
 // Conditionally import FileSystem only for native platforms
 let FileSystem: any = null;
@@ -79,7 +80,7 @@ export default function AddToolsScreen() {
         const uri = result.assets[0].uri;
         console.log(`✅ Image captured: ${uri.substring(0, 50)}...`);
         setImageUri(uri);
-        setPreviousResponse([]); // Reset previous response for new image
+        setPreviousResponse([]);
         analyzeImage(uri);
       }
     } catch (error) {
@@ -113,7 +114,7 @@ export default function AddToolsScreen() {
         const uri = result.assets[0].uri;
         console.log(`✅ Image selected: ${uri.substring(0, 50)}...`);
         setImageUri(uri);
-        setPreviousResponse([]); // Reset previous response for new image
+        setPreviousResponse([]);
         
         if (Platform.OS === 'web') {
           Alert.alert(
@@ -177,10 +178,8 @@ export default function AddToolsScreen() {
 
       console.log(`✅ Base64 ready (${base64.length} chars)`);
       
-      // Store base64 for re-analysis
       setImageBase64(base64);
 
-      // Validate size (20MB limit to match Gemini API)
       const sizeInMB = (base64.length * 0.75) / (1024 * 1024);
       if (sizeInMB > 20) {
         console.log(`❌ Image too large: ${sizeInMB.toFixed(2)}MB`);
@@ -190,7 +189,6 @@ export default function AddToolsScreen() {
       console.log(`📊 Image size: ${sizeInMB.toFixed(2)}MB`);
       console.log('🌐 Calling Edge Function');
 
-      // Prepare request body
       const requestBody: {
         imageBase64: string;
         previousResponse?: string[];
@@ -199,35 +197,18 @@ export default function AddToolsScreen() {
         imageBase64: base64,
       };
 
-      // Add context for re-analysis
       if (userFeedback && previousTools && previousTools.length > 0) {
         requestBody.previousResponse = previousTools;
         requestBody.userFeedback = userFeedback;
         console.log('🔄 RE-ANALYSIS MODE ACTIVATED');
-        console.log('📝 Including previous response and user feedback in API call');
-        console.log('📦 Request body keys:', Object.keys(requestBody));
-        console.log('📦 Previous response length:', requestBody.previousResponse.length);
-        console.log('📦 Previous response:', JSON.stringify(requestBody.previousResponse));
-        console.log('📦 User feedback:', requestBody.userFeedback);
       } else {
         console.log('🆕 INITIAL ANALYSIS MODE');
       }
 
-      // Call with timeout
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 60000);
 
       try {
-        console.log('🚀 Invoking Edge Function with body:', {
-          hasImageBase64: !!requestBody.imageBase64,
-          imageBase64Length: requestBody.imageBase64.length,
-          hasPreviousResponse: !!requestBody.previousResponse,
-          hasUserFeedback: !!requestBody.userFeedback,
-          previousResponseCount: requestBody.previousResponse?.length || 0,
-          previousResponseData: requestBody.previousResponse,
-          userFeedbackData: requestBody.userFeedback,
-        });
-
         const { data, error } = await supabase.functions.invoke('analyze-tools-image', {
           body: requestBody,
         });
@@ -240,7 +221,6 @@ export default function AddToolsScreen() {
         }
 
         console.log(`✅ Response received`);
-        console.log('Full response data:', JSON.stringify(data, null, 2));
 
         if (data.error) {
           console.log(`❌ API error: ${data.error}`);
@@ -249,9 +229,7 @@ export default function AddToolsScreen() {
 
         if (data.tools && Array.isArray(data.tools) && data.tools.length > 0) {
           console.log(`✅ Found ${data.tools.length} tools`);
-          console.log(`📝 Tools: ${JSON.stringify(data.tools)}`);
           
-          // Store the response for potential re-analysis
           setPreviousResponse(data.tools);
           console.log('💾 Stored tools in previousResponse state');
           
@@ -310,17 +288,13 @@ export default function AddToolsScreen() {
     }
     
     console.log('🔄 Re-analyze button pressed');
-    console.log(`📊 Current previousResponse state: ${JSON.stringify(previousResponse)}`);
-    console.log(`📊 previousResponse length: ${previousResponse.length}`);
     
     if (previousResponse.length === 0) {
       console.log('⚠️ No previous response, doing fresh analysis');
-      // If no previous response, just re-analyze without feedback
       analyzeImage(imageUri);
       return;
     }
     
-    // Show modal to get user feedback
     console.log('✅ Opening re-analyze modal');
     setShowReanalyzeModal(true);
     setReanalyzeReason('');
@@ -333,9 +307,6 @@ export default function AddToolsScreen() {
     }
     
     console.log('🔄 User submitted re-analysis request');
-    console.log('💬 Reason:', reanalyzeReason.trim());
-    console.log('📝 Current previousResponse state:', JSON.stringify(previousResponse));
-    console.log('📊 previousResponse length:', previousResponse.length);
     
     if (previousResponse.length === 0) {
       console.error('❌ ERROR: previousResponse is empty when it should have data!');
@@ -345,13 +316,6 @@ export default function AddToolsScreen() {
     }
     
     setShowReanalyzeModal(false);
-    
-    // CRITICAL FIX: Pass previousResponse explicitly as the third parameter
-    console.log('🚀 Calling analyzeImage with:');
-    console.log('  - imageUri:', imageUri);
-    console.log('  - userFeedback:', reanalyzeReason.trim());
-    console.log('  - previousTools:', JSON.stringify(previousResponse));
-    
     analyzeImage(imageUri, reanalyzeReason.trim(), previousResponse);
   };
 
@@ -362,14 +326,12 @@ export default function AddToolsScreen() {
       let base64: string;
       
       if (Platform.OS === 'web') {
-        // For web, fetch the blob and convert to base64
         const response = await fetch(uri);
         const blob = await response.blob();
         base64 = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onloadend = () => {
             const result = reader.result as string;
-            // Remove data URL prefix
             const base64String = result.split(',')[1];
             resolve(base64String);
           };
@@ -380,7 +342,6 @@ export default function AddToolsScreen() {
         if (!FileSystem) {
           throw new Error('FileSystem not available');
         }
-        // Read the file as base64
         base64 = await FileSystem.readAsStringAsync(uri, {
           encoding: FileSystem.EncodingType.Base64,
         });
@@ -388,7 +349,6 @@ export default function AddToolsScreen() {
 
       console.log(`📦 Base64 size: ${(base64.length * 0.75 / 1024).toFixed(2)} KB`);
 
-      // Convert base64 to ArrayBuffer using decode
       const arrayBuffer = decode(base64);
 
       console.log(`📦 ArrayBuffer size: ${(arrayBuffer.byteLength / 1024).toFixed(2)} KB`);
@@ -405,7 +365,6 @@ export default function AddToolsScreen() {
 
       if (error) {
         console.log(`❌ Upload error: ${error.message}`);
-        console.error('Storage upload error:', error);
         throw new Error(`Failed to upload image: ${error.message}`);
       }
 
@@ -444,13 +403,16 @@ export default function AddToolsScreen() {
       return;
     }
 
-    // Dismiss keyboard before saving
     Keyboard.dismiss();
 
     setSaving(true);
     console.log('💾 Starting save process');
     
     try {
+      // Get device ID
+      const deviceId = await getDeviceId();
+      console.log('📱 Device ID obtained:', deviceId.substring(0, 8) + '...');
+
       // Step 1: Upload image
       console.log('📤 Step 1: Uploading image');
       const imageUrl = await uploadImageToSupabase(imageUri);
@@ -469,16 +431,17 @@ export default function AddToolsScreen() {
 
       console.log(`📝 Prepared ${tools.length} tools`);
 
-      // Step 3: Insert into database
+      // Step 3: Insert into database with device_id
       console.log('💾 Step 2: Inserting into database');
       const insertData = {
         image_url: imageUrl,
         tools: tools,
         bin_name: binName,
         bin_location: binLocation,
+        device_id: deviceId,
       };
 
-      console.log('Insert data:', insertData);
+      console.log('Insert data:', { ...insertData, device_id: deviceId.substring(0, 8) + '...' });
 
       const { data, error } = await supabase
         .from('tool_inventory')
@@ -487,16 +450,14 @@ export default function AddToolsScreen() {
 
       if (error) {
         console.log(`❌ Database error: ${error.message}`);
-        console.error('Database insert error:', error);
         throw new Error(`Database error: ${error.message}`);
       }
 
       console.log('✅ Saved successfully to database');
-      console.log('Inserted data:', data);
 
       Alert.alert(
         '✅ Success!',
-        'Tools added to inventory!',
+        'Tools added to your personal inventory!',
         [{ text: 'OK', onPress: () => router.back() }]
       );
     } catch (error) {
@@ -671,7 +632,6 @@ export default function AddToolsScreen() {
                 )}
               </Pressable>
 
-              {/* Extra padding at bottom to ensure content is visible above keyboard */}
               <View style={styles.bottomSpacer} />
             </ScrollView>
           </View>
@@ -969,7 +929,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
   },
-  // Modal styles
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
