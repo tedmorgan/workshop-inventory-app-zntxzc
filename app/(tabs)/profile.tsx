@@ -17,6 +17,7 @@ export default function ProfileScreen() {
     osVersion: string;
   } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadDeviceInfo();
@@ -24,10 +25,15 @@ export default function ProfileScreen() {
 
   const loadDeviceInfo = async () => {
     try {
+      setLoading(true);
+      setError(null);
+      console.log('Loading device info...');
       const info = await getDeviceInfo();
+      console.log('Device info loaded:', info);
       setDeviceInfo(info);
     } catch (error) {
       console.error('Error loading device info:', error);
+      setError(error instanceof Error ? error.message : 'Unknown error occurred');
     } finally {
       setLoading(false);
     }
@@ -97,7 +103,7 @@ export default function ProfileScreen() {
       case 'web':
         return 'Web';
       default:
-        return platform;
+        return platform.charAt(0).toUpperCase() + platform.slice(1);
     }
   };
 
@@ -124,6 +130,18 @@ export default function ProfileScreen() {
                 <ActivityIndicator color={colors.primary} />
                 <Text style={styles.loadingText}>Loading device info...</Text>
               </View>
+            ) : error ? (
+              <View style={styles.errorCard}>
+                <IconSymbol name="exclamationmark.triangle" color="#FF3B30" size={32} />
+                <Text style={styles.errorText}>Failed to load device information</Text>
+                <Text style={styles.errorDetails}>{error}</Text>
+                <Pressable 
+                  style={styles.retryButton}
+                  onPress={loadDeviceInfo}
+                >
+                  <Text style={styles.retryButtonText}>Retry</Text>
+                </Pressable>
+              </View>
             ) : deviceInfo ? (
               <>
                 <View style={styles.infoCard}>
@@ -144,7 +162,7 @@ export default function ProfileScreen() {
                     <View style={styles.infoContent}>
                       <Text style={styles.infoLabel}>Platform</Text>
                       <Text style={styles.infoValue}>
-                        {getPlatformName(deviceInfo.platform)} {deviceInfo.osVersion}
+                        {getPlatformName(deviceInfo.platform)} {deviceInfo.osVersion !== 'unknown' ? deviceInfo.osVersion : ''}
                       </Text>
                     </View>
                   </View>
@@ -165,12 +183,7 @@ export default function ProfileScreen() {
                   </View>
                 </View>
               </>
-            ) : (
-              <View style={styles.errorCard}>
-                <IconSymbol name="exclamationmark.triangle" color={colors.textSecondary} size={32} />
-                <Text style={styles.errorText}>Failed to load device information</Text>
-              </View>
-            )}
+            ) : null}
           </View>
 
           {/* Privacy Info */}
@@ -329,10 +342,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   errorText: {
-    fontSize: 14,
-    color: colors.textSecondary,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FF3B30',
     marginTop: 12,
     textAlign: 'center',
+  },
+  errorDetails: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: 16,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   privacyCard: {
     backgroundColor: colors.card,

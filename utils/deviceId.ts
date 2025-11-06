@@ -95,14 +95,48 @@ export async function getDeviceInfo(): Promise<{
   platform: string;
   osVersion: string;
 }> {
-  const deviceId = await getDeviceId();
-  const deviceName = await Application.getDeviceNameAsync();
-  const osVersion = Platform.Version.toString();
+  try {
+    const deviceId = await getDeviceId();
+    
+    let deviceName: string | null = null;
+    try {
+      deviceName = await Application.getDeviceNameAsync();
+    } catch (error) {
+      console.error('Error getting device name:', error);
+      deviceName = 'Unknown Device';
+    }
 
-  return {
-    deviceId,
-    deviceName,
-    platform: Platform.OS,
-    osVersion,
-  };
+    let platform = 'unknown';
+    let osVersion = 'unknown';
+    
+    try {
+      // Safely access Platform.OS
+      if (Platform && Platform.OS) {
+        platform = Platform.OS;
+      }
+      
+      // Safely access Platform.Version
+      if (Platform && Platform.Version) {
+        osVersion = Platform.Version.toString();
+      }
+    } catch (error) {
+      console.error('Error accessing Platform info:', error);
+    }
+
+    return {
+      deviceId,
+      deviceName,
+      platform,
+      osVersion,
+    };
+  } catch (error) {
+    console.error('❌ Error in getDeviceInfo:', error);
+    // Return fallback values
+    return {
+      deviceId: generateUUID(),
+      deviceName: 'Unknown Device',
+      platform: 'unknown',
+      osVersion: 'unknown',
+    };
+  }
 }
