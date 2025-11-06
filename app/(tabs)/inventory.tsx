@@ -19,10 +19,23 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
   ActivityIndicator,
+  Dimensions,
+  StatusBar,
 } from "react-native";
 import { supabase } from "@integrations/supabase/client";
 import { Stack, useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { getDeviceId } from "@/utils/deviceId";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  useAnimatedGestureHandler,
+  withSpring,
+  withTiming,
+  runOnJS,
+} from 'react-native-reanimated';
+import { PinchGestureHandler, GestureHandlerRootView } from 'react-native-gesture-handler';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 type ToolInventoryItem = {
   id: string;
@@ -45,8 +58,14 @@ export default function InventoryScreen() {
   const [editedBinName, setEditedBinName] = useState('');
   const [editedBinLocation, setEditedBinLocation] = useState('');
   const [saving, setSaving] = useState(false);
+  const [expandedImageUrl, setExpandedImageUrl] = useState<string | null>(null);
   const params = useLocalSearchParams();
   const router = useRouter();
+
+  // Zoom state
+  const scale = useSharedValue(1);
+  const focalX = useSharedValue(0);
+  const focalY = useSharedValue(0);
 
   useEffect(() => {
     if (params.editBinId && inventory.length > 0) {
@@ -217,6 +236,49 @@ export default function InventoryScreen() {
     );
   };
 
+  const expandImage = (imageUrl: string) => {
+    console.log('🖼️ Expanding image');
+    setExpandedImageUrl(imageUrl);
+    scale.value = 1;
+    focalX.value = 0;
+    focalY.value = 0;
+  };
+
+  const closeExpandedImage = () => {
+    console.log('❌ Closing expanded image');
+    setExpandedImageUrl(null);
+    scale.value = 1;
+    focalX.value = 0;
+    focalY.value = 0;
+  };
+
+  const onPinchGestureEvent = useAnimatedGestureHandler({
+    onActive: (event) => {
+      scale.value = Math.max(1, Math.min(event.scale, 5));
+      focalX.value = event.focalX;
+      focalY.value = event.focalY;
+    },
+    onEnd: () => {
+      if (scale.value < 1.2) {
+        scale.value = withSpring(1);
+        focalX.value = withSpring(0);
+        focalY.value = withSpring(0);
+      }
+    },
+  });
+
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        { translateX: focalX.value },
+        { translateY: focalY.value },
+        { scale: scale.value },
+        { translateX: -focalX.value },
+        { translateY: -focalY.value },
+      ],
+    };
+  });
+
   const renderHeaderRight = () => (
     <Pressable
       onPress={() => router.push('/add-tools')}
@@ -298,7 +360,9 @@ export default function InventoryScreen() {
 
               {inventory.map((item) => (
                 <View key={item.id} style={[styles.card, { backgroundColor: colors.card }]}>
-                  <Image source={{ uri: item.image_url }} style={styles.cardImage} />
+                  <Pressable onPress={() => expandImage(item.image_url)}>
+                    <Image source={{ uri: item.image_url }} style={styles.cardImage} />
+                  </Pressable>
                   <View style={styles.cardContent}>
                     <View style={styles.cardHeader}>
                       <View style={styles.binInfo}>
@@ -373,7 +437,9 @@ export default function InventoryScreen() {
                     </View>
 
                     {editingItem && (
-                      <Image source={{ uri: editingItem.image_url }} style={styles.modalImage} />
+                      <Pressable onPress={() => expandImage(editingItem.image_url)}>
+                        <Image source={{ uri: editingItem.image_url }} style={styles.modalImage} />
+                      </Pressable>
                     )}
 
                     <Text style={[styles.modalLabel, { color: colors.text }]}>Bin Name</Text>
@@ -443,6 +509,49 @@ export default function InventoryScreen() {
             </View>
           </TouchableWithoutFeedback>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Full Screen Image Zoom Modal */}
+      <Modal
+        visible={expandedImageUrl !== null}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={closeExpandedImage}
+        statusBarTranslucent
+      >
+        <GestureHandlerRootView style={styles.fullScreenContainer}>
+          <View style={styles.fullScreenOverlay}>
+            <StatusBar hidden />
+            
+            {/* Close Button */}
+            <Pressable
+              onPress={closeExpandedImage}
+              style={styles.closeButton}
+            >
+              <View style={styles.closeButtonBackground}>
+                <IconSymbol name="xmark" size={24} color="#FFFFFF" />
+              </View>
+            </Pressable>
+
+            {/* Zoom Instructions */}
+            <View style={styles.zoomInstructions}>
+              <Text style={styles.zoomInstructionsText}>Pinch to zoom</Text>
+            </View>
+
+            {/* Zoomable Image */}
+            <PinchGestureHandler onGestureEvent={onPinchGestureEvent}>
+              <Animated.View style={[styles.imageContainer, animatedStyle]}>
+                {expandedImageUrl && (
+                  <Image
+                    source={{ uri: expandedImageUrl }}
+                    style={styles.fullScreenImage}
+                    resizeMode="contain"
+                  />
+                )}
+              </Animated.View>
+            </PinchGestureHandler>
+          </View>
+        </GestureHandlerRootView>
       </Modal>
     </>
   );
@@ -692,5 +801,53 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  fullScreenContainer: {
+    flex: 1,
+  },
+  fullScreenOverlay: {
+    flex: 1,
+    backgroundColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  closeButton: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 60 : 40,
+    right: 20,
+    zIndex: 10,
+  },
+  closeButtonBackground: {
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  zoomInstructions: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 60 : 40,
+    left: 20,
+    zIndex: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  zoomInstructionsText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  imageContainer: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullScreenImage: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
   },
 });

@@ -155,7 +155,7 @@ However, the user has provided this feedback:
 Please re-analyze the image taking the user's feedback into account. Correct any mistakes, add any missed tools, or adjust tool names as requested. Return ONLY a JSON array of tool names, nothing else. Format: ["tool1", "tool2", "tool3"]. Be specific with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver") and make sure to capture every tool in the image based on the user's feedback.`;
     } else {
       // Initial analysis
-      promptText = 'Analyze this image and identify all tools visible. Return ONLY a JSON array of tool names, nothing else. Format: ["tool1", "tool2", "tool3"]. Be specific with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver") and make sure to capture every tool in the image.';
+      promptText = 'Analyze this image and identify all tools and materials visible. Return ONLY a JSON array of tool names and materials, nothing else. Format: ["tool1", "tool2", "tool3"]. Be specific with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver") and make sure to capture every tool and material item in the image but do not include the table or items not associated with building tools.';
     }
     
     console.log(`\n[${requestId}] ${'═'.repeat(80)}`);
