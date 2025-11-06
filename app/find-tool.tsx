@@ -14,12 +14,22 @@ import {
   KeyboardAvoidingView,
   TouchableWithoutFeedback,
   Keyboard,
+  Dimensions,
+  StatusBar,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import { supabase } from '@integrations/supabase/client';
 import { getDeviceId } from '@/utils/deviceId';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+} from 'react-native-reanimated';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 type ToolInventoryItem = {
   id: string;
@@ -38,6 +48,14 @@ export default function FindToolScreen() {
   const [searching, setSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [expandedImageUrl, setExpandedImageUrl] = useState<string | null>(null);
+
+  // Zoom and pan state
+  const scale = useSharedValue(1);
+  const savedScale = useSharedValue(1);
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const savedTranslateX = useSharedValue(0);
+  const savedTranslateY = useSharedValue(0);
 
   const searchTools = async () => {
     if (!searchQuery.trim()) {
@@ -101,12 +119,111 @@ export default function FindToolScreen() {
   };
 
   const expandImage = (imageUrl: string) => {
+    console.log('🖼️ Expanding image');
     setExpandedImageUrl(imageUrl);
+    scale.value = 1;
+    savedScale.value = 1;
+    translateX.value = 0;
+    translateY.value = 0;
+    savedTranslateX.value = 0;
+    savedTranslateY.value = 0;
   };
 
   const closeExpandedImage = () => {
+    console.log('❌ Closing expanded image');
     setExpandedImageUrl(null);
+    scale.value = 1;
+    savedScale.value = 1;
+    translateX.value = 0;
+    translateY.value = 0;
+    savedTranslateX.value = 0;
+    savedTranslateY.value = 0;
   };
+
+  // Pan gesture for dragging the zoomed image
+  const panGesture = Gesture.Pan()
+    .onUpdate((event) => {
+      // Only allow panning when zoomed in
+      if (savedScale.value > 1) {
+        translateX.value = savedTranslateX.value + event.translationX;
+        translateY.value = savedTranslateY.value + event.translationY;
+      }
+    })
+    .onEnd(() => {
+      savedTranslateX.value = translateX.value;
+      savedTranslateY.value = translateY.value;
+    });
+
+  // Pinch gesture for zooming
+  const pinchGesture = Gesture.Pinch()
+    .onUpdate((event) => {
+      const newScale = Math.max(1, Math.min(savedScale.value * event.scale, 5));
+      scale.value = newScale;
+
+      // Adjust translation based on focal point
+      const deltaScale = newScale / savedScale.value;
+      translateX.value = event.focalX + (savedTranslateX.value - event.focalX) * deltaScale;
+      translateY.value = event.focalY + (savedTranslateY.value - event.focalY) * deltaScale;
+    })
+    .onEnd(() => {
+      savedScale.value = scale.value;
+      savedTranslateX.value = translateX.value;
+      savedTranslateY.value = translateY.value;
+
+      // Reset if zoomed out too much
+      if (scale.value < 1.2) {
+        scale.value = withSpring(1);
+        savedScale.value = 1;
+        translateX.value = withSpring(0);
+        translateY.value = withSpring(0);
+        savedTranslateX.value = 0;
+        savedTranslateY.value = 0;
+      }
+    });
+
+  // Double tap to zoom in/out
+  const doubleTapGesture = Gesture.Tap()
+    .numberOfTaps(2)
+    .onEnd((event) => {
+      if (scale.value > 1) {
+        // Zoom out
+        scale.value = withSpring(1);
+        savedScale.value = 1;
+        translateX.value = withSpring(0);
+        translateY.value = withSpring(0);
+        savedTranslateX.value = 0;
+        savedTranslateY.value = 0;
+      } else {
+        // Zoom in to 2x at tap location
+        const newScale = 2;
+        scale.value = withSpring(newScale);
+        savedScale.value = newScale;
+        
+        // Center on tap location
+        const centerX = SCREEN_WIDTH / 2;
+        const centerY = SCREEN_HEIGHT / 2;
+        translateX.value = withSpring(centerX - event.x);
+        translateY.value = withSpring(centerY - event.y);
+        savedTranslateX.value = centerX - event.x;
+        savedTranslateY.value = centerY - event.y;
+      }
+    });
+
+  // Combine all gestures
+  const composedGesture = Gesture.Simultaneous(
+    Gesture.Race(doubleTapGesture, pinchGesture),
+    panGesture
+  );
+
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        { translateX: translateX.value },
+        { translateY: translateY.value },
+        { scale: scale.value },
+      ],
+    };
+  });
 
   return (
     <>
@@ -250,27 +367,47 @@ export default function FindToolScreen() {
         </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
 
-      {/* Expanded Image Modal */}
+      {/* Full Screen Image Zoom Modal */}
       <Modal
         visible={expandedImageUrl !== null}
         transparent={true}
         animationType="fade"
         onRequestClose={closeExpandedImage}
+        statusBarTranslucent
       >
-        <Pressable style={styles.imageModalOverlay} onPress={closeExpandedImage}>
-          <View style={styles.imageModalContent}>
-            {expandedImageUrl && (
-              <Image
-                source={{ uri: expandedImageUrl }}
-                style={styles.expandedImage}
-                resizeMode="contain"
-              />
-            )}
-            <Pressable style={styles.closeImageButton} onPress={closeExpandedImage}>
-              <IconSymbol name="xmark.circle.fill" size={36} color="#FFFFFF" />
+        <GestureHandlerRootView style={styles.fullScreenContainer}>
+          <View style={styles.fullScreenOverlay}>
+            <StatusBar hidden />
+            
+            {/* Close Button */}
+            <Pressable
+              onPress={closeExpandedImage}
+              style={styles.closeButton}
+            >
+              <View style={styles.closeButtonBackground}>
+                <IconSymbol name="xmark" size={24} color="#FFFFFF" />
+              </View>
             </Pressable>
+
+            {/* Zoom Instructions */}
+            <View style={styles.zoomInstructions}>
+              <Text style={styles.zoomInstructionsText}>Pinch to zoom • Drag to pan • Double tap</Text>
+            </View>
+
+            {/* Zoomable and Pannable Image */}
+            <GestureDetector gesture={composedGesture}>
+              <Animated.View style={[styles.imageContainer, animatedStyle]}>
+                {expandedImageUrl && (
+                  <Image
+                    source={{ uri: expandedImageUrl }}
+                    style={styles.fullScreenImage}
+                    resizeMode="contain"
+                  />
+                )}
+              </Animated.View>
+            </GestureDetector>
           </View>
-        </Pressable>
+        </GestureHandlerRootView>
       </Modal>
     </>
   );
@@ -440,25 +577,52 @@ const styles = StyleSheet.create({
   bottomSpacer: {
     height: 20,
   },
-  imageModalOverlay: {
+  fullScreenContainer: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+  },
+  fullScreenOverlay: {
+    flex: 1,
+    backgroundColor: '#000000',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  imageModalContent: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  expandedImage: {
-    width: '100%',
-    height: '100%',
-  },
-  closeImageButton: {
+  closeButton: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 60 : 40,
     right: 20,
+    zIndex: 10,
+  },
+  closeButtonBackground: {
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  zoomInstructions: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 60 : 40,
+    left: 20,
+    zIndex: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  zoomInstructionsText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  imageContainer: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullScreenImage: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
   },
 });

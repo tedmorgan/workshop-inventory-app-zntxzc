@@ -30,6 +30,8 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
   withTiming,
+  withDecay,
+  runOnJS,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -60,9 +62,13 @@ export default function InventoryScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
 
-  // Zoom state
+  // Zoom and pan state
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const savedTranslateX = useSharedValue(0);
+  const savedTranslateY = useSharedValue(0);
   const focalX = useSharedValue(0);
   const focalY = useSharedValue(0);
 
@@ -240,6 +246,10 @@ export default function InventoryScreen() {
     setExpandedImageUrl(imageUrl);
     scale.value = 1;
     savedScale.value = 1;
+    translateX.value = 0;
+    translateY.value = 0;
+    savedTranslateX.value = 0;
+    savedTranslateY.value = 0;
     focalX.value = 0;
     focalY.value = 0;
   };
@@ -249,28 +259,94 @@ export default function InventoryScreen() {
     setExpandedImageUrl(null);
     scale.value = 1;
     savedScale.value = 1;
+    translateX.value = 0;
+    translateY.value = 0;
+    savedTranslateX.value = 0;
+    savedTranslateY.value = 0;
     focalX.value = 0;
     focalY.value = 0;
   };
 
-  // Modern Gesture API for pinch-to-zoom
+  // Pan gesture for dragging the zoomed image
+  const panGesture = Gesture.Pan()
+    .onUpdate((event) => {
+      // Only allow panning when zoomed in
+      if (savedScale.value > 1) {
+        translateX.value = savedTranslateX.value + event.translationX;
+        translateY.value = savedTranslateY.value + event.translationY;
+      }
+    })
+    .onEnd(() => {
+      savedTranslateX.value = translateX.value;
+      savedTranslateY.value = translateY.value;
+    });
+
+  // Pinch gesture for zooming
   const pinchGesture = Gesture.Pinch()
     .onUpdate((event) => {
-      scale.value = Math.max(1, Math.min(savedScale.value * event.scale, 5));
+      const newScale = Math.max(1, Math.min(savedScale.value * event.scale, 5));
+      scale.value = newScale;
+
+      // Adjust translation based on focal point
+      const deltaScale = newScale / savedScale.value;
+      translateX.value = event.focalX + (savedTranslateX.value - event.focalX) * deltaScale;
+      translateY.value = event.focalY + (savedTranslateY.value - event.focalY) * deltaScale;
     })
     .onEnd(() => {
       savedScale.value = scale.value;
+      savedTranslateX.value = translateX.value;
+      savedTranslateY.value = translateY.value;
+
+      // Reset if zoomed out too much
       if (scale.value < 1.2) {
         scale.value = withSpring(1);
         savedScale.value = 1;
-        focalX.value = withSpring(0);
-        focalY.value = withSpring(0);
+        translateX.value = withSpring(0);
+        translateY.value = withSpring(0);
+        savedTranslateX.value = 0;
+        savedTranslateY.value = 0;
       }
     });
+
+  // Double tap to zoom in/out
+  const doubleTapGesture = Gesture.Tap()
+    .numberOfTaps(2)
+    .onEnd((event) => {
+      if (scale.value > 1) {
+        // Zoom out
+        scale.value = withSpring(1);
+        savedScale.value = 1;
+        translateX.value = withSpring(0);
+        translateY.value = withSpring(0);
+        savedTranslateX.value = 0;
+        savedTranslateY.value = 0;
+      } else {
+        // Zoom in to 2x at tap location
+        const newScale = 2;
+        scale.value = withSpring(newScale);
+        savedScale.value = newScale;
+        
+        // Center on tap location
+        const centerX = SCREEN_WIDTH / 2;
+        const centerY = SCREEN_HEIGHT / 2;
+        translateX.value = withSpring(centerX - event.x);
+        translateY.value = withSpring(centerY - event.y);
+        savedTranslateX.value = centerX - event.x;
+        savedTranslateY.value = centerY - event.y;
+      }
+    });
+
+  // Combine all gestures
+  const composedGesture = Gesture.Simultaneous(
+    Gesture.Race(doubleTapGesture, pinchGesture),
+    panGesture
+  );
 
   const animatedStyle = useAnimatedStyle(() => {
     return {
       transform: [
+        { translateX: translateX.value },
+        { translateY: translateY.value },
         { scale: scale.value },
       ],
     };
@@ -532,11 +608,11 @@ export default function InventoryScreen() {
 
             {/* Zoom Instructions */}
             <View style={styles.zoomInstructions}>
-              <Text style={styles.zoomInstructionsText}>Pinch to zoom</Text>
+              <Text style={styles.zoomInstructionsText}>Pinch to zoom • Drag to pan • Double tap</Text>
             </View>
 
-            {/* Zoomable Image */}
-            <GestureDetector gesture={pinchGesture}>
+            {/* Zoomable and Pannable Image */}
+            <GestureDetector gesture={composedGesture}>
               <Animated.View style={[styles.imageContainer, animatedStyle]}>
                 {expandedImageUrl && (
                   <Image
@@ -834,7 +910,7 @@ const styles = StyleSheet.create({
   },
   zoomInstructionsText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
   },
   imageContainer: {
