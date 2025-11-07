@@ -897,7 +897,7 @@ export default function AddToolsScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Introductory Modal - FIXED VERSION */}
+      {/* Introductory Modal - FIXED FOR ANDROID */}
       <Modal
         visible={showIntroModal}
         transparent={true}
@@ -908,8 +908,10 @@ export default function AddToolsScreen() {
           <View style={[styles.introModalContent, { backgroundColor: colors.card }]}>
             <ScrollView
               ref={introModalScrollViewRef}
+              style={styles.introModalScrollView}
               contentContainerStyle={styles.introModalScrollContent}
-              showsVerticalScrollIndicator={false}
+              showsVerticalScrollIndicator={true}
+              bounces={false}
               onContentSizeChange={() => {
                 // Force scroll to top when content size changes
                 console.log('📜 Content size changed - scrolling to top');
@@ -1283,7 +1285,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
   },
-  // Introductory Modal Styles
+  // Introductory Modal Styles - FIXED FOR ANDROID
   introModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
@@ -1294,8 +1296,9 @@ const styles = StyleSheet.create({
   introModalContent: {
     width: '100%',
     maxWidth: 500,
-    maxHeight: '90%',
+    maxHeight: '85%', // Reduced from 90% to ensure space for scrolling
     borderRadius: 24,
+    overflow: 'hidden', // Important for Android
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -1308,8 +1311,12 @@ const styles = StyleSheet.create({
       },
     }),
   },
+  introModalScrollView: {
+    flex: 1, // Critical for Android scrolling
+  },
   introModalScrollContent: {
     padding: 24,
+    flexGrow: 1, // Ensures content can grow and be scrollable
   },
   introModalHeader: {
     alignItems: 'center',
@@ -1352,6 +1359,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     gap: 8,
     marginTop: 8,
+    marginBottom: 16, // Extra bottom margin for scrolling
   },
   introModalButtonText: {
     color: '#FFFFFF',
