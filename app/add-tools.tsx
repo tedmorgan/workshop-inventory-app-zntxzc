@@ -23,15 +23,12 @@ import { colors } from '@/styles/commonStyles';
 import { supabase } from '@integrations/supabase/client';
 import { decode } from 'base64-arraybuffer';
 import { getDeviceId } from '@/utils/deviceId';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Conditionally import FileSystem only for native platforms
 let FileSystem: any = null;
 if (Platform.OS !== 'web') {
   FileSystem = require('expo-file-system/legacy');
 }
-
-const INTRO_SHOWN_KEY = '@workshop_intro_shown';
 
 export default function AddToolsScreen() {
   const router = useRouter();
@@ -79,14 +76,6 @@ export default function AddToolsScreen() {
   const checkInventoryAndShowIntro = async () => {
     try {
       console.log('🔍 Checking if inventory is empty');
-      
-      // Check if intro has been shown before
-      const introShown = await AsyncStorage.getItem(INTRO_SHOWN_KEY);
-      if (introShown === 'true') {
-        console.log('✅ Intro already shown, skipping');
-        setCheckingInventory(false);
-        return;
-      }
 
       // Get device ID
       const deviceId = await getDeviceId();
@@ -111,8 +100,6 @@ export default function AddToolsScreen() {
       if (isEmpty) {
         console.log('🎉 Showing introductory modal');
         setShowIntroModal(true);
-        // Mark intro as shown
-        await AsyncStorage.setItem(INTRO_SHOWN_KEY, 'true');
       }
 
       setCheckingInventory(false);
