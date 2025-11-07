@@ -23,12 +23,15 @@ import { colors } from '@/styles/commonStyles';
 import { supabase } from '@integrations/supabase/client';
 import { decode } from 'base64-arraybuffer';
 import { getDeviceId } from '@/utils/deviceId';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Conditionally import FileSystem only for native platforms
 let FileSystem: any = null;
 if (Platform.OS !== 'web') {
   FileSystem = require('expo-file-system/legacy');
 }
+
+const INTRO_SHOWN_KEY = '@workshop_intro_shown';
 
 export default function AddToolsScreen() {
   const router = useRouter();
@@ -45,6 +48,10 @@ export default function AddToolsScreen() {
   const [previousResponse, setPreviousResponse] = useState<string[]>([]);
   const [imageBase64, setImageBase64] = useState<string>('');
 
+  // State for introductory modal
+  const [showIntroModal, setShowIntroModal] = useState(false);
+  const [checkingInventory, setCheckingInventory] = useState(true);
+
   // Refs for TextInputs to enable keyboard navigation and scrolling
   const scrollViewRef = useRef<ScrollView>(null);
   const modalScrollViewRef = useRef<ScrollView>(null);
@@ -52,6 +59,60 @@ export default function AddToolsScreen() {
   const binNameRef = useRef<TextInput>(null);
   const binLocationRef = useRef<TextInput>(null);
   const reanalyzeReasonRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    checkInventoryAndShowIntro();
+  }, []);
+
+  const checkInventoryAndShowIntro = async () => {
+    try {
+      console.log('🔍 Checking if inventory is empty');
+      
+      // Check if intro has been shown before
+      const introShown = await AsyncStorage.getItem(INTRO_SHOWN_KEY);
+      if (introShown === 'true') {
+        console.log('✅ Intro already shown, skipping');
+        setCheckingInventory(false);
+        return;
+      }
+
+      // Get device ID
+      const deviceId = await getDeviceId();
+      console.log('📱 Device ID:', deviceId.substring(0, 8) + '...');
+
+      // Check if inventory is empty for this device
+      const { data, error } = await supabase
+        .from('tool_inventory')
+        .select('id')
+        .eq('device_id', deviceId)
+        .limit(1);
+
+      if (error) {
+        console.error('❌ Error checking inventory:', error);
+        setCheckingInventory(false);
+        return;
+      }
+
+      const isEmpty = !data || data.length === 0;
+      console.log(`📊 Inventory empty: ${isEmpty}`);
+
+      if (isEmpty) {
+        console.log('🎉 Showing introductory modal');
+        setShowIntroModal(true);
+        // Mark intro as shown
+        await AsyncStorage.setItem(INTRO_SHOWN_KEY, 'true');
+      }
+
+      setCheckingInventory(false);
+    } catch (error) {
+      console.error('❌ Error in checkInventoryAndShowIntro:', error);
+      setCheckingInventory(false);
+    }
+  };
+
+  const closeIntroModal = () => {
+    setShowIntroModal(false);
+  };
 
   const pickImage = async () => {
     if (Platform.OS === 'web') {
@@ -289,13 +350,13 @@ export default function AddToolsScreen() {
           const analysisType = data.isReanalysis ? 'Re-analysis' : 'Analysis';
           Alert.alert(
             `✨ AI ${analysisType} Complete!`,
-            `Gemini identified ${data.tools.length} tool${data.tools.length === 1 ? '' : 's'}. You can edit the list or re-analyze if needed.`
+            `We identified ${data.tools.length} tool${data.tools.length === 1 ? '' : 's'}. You can edit the list or re-analyze if needed.`
           );
         } else {
           console.log('⚠️ No tools found');
           Alert.alert(
             'No Tools Found',
-            'Gemini couldn\'t identify any tools. Please enter them manually or try re-analyzing.'
+            'AI couldn\'t identify any tools. Please enter them manually or try re-analyzing.'
           );
         }
       } catch (fetchError) {
@@ -609,7 +670,7 @@ export default function AddToolsScreen() {
             {analyzing ? (
               <View style={styles.analyzingContainer}>
                 <ActivityIndicator size="large" color={colors.primary} />
-                <Text style={styles.analyzingText}>🤖 Analyzing with Gemini AI...</Text>
+                <Text style={styles.analyzingText}>🤖 Analyzing with AI...</Text>
                 <Text style={styles.analyzingSubtext}>This may take 10-60 seconds</Text>
               </View>
             ) : (
@@ -617,7 +678,7 @@ export default function AddToolsScreen() {
                 {Platform.OS !== 'web' && (
                   <View style={styles.aiInfoBadge}>
                     <IconSymbol name="sparkles" color={colors.accent} size={16} />
-                    <Text style={styles.aiInfoText}>AI-powered by Google Gemini</Text>
+                    <Text style={styles.aiInfoText}>AI-powered</Text>
                   </View>
                 )}
                 <Text style={styles.helperText}>
@@ -699,6 +760,57 @@ export default function AddToolsScreen() {
           <View style={styles.bottomSpacer} />
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Introductory Modal */}
+      <Modal
+        visible={showIntroModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={closeIntroModal}
+      >
+        <View style={styles.introModalOverlay}>
+          <View style={[styles.introModalContent, { backgroundColor: colors.card }]}>
+            <ScrollView
+              contentContainerStyle={styles.introModalScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.introModalHeader}>
+                <IconSymbol name="info.circle.fill" color={colors.primary} size={32} />
+                <Text style={[styles.introModalTitle, { color: colors.text }]}>
+                  Welcome to Workshop!
+                </Text>
+              </View>
+
+              <Text style={[styles.introModalText, { color: colors.text }]}>
+                If you keep your tools in boxes, bins, containers, shelves, closets, etc, Workshop can help you keep track of where your tools are located.
+              </Text>
+
+              <Text style={[styles.introModalText, { color: colors.text }]}>
+                For each bin, remove all the tools & materials and place on a table spaced out like in the image. Take a photo and Workshop AI will identify each item. You can then edit and add to your Tool Inventory.
+              </Text>
+
+              <View style={styles.introImageContainer}>
+                <Image
+                  source={require('@/assets/images/59a6d842-e6a8-4050-b2cd-0a1df289bf14.jpeg')}
+                  style={styles.introImage}
+                  resizeMode="contain"
+                />
+                <Text style={[styles.introImageCaption, { color: colors.textSecondary }]}>
+                  Example: Tools laid out on a table for AI identification
+                </Text>
+              </View>
+
+              <Pressable
+                style={styles.introModalButton}
+                onPress={closeIntroModal}
+              >
+                <Text style={styles.introModalButtonText}>Got it!</Text>
+                <IconSymbol name="arrow.right" color="#FFFFFF" size={20} />
+              </Pressable>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {/* Re-analyze Modal */}
       <Modal
@@ -1005,6 +1117,82 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
   },
+  // Introductory Modal Styles
+  introModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  introModalContent: {
+    width: '100%',
+    maxWidth: 500,
+    maxHeight: '90%',
+    borderRadius: 24,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 12,
+      },
+    }),
+  },
+  introModalScrollContent: {
+    padding: 24,
+  },
+  introModalHeader: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  introModalTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  introModalText: {
+    fontSize: 16,
+    lineHeight: 24,
+    marginBottom: 16,
+    textAlign: 'left',
+  },
+  introImageContainer: {
+    marginVertical: 20,
+    alignItems: 'center',
+  },
+  introImage: {
+    width: '100%',
+    height: 250,
+    borderRadius: 12,
+    backgroundColor: colors.background,
+  },
+  introImageCaption: {
+    fontSize: 13,
+    marginTop: 8,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  introModalButton: {
+    backgroundColor: colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    borderRadius: 12,
+    gap: 8,
+    marginTop: 8,
+  },
+  introModalButtonText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  // Re-analyze Modal Styles
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
