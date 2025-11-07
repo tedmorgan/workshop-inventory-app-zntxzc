@@ -924,7 +924,7 @@ export default function AddToolsScreen() {
               </View>
 
               <Text style={[styles.introModalText, { color: colors.text }]}>
-                Take a photo and Workshop AI will identify each item. You can then edit and add to your Tool Inventory.
+                Workshop can help you keep track of where your tools are located. For each bin, remove all the tools & materials and place on a table spaced out like in the image. Take a photo and Workshop AI will identify each item. You can then edit and add to your Tool Inventory.
               </Text>
 
               <View style={styles.introImageContainer}>

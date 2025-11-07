@@ -39,61 +39,6 @@ export default function ProfileScreen() {
     }
   };
 
-  const clearAllData = async () => {
-    Alert.alert(
-      'Clear All Data',
-      'This will clear all cached data from this device. Your inventory data in the cloud will NOT be deleted. Are you sure?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              console.log('Clearing all AsyncStorage data...');
-              await AsyncStorage.clear();
-              console.log('All data cleared successfully');
-              Alert.alert('Success', 'All cached data has been cleared. The app will reload.');
-              // Reload device info
-              await loadDeviceInfo();
-            } catch (error) {
-              console.error('Error clearing data:', error);
-              Alert.alert('Error', 'Failed to clear data. Please try again.');
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const resetDeviceId = async () => {
-    Alert.alert(
-      'Reset Device ID',
-      'This will generate a new device ID. You will lose access to your current inventory on this device. This action cannot be undone. Are you sure?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reset',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              console.log('Resetting device ID...');
-              await clearDeviceId();
-              await loadDeviceInfo();
-              Alert.alert(
-                'Device ID Reset',
-                'A new device ID has been generated. You now have a fresh inventory. Your old inventory is still in the cloud but associated with your previous device ID.'
-              );
-            } catch (error) {
-              console.error('Error resetting device ID:', error);
-              Alert.alert('Error', 'Failed to reset device ID. Please try again.');
-            }
-          },
-        },
-      ]
-    );
-  };
-
   const getPlatformName = (platform: string): string => {
     switch (platform) {
       case 'ios':
@@ -218,37 +163,6 @@ export default function ProfileScreen() {
                 </View>
               </View>
             </View>
-          </View>
-
-          {/* Actions Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Advanced</Text>
-            
-            <Pressable style={styles.actionCard} onPress={clearAllData}>
-              <View style={[styles.actionIcon, { backgroundColor: `${colors.highlight}20` }]}>
-                <IconSymbol name="trash" color={colors.highlight} size={24} />
-              </View>
-              <View style={styles.actionContent}>
-                <Text style={styles.actionTitle}>Clear Cache</Text>
-                <Text style={styles.actionDescription}>
-                  Clear all cached data (inventory stays in cloud)
-                </Text>
-              </View>
-              <IconSymbol name="chevron.right" color={colors.textSecondary} size={20} />
-            </Pressable>
-
-            <Pressable style={styles.actionCard} onPress={resetDeviceId}>
-              <View style={[styles.actionIcon, { backgroundColor: '#FF3B3020' }]}>
-                <IconSymbol name="arrow.clockwise" color="#FF3B30" size={24} />
-              </View>
-              <View style={styles.actionContent}>
-                <Text style={[styles.actionTitle, { color: '#FF3B30' }]}>Reset Device ID</Text>
-                <Text style={styles.actionDescription}>
-                  Generate new ID (you&apos;ll lose access to current inventory)
-                </Text>
-              </View>
-              <IconSymbol name="chevron.right" color={colors.textSecondary} size={20} />
-            </Pressable>
           </View>
 
           {/* App Info */}
@@ -410,38 +324,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.text,
     lineHeight: 22,
-  },
-  actionCard: {
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.08)',
-    elevation: 2,
-  },
-  actionIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  actionContent: {
-    flex: 1,
-  },
-  actionTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: colors.text,
-    marginBottom: 4,
-  },
-  actionDescription: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    lineHeight: 18,
   },
   appInfo: {
     alignItems: 'center',
