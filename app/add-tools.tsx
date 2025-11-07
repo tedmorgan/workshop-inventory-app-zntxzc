@@ -68,21 +68,28 @@ export default function AddToolsScreen() {
     loadExistingBinData();
   }, []);
 
-  // Scroll intro modal to top when it opens
+  // Scroll intro modal to top when it opens - FIXED VERSION
   useEffect(() => {
-    if (showIntroModal && introModalScrollViewRef.current) {
-      console.log('📜 Intro modal opened - preparing to scroll to top');
+    if (showIntroModal) {
+      console.log('📜 Intro modal opened - forcing scroll to top');
       
-      // Scroll immediately without animation
-      introModalScrollViewRef.current.scrollTo({ y: 0, animated: false });
+      // Immediately scroll to top
+      setTimeout(() => {
+        introModalScrollViewRef.current?.scrollTo({ x: 0, y: 0, animated: false });
+        console.log('📜 Executed immediate scroll to top');
+      }, 0);
       
-      // Also scroll after a short delay to ensure content is rendered
-      const timer = setTimeout(() => {
-        console.log('📜 Executing delayed scroll to top');
-        introModalScrollViewRef.current?.scrollTo({ y: 0, animated: false });
-      }, 150);
-
-      return () => clearTimeout(timer);
+      // Also scroll after a delay to ensure content is rendered
+      setTimeout(() => {
+        introModalScrollViewRef.current?.scrollTo({ x: 0, y: 0, animated: false });
+        console.log('📜 Executed delayed scroll to top');
+      }, 100);
+      
+      // Final scroll to be absolutely sure
+      setTimeout(() => {
+        introModalScrollViewRef.current?.scrollTo({ x: 0, y: 0, animated: false });
+        console.log('📜 Executed final scroll to top');
+      }, 300);
     }
   }, [showIntroModal]);
 
@@ -890,7 +897,7 @@ export default function AddToolsScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Introductory Modal */}
+      {/* Introductory Modal - FIXED VERSION */}
       <Modal
         visible={showIntroModal}
         transparent={true}
@@ -903,11 +910,10 @@ export default function AddToolsScreen() {
               ref={introModalScrollViewRef}
               contentContainerStyle={styles.introModalScrollContent}
               showsVerticalScrollIndicator={false}
-              contentOffset={{ x: 0, y: 0 }}
-              onLayout={() => {
-                // Scroll to top when layout is complete
-                console.log('📜 Intro modal layout complete - scrolling to top');
-                introModalScrollViewRef.current?.scrollTo({ y: 0, animated: false });
+              onContentSizeChange={() => {
+                // Force scroll to top when content size changes
+                console.log('📜 Content size changed - scrolling to top');
+                introModalScrollViewRef.current?.scrollTo({ x: 0, y: 0, animated: false });
               }}
             >
               <View style={styles.introModalHeader}>
@@ -918,7 +924,7 @@ export default function AddToolsScreen() {
               </View>
 
               <Text style={[styles.introModalText, { color: colors.text }]}>
-                For each bin, remove all the tools & materials and place on a table spaced out like in the image. Take a photo and Workshop AI will identify each item. You can then edit and add to your Tool Inventory.
+                Take a photo and Workshop AI will identify each item. You can then edit and add to your Tool Inventory.
               </Text>
 
               <View style={styles.introImageContainer}>
