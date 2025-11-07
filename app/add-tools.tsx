@@ -55,6 +55,7 @@ export default function AddToolsScreen() {
   // Refs for TextInputs to enable keyboard navigation and scrolling
   const scrollViewRef = useRef<ScrollView>(null);
   const modalScrollViewRef = useRef<ScrollView>(null);
+  const introModalScrollViewRef = useRef<ScrollView>(null);
   const toolsListRef = useRef<TextInput>(null);
   const binNameRef = useRef<TextInput>(null);
   const binLocationRef = useRef<TextInput>(null);
@@ -63,6 +64,17 @@ export default function AddToolsScreen() {
   useEffect(() => {
     checkInventoryAndShowIntro();
   }, []);
+
+  // Scroll intro modal to top when it opens
+  useEffect(() => {
+    if (showIntroModal && introModalScrollViewRef.current) {
+      console.log('📜 Scrolling intro modal to top');
+      // Use a small delay to ensure the modal is fully rendered
+      setTimeout(() => {
+        introModalScrollViewRef.current?.scrollTo({ y: 0, animated: false });
+      }, 100);
+    }
+  }, [showIntroModal]);
 
   const checkInventoryAndShowIntro = async () => {
     try {
@@ -771,6 +783,7 @@ export default function AddToolsScreen() {
         <View style={styles.introModalOverlay}>
           <View style={[styles.introModalContent, { backgroundColor: colors.card }]}>
             <ScrollView
+              ref={introModalScrollViewRef}
               contentContainerStyle={styles.introModalScrollContent}
               showsVerticalScrollIndicator={false}
             >
