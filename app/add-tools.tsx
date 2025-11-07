@@ -39,6 +39,11 @@ export default function AddToolsScreen() {
   const [analyzing, setAnalyzing] = useState(false);
   const [saving, setSaving] = useState(false);
   
+  // State for existing bin names and locations
+  const [existingBinNames, setExistingBinNames] = useState<string[]>([]);
+  const [existingBinLocations, setExistingBinLocations] = useState<string[]>([]);
+  const [loadingExistingData, setLoadingExistingData] = useState(true);
+  
   // State for re-analysis
   const [showReanalyzeModal, setShowReanalyzeModal] = useState(false);
   const [reanalyzeReason, setReanalyzeReason] = useState('');
@@ -60,6 +65,7 @@ export default function AddToolsScreen() {
 
   useEffect(() => {
     checkInventoryAndShowIntro();
+    loadExistingBinData();
   }, []);
 
   // Scroll intro modal to top when it opens
@@ -72,6 +78,54 @@ export default function AddToolsScreen() {
       }, 100);
     }
   }, [showIntroModal]);
+
+  const loadExistingBinData = async () => {
+    try {
+      console.log('🔍 Loading existing bin names and locations');
+      setLoadingExistingData(true);
+
+      // Get device ID
+      const deviceId = await getDeviceId();
+      console.log('📱 Device ID:', deviceId.substring(0, 8) + '...');
+
+      // Fetch all inventory items for this device
+      const { data, error } = await supabase
+        .from('tool_inventory')
+        .select('bin_name, bin_location')
+        .eq('device_id', deviceId);
+
+      if (error) {
+        console.error('❌ Error loading existing bin data:', error);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        // Extract unique bin names
+        const uniqueBinNames = Array.from(
+          new Set(data.map(item => item.bin_name).filter(name => name && name.trim()))
+        ) as string[];
+
+        // Extract unique bin locations
+        const uniqueBinLocations = Array.from(
+          new Set(data.map(item => item.bin_location).filter(loc => loc && loc.trim()))
+        ) as string[];
+
+        console.log(`✅ Found ${uniqueBinNames.length} unique bin names`);
+        console.log(`✅ Found ${uniqueBinLocations.length} unique bin locations`);
+
+        setExistingBinNames(uniqueBinNames);
+        setExistingBinLocations(uniqueBinLocations);
+      } else {
+        console.log('📊 No existing inventory data found');
+        setExistingBinNames([]);
+        setExistingBinLocations([]);
+      }
+    } catch (error) {
+      console.error('❌ Error in loadExistingBinData:', error);
+    } finally {
+      setLoadingExistingData(false);
+    }
+  };
 
   const checkInventoryAndShowIntro = async () => {
     try {
@@ -712,7 +766,42 @@ export default function AddToolsScreen() {
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>3. Storage Information</Text>
+            
+            {/* Bin Name Section */}
             <Text style={styles.label}>Bin Name/ID</Text>
+            
+            {/* Existing Bin Names Buttons */}
+            {!loadingExistingData && existingBinNames.length > 0 && (
+              <View style={styles.quickSelectContainer}>
+                <ScrollView 
+                  horizontal 
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.quickSelectScrollContent}
+                >
+                  {existingBinNames.map((name, index) => (
+                    <Pressable
+                      key={`bin-name-${index}`}
+                      style={[
+                        styles.quickSelectButton,
+                        binName === name && styles.quickSelectButtonActive
+                      ]}
+                      onPress={() => {
+                        console.log(`📦 Selected bin name: ${name}`);
+                        setBinName(name);
+                      }}
+                    >
+                      <Text style={[
+                        styles.quickSelectButtonText,
+                        binName === name && styles.quickSelectButtonTextActive
+                      ]}>
+                        {name}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+            
             <TextInput
               ref={binNameRef}
               style={styles.input}
@@ -727,7 +816,41 @@ export default function AddToolsScreen() {
               }}
             />
 
+            {/* Bin Location Section */}
             <Text style={styles.label}>Bin Location</Text>
+            
+            {/* Existing Bin Locations Buttons */}
+            {!loadingExistingData && existingBinLocations.length > 0 && (
+              <View style={styles.quickSelectContainer}>
+                <ScrollView 
+                  horizontal 
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.quickSelectScrollContent}
+                >
+                  {existingBinLocations.map((location, index) => (
+                    <Pressable
+                      key={`bin-location-${index}`}
+                      style={[
+                        styles.quickSelectButton,
+                        binLocation === location && styles.quickSelectButtonActive
+                      ]}
+                      onPress={() => {
+                        console.log(`📍 Selected bin location: ${location}`);
+                        setBinLocation(location);
+                      }}
+                    >
+                      <Text style={[
+                        styles.quickSelectButtonText,
+                        binLocation === location && styles.quickSelectButtonTextActive
+                      ]}>
+                        {location}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+            
             <TextInput
               ref={binLocationRef}
               style={styles.input}
@@ -1085,6 +1208,34 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: 8,
     marginTop: 12,
+  },
+  // Quick Select Buttons Styles
+  quickSelectContainer: {
+    marginBottom: 12,
+  },
+  quickSelectScrollContent: {
+    paddingVertical: 4,
+    gap: 8,
+  },
+  quickSelectButton: {
+    backgroundColor: `${colors.primary}15`,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  quickSelectButtonActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  quickSelectButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  quickSelectButtonTextActive: {
+    color: '#FFFFFF',
   },
   input: {
     backgroundColor: colors.card,
