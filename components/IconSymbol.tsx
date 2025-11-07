@@ -1,3 +1,4 @@
+
 // This file is a fallback for using MaterialIcons on Android and web.
 
 import React from "react";
@@ -143,6 +144,14 @@ const MAPPING = {
   "person.circle": "account-circle",
   "person.crop.circle.fill": "account-circle",
   "person.crop.circle": "account-circle",
+
+  // Tools & Workshop
+  "wrench.and.screwdriver.fill": "build",
+  "wrench.and.screwdriver": "build",
+  "wrench.fill": "build",
+  "wrench": "build",
+  "hammer.fill": "handyman",
+  "hammer": "handyman",
 
   // Sharing & Export
   "square.and.arrow.up": "share",
