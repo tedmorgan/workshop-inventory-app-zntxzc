@@ -71,11 +71,18 @@ export default function AddToolsScreen() {
   // Scroll intro modal to top when it opens
   useEffect(() => {
     if (showIntroModal && introModalScrollViewRef.current) {
-      console.log('📜 Scrolling intro modal to top');
-      // Use a small delay to ensure the modal is fully rendered
-      setTimeout(() => {
+      console.log('📜 Intro modal opened - preparing to scroll to top');
+      
+      // Scroll immediately without animation
+      introModalScrollViewRef.current.scrollTo({ y: 0, animated: false });
+      
+      // Also scroll after a short delay to ensure content is rendered
+      const timer = setTimeout(() => {
+        console.log('📜 Executing delayed scroll to top');
         introModalScrollViewRef.current?.scrollTo({ y: 0, animated: false });
-      }, 100);
+      }, 150);
+
+      return () => clearTimeout(timer);
     }
   }, [showIntroModal]);
 
@@ -896,6 +903,12 @@ export default function AddToolsScreen() {
               ref={introModalScrollViewRef}
               contentContainerStyle={styles.introModalScrollContent}
               showsVerticalScrollIndicator={false}
+              contentOffset={{ x: 0, y: 0 }}
+              onLayout={() => {
+                // Scroll to top when layout is complete
+                console.log('📜 Intro modal layout complete - scrolling to top');
+                introModalScrollViewRef.current?.scrollTo({ y: 0, animated: false });
+              }}
             >
               <View style={styles.introModalHeader}>
                 <IconSymbol name="info.circle.fill" color={colors.primary} size={32} />
