@@ -197,11 +197,15 @@ export default function AddToolsScreen() {
       
       if (status !== 'granted') {
         console.log('❌ Camera permission denied');
-        Alert.alert('Permission Required', 'Camera permission is needed to take photos');
+        Alert.alert(
+          'Permission Required',
+          'Camera permission is needed to take photos. Please enable it in your device settings.',
+          [{ text: 'OK' }]
+        );
         return;
       }
 
-      console.log('✅ Launching camera');
+      console.log('✅ Camera permission granted, launching camera');
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: 'images',
         allowsEditing: true,
@@ -214,37 +218,74 @@ export default function AddToolsScreen() {
         setImageUri(uri);
         setPreviousResponse([]);
         analyzeImage(uri);
+      } else {
+        console.log('📷 Camera was canceled');
       }
     } catch (error) {
-      console.error(`❌ Error in pickImage: ${error}`);
-      Alert.alert('Error', 'Failed to take photo');
+      console.error(`❌ Error in pickImage:`, error);
+      Alert.alert(
+        'Camera Error',
+        `Failed to take photo: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`,
+        [{ text: 'OK' }]
+      );
     }
   };
 
   const pickFromGallery = async () => {
     try {
-      console.log('🖼️ Requesting gallery permissions');
+      console.log('🖼️ Starting gallery picker');
+      console.log(`📱 Platform: ${Platform.OS}`);
       
       if (Platform.OS !== 'web') {
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        console.log('📋 Requesting media library permissions...');
         
-        if (status !== 'granted') {
-          console.log('❌ Gallery permission denied');
-          Alert.alert('Permission Required', 'Photo library permission is needed');
+        // Request permissions with better error handling
+        const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        console.log('📋 Permission result:', JSON.stringify(permissionResult));
+        
+        if (permissionResult.status !== 'granted') {
+          console.log(`❌ Gallery permission denied. Status: ${permissionResult.status}`);
+          
+          // Provide more specific error messages based on permission status
+          let message = 'Photo library permission is needed to select images of your tools.';
+          
+          if (permissionResult.status === 'denied') {
+            message += '\n\nPlease enable photo library access in your device settings:\nSettings > Apps > Workshop > Permissions > Photos';
+          }
+          
+          Alert.alert(
+            'Permission Required',
+            message,
+            [{ text: 'OK' }]
+          );
           return;
         }
+        
+        console.log('✅ Gallery permission granted');
       }
 
-      console.log('✅ Launching gallery');
+      console.log('🚀 Launching image library...');
+      
+      // Launch image library with proper configuration
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: 'images',
         allowsEditing: true,
         quality: 0.8,
+        allowsMultipleSelection: false,
       });
 
-      if (!result.canceled && result.assets[0]) {
+      console.log('📊 Image picker result:', JSON.stringify({
+        canceled: result.canceled,
+        hasAssets: result.assets ? result.assets.length : 0
+      }));
+
+      if (!result.canceled && result.assets && result.assets[0]) {
         const uri = result.assets[0].uri;
-        console.log(`✅ Image selected: ${uri.substring(0, 50)}...`);
+        console.log(`✅ Image selected successfully`);
+        console.log(`📸 URI: ${uri.substring(0, 50)}...`);
+        console.log(`📏 Dimensions: ${result.assets[0].width}x${result.assets[0].height}`);
+        console.log(`📦 File size: ${result.assets[0].fileSize ? (result.assets[0].fileSize / 1024).toFixed(2) + ' KB' : 'unknown'}`);
+        
         setImageUri(uri);
         setPreviousResponse([]);
         
@@ -257,10 +298,32 @@ export default function AddToolsScreen() {
         } else {
           analyzeImage(uri);
         }
+      } else {
+        console.log('📷 Gallery picker was canceled by user');
       }
     } catch (error) {
-      console.error(`❌ Error in pickFromGallery: ${error}`);
-      Alert.alert('Error', 'Failed to select photo');
+      console.error(`❌ Error in pickFromGallery:`, error);
+      console.error('Error details:', {
+        name: error instanceof Error ? error.name : 'unknown',
+        message: error instanceof Error ? error.message : 'unknown',
+        stack: error instanceof Error ? error.stack : 'unknown'
+      });
+      
+      // Provide detailed error message
+      let errorMessage = 'Failed to select photo from gallery.';
+      
+      if (error instanceof Error) {
+        errorMessage += `\n\nError: ${error.message}`;
+        
+        // Check for common Android errors
+        if (error.message.includes('permission')) {
+          errorMessage += '\n\nPlease check that photo library permissions are enabled in your device settings.';
+        } else if (error.message.includes('activity')) {
+          errorMessage += '\n\nPlease try again. If the problem persists, restart the app.';
+        }
+      }
+      
+      Alert.alert('Gallery Error', errorMessage, [{ text: 'OK' }]);
     }
   };
 

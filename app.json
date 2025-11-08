@@ -1,3 +1,4 @@
+
 {
   "expo": {
     "name": "workshop-inventory-app-zntxzc",
@@ -16,7 +17,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.anonymous.Natively",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select images of your tools for inventory management.",
+        "NSCameraUsageDescription": "This app needs access to your camera to take photos of your tools for inventory management."
       }
     },
     "android": {
@@ -25,7 +28,13 @@
         "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.nagrom.inventory"
+      "package": "com.nagrom.inventory",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES"
+      ]
     },
     "web": {
       "favicon": "./assets/images/final_quest_240x240.png",
@@ -34,7 +43,14 @@
     "plugins": [
       "expo-font",
       "expo-router",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "This app needs access to your photo library to select images of your tools for inventory management.",
+          "cameraPermission": "This app needs access to your camera to take photos of your tools for inventory management."
+        }
+      ]
     ],
     "scheme": "natively",
     "experiments": {
