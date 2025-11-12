@@ -413,58 +413,55 @@ export default function AddToolsScreen() {
         console.log('✅ Edge Function call completed');
 
         if (error) {
-          console.log(`❌ Edge Function error: ${JSON.stringify(error)}`);
+          console.error(`❌ Edge Function error:`, error);
+          console.error('Error details:', JSON.stringify(error, null, 2));
           
-          // Enhanced error handling with specific messages
-          let errorTitle = 'AI Analysis Error';
-          let errorMessage = 'Failed to analyze image.';
-          
-          if (error.message) {
-            const errorStr = error.message.toLowerCase();
-            
-            if (errorStr.includes('401') || errorStr.includes('unauthorized')) {
-              errorTitle = '🔑 API Key Not Configured';
-              errorMessage = 'The Gemini API key is not set up correctly.\n\nPlease contact the app administrator to configure the GEMINI_API_KEY in Supabase.\n\nYou can still enter tools manually.';
-            } else if (errorStr.includes('403') || errorStr.includes('forbidden')) {
-              errorTitle = '🚫 Permission Denied';
-              errorMessage = 'The API key does not have the required permissions.\n\nPlease contact the app administrator.\n\nYou can still enter tools manually.';
-            } else if (errorStr.includes('429') || errorStr.includes('rate limit')) {
-              errorTitle = '⏱️ Too Many Requests';
-              errorMessage = 'The API rate limit has been exceeded.\n\nPlease wait a moment and try again, or enter tools manually.';
-            } else if (errorStr.includes('timeout')) {
-              errorTitle = '⏰ Request Timeout';
-              errorMessage = 'The request took too long.\n\nPlease try again with a smaller image or enter tools manually.';
-            } else {
-              errorMessage = `${error.message}\n\nYou can still enter tools manually.`;
-            }
-          }
-          
-          Alert.alert(errorTitle, errorMessage);
+          // Improved user-friendly error message
+          Alert.alert(
+            'Analysis Issue',
+            'We had trouble analyzing your image. Press re-analyze to try again, or you can enter tools manually.',
+            [
+              { text: 'Enter Manually', style: 'cancel' },
+              { 
+                text: 'Re-analyze', 
+                onPress: () => {
+                  if (previousResponse.length > 0) {
+                    setShowReanalyzeModal(true);
+                  } else {
+                    analyzeImage(uri);
+                  }
+                }
+              }
+            ]
+          );
           return;
         }
 
-        console.log(`✅ Response received`);
+        console.log(`✅ Response received:`, JSON.stringify(data, null, 2));
 
         if (data.error) {
-          console.log(`❌ API error: ${data.error}`);
+          console.error(`❌ API error: ${data.error}`);
+          console.error('Error hint:', data.hint);
+          console.error('Error details:', data.details);
           
-          // Enhanced error handling for API errors
-          let errorTitle = 'AI Analysis Error';
-          let errorMessage = data.error;
-          
-          if (data.hint) {
-            errorMessage += `\n\n💡 ${data.hint}`;
-          }
-          
-          if (data.error.includes('GEMINI_API_KEY')) {
-            errorTitle = '🔑 API Key Missing';
-            errorMessage = 'The Gemini API key is not configured in Supabase.\n\n';
-            errorMessage += 'Administrator: Please run:\n';
-            errorMessage += 'supabase secrets set GEMINI_API_KEY=your_key\n\n';
-            errorMessage += 'You can still enter tools manually.';
-          }
-          
-          Alert.alert(errorTitle, errorMessage);
+          // Improved user-friendly error message for API errors
+          Alert.alert(
+            'Analysis Issue',
+            'We had trouble analyzing your image. Press re-analyze to try again, or you can enter tools manually.',
+            [
+              { text: 'Enter Manually', style: 'cancel' },
+              { 
+                text: 'Re-analyze', 
+                onPress: () => {
+                  if (previousResponse.length > 0) {
+                    setShowReanalyzeModal(true);
+                  } else {
+                    analyzeImage(uri);
+                  }
+                }
+              }
+            ]
+          );
           return;
         }
 
@@ -490,6 +487,8 @@ export default function AddToolsScreen() {
           );
         }
       } catch (fetchError) {
+        console.error('❌ Fetch error:', fetchError);
+        
         if (fetchError instanceof Error && fetchError.name === 'AbortError') {
           throw new Error('Request timeout after 60 seconds');
         }
@@ -497,20 +496,27 @@ export default function AddToolsScreen() {
       }
       
     } catch (error) {
-      console.error(`❌ Analysis error: ${error}`);
+      console.error(`❌ Analysis error:`, error);
+      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
       
-      let errorTitle = 'AI Analysis Error';
-      let errorMessage = 'Failed to analyze image.\n\n';
-      
-      if (error instanceof Error) {
-        errorMessage += error.message;
-      } else {
-        errorMessage += 'Unknown error occurred.';
-      }
-      
-      errorMessage += '\n\nPlease enter tools manually or try again.';
-      
-      Alert.alert(errorTitle, errorMessage, [{ text: 'OK' }]);
+      // Improved user-friendly error message for all other errors
+      Alert.alert(
+        'Analysis Issue',
+        'We had trouble analyzing your image. Press re-analyze to try again, or you can enter tools manually.',
+        [
+          { text: 'Enter Manually', style: 'cancel' },
+          { 
+            text: 'Re-analyze', 
+            onPress: () => {
+              if (previousResponse.length > 0) {
+                setShowReanalyzeModal(true);
+              } else {
+                analyzeImage(uri);
+              }
+            }
+          }
+        ]
+      );
     } finally {
       console.log('🏁 Analysis complete');
       setAnalyzing(false);
