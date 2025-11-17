@@ -41,10 +41,15 @@ type ToolInventoryItem = {
   device_id: string;
 };
 
+type SearchMode = 'simple' | 'advanced';
+
 export default function FindToolScreen() {
   const router = useRouter();
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchMode, setSearchMode] = useState<SearchMode>('simple');
+  const [simpleSearchQuery, setSimpleSearchQuery] = useState('');
+  const [advancedSearchQuery, setAdvancedSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<ToolInventoryItem[]>([]);
+  const [aiResponse, setAiResponse] = useState<string>('');
   const [searching, setSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [expandedImageUrl, setExpandedImageUrl] = useState<string | null>(null);
@@ -59,17 +64,18 @@ export default function FindToolScreen() {
   const originX = useSharedValue(0);
   const originY = useSharedValue(0);
 
-  const searchTools = async () => {
-    if (!searchQuery.trim()) {
+  const searchToolsSimple = async () => {
+    if (!simpleSearchQuery.trim()) {
       return;
     }
 
     Keyboard.dismiss();
     setSearching(true);
     setHasSearched(true);
+    setAiResponse('');
 
     try {
-      console.log('🔍 Searching for:', searchQuery);
+      console.log('🔍 Simple search for:', simpleSearchQuery);
 
       // Get device ID
       const deviceId = await getDeviceId();
@@ -90,7 +96,7 @@ export default function FindToolScreen() {
       console.log(`📦 Found ${data?.length || 0} total items`);
 
       // Filter results on client side
-      const searchLower = searchQuery.toLowerCase();
+      const searchLower = simpleSearchQuery.toLowerCase();
       const filtered = (data || []).filter((item) => {
         const toolsMatch = item.tools.some((tool) =>
           tool.toLowerCase().includes(searchLower)
@@ -104,6 +110,48 @@ export default function FindToolScreen() {
       setSearchResults(filtered);
     } catch (error) {
       console.error('❌ Error:', error);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const searchToolsAdvanced = async () => {
+    if (!advancedSearchQuery.trim()) {
+      return;
+    }
+
+    Keyboard.dismiss();
+    setSearching(true);
+    setHasSearched(true);
+    setSearchResults([]);
+    setAiResponse('');
+
+    try {
+      console.log('🤖 Advanced AI search for:', advancedSearchQuery);
+
+      // Get device ID
+      const deviceId = await getDeviceId();
+      console.log('📱 Device ID:', deviceId.substring(0, 8) + '...');
+
+      // Call the Edge Function
+      const { data, error } = await supabase.functions.invoke('advanced-tool-search', {
+        body: {
+          searchQuery: advancedSearchQuery,
+          deviceId: deviceId,
+        },
+      });
+
+      if (error) {
+        console.error('❌ Edge Function error:', error);
+        setAiResponse('Sorry, we encountered an error processing your request. Please try again.');
+        return;
+      }
+
+      console.log('✅ AI response received');
+      setAiResponse(data.response || 'No response received from AI.');
+    } catch (error) {
+      console.error('❌ Error:', error);
+      setAiResponse('Sorry, we encountered an error processing your request. Please try again.');
     } finally {
       setSearching(false);
     }
@@ -245,6 +293,9 @@ export default function FindToolScreen() {
     };
   });
 
+  const currentSearchQuery = searchMode === 'simple' ? simpleSearchQuery : advancedSearchQuery;
+  const canSearch = currentSearchQuery.trim().length > 0;
+
   return (
     <>
       <Stack.Screen
@@ -259,28 +310,112 @@ export default function FindToolScreen() {
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={styles.innerContainer}>
-            <View style={styles.searchSection}>
-              <View style={[styles.searchBar, { backgroundColor: colors.card }]}>
-                <IconSymbol name="magnifyingglass" size={20} color={colors.textSecondary} />
-                <TextInput
-                  style={[styles.searchInput, { color: colors.text }]}
-                  placeholder="Search for a tool, bin, or location..."
-                  placeholderTextColor={colors.textSecondary}
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                  onSubmitEditing={searchTools}
-                  returnKeyType="search"
-                />
-                {searchQuery.length > 0 && (
-                  <Pressable onPress={() => setSearchQuery('')}>
-                    <IconSymbol name="xmark.circle.fill" size={20} color={colors.textSecondary} />
-                  </Pressable>
-                )}
-              </View>
+            {/* Search Mode Toggle */}
+            <View style={styles.modeToggleContainer}>
               <Pressable
-                style={[styles.searchButton, searching && styles.searchButtonDisabled]}
-                onPress={searchTools}
-                disabled={searching || !searchQuery.trim()}
+                style={[
+                  styles.modeButton,
+                  searchMode === 'simple' && styles.modeButtonActive,
+                  { backgroundColor: searchMode === 'simple' ? colors.primary : colors.card }
+                ]}
+                onPress={() => {
+                  setSearchMode('simple');
+                  setHasSearched(false);
+                  setSearchResults([]);
+                  setAiResponse('');
+                }}
+              >
+                <IconSymbol 
+                  name="magnifyingglass" 
+                  size={18} 
+                  color={searchMode === 'simple' ? '#FFFFFF' : colors.text} 
+                />
+                <Text style={[
+                  styles.modeButtonText,
+                  { color: searchMode === 'simple' ? '#FFFFFF' : colors.text }
+                ]}>
+                  Simple Tool Search
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.modeButton,
+                  searchMode === 'advanced' && styles.modeButtonActive,
+                  { backgroundColor: searchMode === 'advanced' ? colors.primary : colors.card }
+                ]}
+                onPress={() => {
+                  setSearchMode('advanced');
+                  setHasSearched(false);
+                  setSearchResults([]);
+                  setAiResponse('');
+                }}
+              >
+                <IconSymbol 
+                  name="sparkles" 
+                  size={18} 
+                  color={searchMode === 'advanced' ? '#FFFFFF' : colors.text} 
+                />
+                <Text style={[
+                  styles.modeButtonText,
+                  { color: searchMode === 'advanced' ? '#FFFFFF' : colors.text }
+                ]}>
+                  Advanced Search
+                </Text>
+              </Pressable>
+            </View>
+
+            {/* Search Section */}
+            <View style={styles.searchSection}>
+              {searchMode === 'simple' ? (
+                <View style={[styles.searchBar, { backgroundColor: colors.card }]}>
+                  <IconSymbol name="magnifyingglass" size={20} color={colors.textSecondary} />
+                  <TextInput
+                    style={[styles.searchInput, { color: colors.text }]}
+                    placeholder="Search for a tool, bin, or location..."
+                    placeholderTextColor={colors.textSecondary}
+                    value={simpleSearchQuery}
+                    onChangeText={setSimpleSearchQuery}
+                    onSubmitEditing={searchToolsSimple}
+                    returnKeyType="search"
+                  />
+                  {simpleSearchQuery.length > 0 && (
+                    <Pressable onPress={() => setSimpleSearchQuery('')}>
+                      <IconSymbol name="xmark.circle.fill" size={20} color={colors.textSecondary} />
+                    </Pressable>
+                  )}
+                </View>
+              ) : (
+                <View style={[styles.advancedSearchContainer, { backgroundColor: colors.card }]}>
+                  <View style={styles.advancedSearchHeader}>
+                    <IconSymbol name="sparkles" size={20} color={colors.primary} />
+                    <Text style={[styles.advancedSearchLabel, { color: colors.text }]}>
+                      Advanced Search
+                    </Text>
+                  </View>
+                  <TextInput
+                    style={[styles.advancedSearchInput, { color: colors.text }]}
+                    placeholder="What would be good to use for removing drywall?"
+                    placeholderTextColor={colors.textSecondary}
+                    value={advancedSearchQuery}
+                    onChangeText={setAdvancedSearchQuery}
+                    multiline
+                    numberOfLines={3}
+                    textAlignVertical="top"
+                  />
+                  {advancedSearchQuery.length > 0 && (
+                    <Pressable 
+                      style={styles.clearButton}
+                      onPress={() => setAdvancedSearchQuery('')}
+                    >
+                      <IconSymbol name="xmark.circle.fill" size={20} color={colors.textSecondary} />
+                    </Pressable>
+                  )}
+                </View>
+              )}
+              <Pressable
+                style={[styles.searchButton, (!canSearch || searching) && styles.searchButtonDisabled]}
+                onPress={searchMode === 'simple' ? searchToolsSimple : searchToolsAdvanced}
+                disabled={!canSearch || searching}
               >
                 {searching ? (
                   <ActivityIndicator color="#FFFFFF" />
@@ -297,10 +432,19 @@ export default function FindToolScreen() {
             >
               {!hasSearched ? (
                 <View style={styles.emptyState}>
-                  <IconSymbol name="magnifyingglass" size={64} color={colors.textSecondary} />
-                  <Text style={[styles.emptyTitle, { color: colors.text }]}>Find Your Tools</Text>
+                  <IconSymbol 
+                    name={searchMode === 'simple' ? 'magnifyingglass' : 'sparkles'} 
+                    size={64} 
+                    color={colors.textSecondary} 
+                  />
+                  <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                    {searchMode === 'simple' ? 'Find Your Tools' : 'AI-Powered Tool Search'}
+                  </Text>
                   <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                    Search for any tool, bin name, or location to quickly find where your tools are stored
+                    {searchMode === 'simple' 
+                      ? 'Search for any tool, bin name, or location to quickly find where your tools are stored'
+                      : 'Ask questions like "What tools do I need for drywall work?" and get AI-powered recommendations from your inventory'
+                    }
                   </Text>
                   <Pressable style={styles.viewInventoryButton} onPress={openViewInventory}>
                     <IconSymbol name="tray.fill" size={20} color={colors.primary} />
@@ -312,14 +456,36 @@ export default function FindToolScreen() {
               ) : searching ? (
                 <View style={styles.loadingState}>
                   <ActivityIndicator size="large" color={colors.primary} />
-                  <Text style={[styles.loadingText, { color: colors.text }]}>Searching...</Text>
+                  <Text style={[styles.loadingText, { color: colors.text }]}>
+                    {searchMode === 'simple' ? 'Searching...' : 'AI is analyzing your inventory...'}
+                  </Text>
                 </View>
-              ) : searchResults.length === 0 ? (
+              ) : searchMode === 'advanced' && aiResponse ? (
+                <View style={styles.aiResponseContainer}>
+                  <View style={styles.aiResponseHeader}>
+                    <IconSymbol name="sparkles" size={24} color={colors.primary} />
+                    <Text style={[styles.aiResponseTitle, { color: colors.text }]}>
+                      AI Recommendation
+                    </Text>
+                  </View>
+                  <View style={[styles.aiResponseCard, { backgroundColor: colors.card }]}>
+                    <Text style={[styles.aiResponseText, { color: colors.text }]}>
+                      {aiResponse}
+                    </Text>
+                  </View>
+                  <Pressable style={styles.viewInventoryButton} onPress={openViewInventory}>
+                    <IconSymbol name="tray.fill" size={20} color={colors.primary} />
+                    <Text style={[styles.viewInventoryText, { color: colors.primary }]}>
+                      View Full Inventory
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : searchMode === 'simple' && searchResults.length === 0 ? (
                 <View style={styles.emptyState}>
                   <IconSymbol name="exclamationmark.triangle.fill" size={64} color={colors.textSecondary} />
                   <Text style={[styles.emptyTitle, { color: colors.text }]}>No Results Found</Text>
                   <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                    We couldn&apos;t find any tools, bins, or locations matching &quot;{searchQuery}&quot;
+                    We couldn&apos;t find any tools, bins, or locations matching &quot;{simpleSearchQuery}&quot;
                   </Text>
                   <Pressable style={styles.viewInventoryButton} onPress={openViewInventory}>
                     <IconSymbol name="tray.fill" size={20} color={colors.primary} />
@@ -328,7 +494,7 @@ export default function FindToolScreen() {
                     </Text>
                   </Pressable>
                 </View>
-              ) : (
+              ) : searchMode === 'simple' && searchResults.length > 0 ? (
                 <>
                   <View style={styles.resultsHeader}>
                     <Text style={[styles.resultsCount, { color: colors.text }]}>
@@ -379,7 +545,7 @@ export default function FindToolScreen() {
                     </Pressable>
                   ))}
                 </>
-              )}
+              ) : null}
 
               <View style={styles.bottomSpacer} />
             </ScrollView>
@@ -440,9 +606,37 @@ const styles = StyleSheet.create({
   innerContainer: {
     flex: 1,
   },
-  searchSection: {
+  modeToggleContainer: {
     flexDirection: 'row',
     padding: 16,
+    paddingBottom: 8,
+    gap: 12,
+  },
+  modeButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    gap: 8,
+  },
+  modeButtonActive: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  modeButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  searchSection: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
     gap: 12,
   },
   searchBar: {
@@ -457,6 +651,31 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 16,
+  },
+  advancedSearchContainer: {
+    flex: 1,
+    borderRadius: 12,
+    padding: 16,
+  },
+  advancedSearchHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  advancedSearchLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  advancedSearchInput: {
+    fontSize: 16,
+    minHeight: 80,
+    maxHeight: 120,
+  },
+  clearButton: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
   },
   searchButton: {
     backgroundColor: colors.primary,
@@ -521,6 +740,28 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 16,
+  },
+  aiResponseContainer: {
+    flex: 1,
+  },
+  aiResponseHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  aiResponseTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  aiResponseCard: {
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 16,
+  },
+  aiResponseText: {
+    fontSize: 16,
+    lineHeight: 24,
   },
   resultsHeader: {
     marginBottom: 16,
