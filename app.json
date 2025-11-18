@@ -1,14 +1,14 @@
 {
   "expo": {
-    "name": "Workshop Inventory",
-    "slug": "Workshop Inventory",
+    "name": "Workshop AI",
+    "slug": "Workshop-nventory",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/natively-dark.png",
+    "icon": "./assets/images/Workshop-icon.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/natively-dark.png",
+      "image": "./assets/images/workshop.png",
       "resizeMode": "contain",
       "backgroundColor": "#000000"
     },
@@ -23,7 +23,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/natively-dark.png",
+        "foregroundImage": "./assets/images/Workshop-icon.png",
         "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
