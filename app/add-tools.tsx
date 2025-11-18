@@ -966,59 +966,64 @@ export default function AddToolsScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Introductory Modal - FIXED FOR ANDROID */}
+      {/* Introductory Modal - FIXED FOR iOS */}
       <Modal
         visible={showIntroModal}
         transparent={true}
         animationType="fade"
         onRequestClose={closeIntroModal}
+        presentationStyle={Platform.OS === 'ios' ? 'overFullScreen' : undefined}
       >
-        <View style={styles.introModalOverlay}>
-          <View style={[styles.introModalContent, { backgroundColor: colors.card }]}>
-            <ScrollView
-              ref={introModalScrollViewRef}
-              style={styles.introModalScrollView}
-              contentContainerStyle={styles.introModalScrollContent}
-              showsVerticalScrollIndicator={true}
-              bounces={false}
-              onContentSizeChange={() => {
-                // Force scroll to top when content size changes
-                console.log('📜 Content size changed - scrolling to top');
-                introModalScrollViewRef.current?.scrollTo({ x: 0, y: 0, animated: false });
-              }}
-            >
-              <View style={styles.introModalHeader}>
-                <IconSymbol name="info.circle.fill" color={colors.primary} size={32} />
-                <Text style={[styles.introModalTitle, { color: colors.text }]}>
-                  Welcome to Workshop!
-                </Text>
+        <TouchableWithoutFeedback onPress={closeIntroModal}>
+          <View style={styles.introModalOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={styles.introModalContent}>
+                <ScrollView
+                  ref={introModalScrollViewRef}
+                  style={styles.introModalScrollView}
+                  contentContainerStyle={styles.introModalScrollContent}
+                  showsVerticalScrollIndicator={true}
+                  bounces={false}
+                  onContentSizeChange={() => {
+                    // Force scroll to top when content size changes
+                    console.log('📜 Content size changed - scrolling to top');
+                    introModalScrollViewRef.current?.scrollTo({ x: 0, y: 0, animated: false });
+                  }}
+                >
+                  <View style={styles.introModalHeader}>
+                    <IconSymbol name="info.circle.fill" color={colors.primary} size={32} />
+                    <Text style={[styles.introModalTitle, { color: colors.text }]}>
+                      Welcome to Workshop!
+                    </Text>
+                  </View>
+
+                  <Text style={[styles.introModalText, { color: colors.text }]}>
+                    Workshop can help you keep track of where your tools are located. For each bin, remove all the tools & materials and place on a table spaced out like in the image. Take a photo and Workshop AI will identify each item. You can then edit and add to your Tool Inventory.
+                  </Text>
+
+                  <View style={styles.introImageContainer}>
+                    <Image
+                      source={require('@/assets/images/59a6d842-e6a8-4050-b2cd-0a1df289bf14.jpeg')}
+                      style={styles.introImage}
+                      resizeMode="contain"
+                    />
+                    <Text style={[styles.introImageCaption, { color: colors.textSecondary }]}>
+                      Example: Tools laid out on a table for AI identification
+                    </Text>
+                  </View>
+
+                  <Pressable
+                    style={styles.introModalButton}
+                    onPress={closeIntroModal}
+                  >
+                    <Text style={styles.introModalButtonText}>Got it!</Text>
+                    <IconSymbol name="arrow.right" color="#FFFFFF" size={20} />
+                  </Pressable>
+                </ScrollView>
               </View>
-
-              <Text style={[styles.introModalText, { color: colors.text }]}>
-                Workshop can help you keep track of where your tools are located. For each bin, remove all the tools & materials and place on a table spaced out like in the image. Take a photo and Workshop AI will identify each item. You can then edit and add to your Tool Inventory.
-              </Text>
-
-              <View style={styles.introImageContainer}>
-                <Image
-                  source={require('@/assets/images/59a6d842-e6a8-4050-b2cd-0a1df289bf14.jpeg')}
-                  style={styles.introImage}
-                  resizeMode="contain"
-                />
-                <Text style={[styles.introImageCaption, { color: colors.textSecondary }]}>
-                  Example: Tools laid out on a table for AI identification
-                </Text>
-              </View>
-
-              <Pressable
-                style={styles.introModalButton}
-                onPress={closeIntroModal}
-              >
-                <Text style={styles.introModalButtonText}>Got it!</Text>
-                <IconSymbol name="arrow.right" color="#FFFFFF" size={20} />
-              </Pressable>
-            </ScrollView>
+            </TouchableWithoutFeedback>
           </View>
-        </View>
+        </TouchableWithoutFeedback>
       </Modal>
 
       {/* Re-analyze Modal */}
@@ -1354,7 +1359,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
   },
-  // Introductory Modal Styles - FIXED FOR ANDROID
+  // Introductory Modal Styles - FIXED FOR iOS AND ANDROID
   introModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
@@ -1365,9 +1370,11 @@ const styles = StyleSheet.create({
   introModalContent: {
     width: '100%',
     maxWidth: 500,
-    maxHeight: '85%', // Reduced from 90% to ensure space for scrolling
+    height: '85%',
+    maxHeight: '85%',
     borderRadius: 24,
-    overflow: 'hidden', // Important for Android
+    overflow: 'hidden',
+    backgroundColor: colors.card,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -1381,11 +1388,11 @@ const styles = StyleSheet.create({
     }),
   },
   introModalScrollView: {
-    flex: 1, // Critical for Android scrolling
+    flex: 1,
   },
   introModalScrollContent: {
     padding: 24,
-    flexGrow: 1, // Ensures content can grow and be scrollable
+    paddingBottom: 32,
   },
   introModalHeader: {
     alignItems: 'center',
