@@ -202,6 +202,17 @@ export default function FindToolScreen() {
 
       if (error) {
         console.error('❌ Error fetching image:', error);
+        // Log more details if available
+        if (error.message) {
+          console.error('Error message:', error.message);
+        }
+        if (error.context) {
+          console.error('Error context:', JSON.stringify(error.context, null, 2));
+        }
+        // Try to get response body if available
+        if ((error as any).response) {
+          console.error('Error response:', (error as any).response);
+        }
         return null;
       }
 
@@ -211,9 +222,16 @@ export default function FindToolScreen() {
         return data.imageUrl;
       }
 
+      if (data?.error) {
+        console.error('❌ Function returned error:', data.error);
+        if (data.details) {
+          console.error('Error details:', data.details);
+        }
+      }
+
       return null;
     } catch (error) {
-      console.error('❌ Error fetching tool image:', error);
+      console.error('❌ Exception fetching tool image:', error);
       return null;
     }
   };

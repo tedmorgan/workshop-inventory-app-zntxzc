@@ -63,13 +63,29 @@ Deno.serve(async (req) => {
     const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${googleApiKey}&cx=${googleCseId}&q=${encodeURIComponent(searchQuery)}&searchType=image&num=1&safe=active`;
     
     console.log('📡 Calling Google Custom Search API...');
+    console.log('🔑 API Key present:', !!googleApiKey);
+    console.log('🆔 CSE ID present:', !!googleCseId);
+    console.log('🔍 Search query:', searchQuery);
+    
     const response = await fetch(searchUrl);
     
     if (!response.ok) {
       const errorText = await response.text();
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch {
+        errorData = { message: errorText };
+      }
+      
       console.error('❌ Google API error:', errorText);
+      console.error('Response status:', response.status);
+      console.error('Error data:', JSON.stringify(errorData, null, 2));
+      
       return new Response(JSON.stringify({
-        error: 'Failed to search for images'
+        error: 'Failed to search for images',
+        details: errorData,
+        status: response.status
       }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
