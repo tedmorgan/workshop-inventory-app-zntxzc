@@ -84,13 +84,15 @@ Format your response as a clear, helpful answer that includes:
 
 Be conversational and helpful. If no suitable tools are found, suggest what type of tools they might need to acquire. 
 
-IMPORTANT: Do NOT use asterisks (**) for bold text or any markdown asterisk formatting. You can use numbered lists, bullet points, and clear structure, but avoid asterisks entirely.`;
+CRITICAL FORMATTING RULE: You must write in plain text only. Never use asterisks (**) or any markdown formatting characters. Do not use ** for bold text. Write tool names, bin names, and bin locations in plain text without any asterisks. You can use numbered lists (1., 2., 3.) and bullet points (-) for structure, but absolutely no asterisks anywhere in your response.`;
     const userPrompt = `User Question: ${searchQuery}
 
 Tool Inventory:
 ${JSON.stringify(formattedInventory, null, 2)}
 
-Please help the user find the list of tools and their bin locations that would address their question.`;
+Please help the user find the list of tools and their bin locations that would address their question.
+
+Remember: Write your response in plain text without using asterisks (**) or any markdown formatting. Use numbered lists and bullet points for structure, but no asterisks.`;
     console.log('🤖 Calling OpenAI API...');
     // Call OpenAI API
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -129,7 +131,11 @@ Please help the user find the list of tools and their bin locations that would a
       });
     }
     const openaiData = await openaiResponse.json();
-    const aiResponse = openaiData.choices[0]?.message?.content || 'No response from AI';
+    let aiResponse = openaiData.choices[0]?.message?.content || 'No response from AI';
+    
+    // Remove asterisks from the response as a fallback
+    aiResponse = aiResponse.replace(/\*\*/g, '');
+    
     console.log('✅ AI response received');
     return new Response(JSON.stringify({
       response: aiResponse,
