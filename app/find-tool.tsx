@@ -180,59 +180,69 @@ export default function FindToolScreen() {
   const renderAIResponse = (response: string) => {
     // Remove excessive empty lines (replace double+ newlines with single)
     const cleanedResponse = response.replace(/\n\n+/g, '\n');
-    const lines = cleanedResponse.split('\n');
-    const elements: React.ReactNode[] = [];
     
-    console.log('🔍 Rendering AI response, total lines:', lines.length);
-    console.log('📄 First 3 lines of response:');
-    lines.slice(0, 3).forEach((line, idx) => {
-      console.log(`  Line ${idx}: "${line}"`);
-    });
+    console.log('🔍 Rendering AI response');
+    console.log('📝 Response preview (first 200 chars):', cleanedResponse.substring(0, 200));
     
-    lines.forEach((line, lineIndex) => {
-      // Skip empty lines
-      if (line.trim() === '') {
-        return;
+    // Find all bin names and their positions
+    const binNameRegex = /Bin [Nn]ame:\s*([^\n]+)/g;
+    let match;
+    const binNames: Array<{ index: number; name: string; length: number }> = [];
+    
+    while ((match = binNameRegex.exec(cleanedResponse)) !== null) {
+      const fullMatch = match[0]; // "Bin name: Something"
+      const binName = match[1].trim();
+      const labelEnd = match.index + match[0].indexOf(':') + 1;
+      
+      console.log('✅ Found bin name at index', match.index, ':', binName);
+      
+      binNames.push({
+        index: labelEnd, // Position after "Bin name:"
+        name: binName,
+        length: binName.length
+      });
+    }
+    
+    // Build the text with clickable bin names
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    
+    binNames.forEach((bin, idx) => {
+      // Add text before this bin name
+      if (bin.index > lastIndex) {
+        parts.push(cleanedResponse.substring(lastIndex, bin.index));
       }
       
-      // Match patterns like "Bin Name: Something" or "- Bin Name: Something"
-      // Only match "Bin Name:", not "Bin Location:"
-      const binMatch = line.match(/Bin Name:\s*(.+?)$/i);
+      // Add space after colon
+      parts.push(' ');
       
-      if (binMatch) {
-        const binName = binMatch[1].trim();
-        const textBeforeBinName = line.substring(0, binMatch.index!);
-        const binNameLabel = line.substring(binMatch.index!, binMatch.index! + 'Bin Name:'.length);
-        
-        console.log('✅ Found bin name match on line', lineIndex, ':', binName);
-        
-        elements.push(
-          <Text key={`line-${lineIndex}`} style={[styles.aiResponseText, { color: colors.text }]} selectable={false}>
-            {textBeforeBinName}
-            {binNameLabel}{' '}
-            <Text 
-              style={[styles.aiResponseText, styles.binLink, { color: colors.primary }]}
-              onPress={() => {
-                console.log('🔗 Bin name pressed:', binName);
-                openInventoryForBin(binName);
-              }}
-            >
-              {binName}
-            </Text>
-            {'\n'}
-          </Text>
-        );
-      } else {
-        elements.push(
-          <Text key={`line-${lineIndex}`} style={[styles.aiResponseText, { color: colors.text }]} selectable={false}>
-            {line}{'\n'}
-          </Text>
-        );
-      }
+      // Add clickable bin name
+      parts.push(
+        <Text 
+          key={`bin-${idx}`}
+          style={[styles.aiResponseText, styles.binLink, { color: colors.primary }]}
+          onPress={() => {
+            console.log('🔗 Bin name pressed:', bin.name);
+            openInventoryForBin(bin.name);
+          }}
+        >
+          {bin.name}
+        </Text>
+      );
+      
+      lastIndex = bin.index + 1 + bin.name.length;
     });
     
-    console.log('✨ Finished rendering, total elements:', elements.length);
-    return <>{elements}</>;
+    // Add remaining text
+    if (lastIndex < cleanedResponse.length) {
+      parts.push(cleanedResponse.substring(lastIndex));
+    }
+    
+    return (
+      <Text style={[styles.aiResponseText, { color: colors.text }]} selectable={false}>
+        {parts}
+      </Text>
+    );
   };
 
   const expandImage = (imageUrl: string) => {
