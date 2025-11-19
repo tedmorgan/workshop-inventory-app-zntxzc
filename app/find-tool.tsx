@@ -184,7 +184,7 @@ export default function FindToolScreen() {
     });
   };
 
-  const parseRecommendedTools = (response: string): { inventorySection: string; recommendedTools: Array<{ name: string; description: string; amazonUrl: string }> } => {
+  const parseRecommendedTools = (response: string): { inventorySection: string; recommendedTools: Array<{ name: string; description: string; amazonUrl: string; imageUrl: string }> } => {
     const separator = '---';
     const parts = response.split(separator);
     
@@ -199,9 +199,10 @@ export default function FindToolScreen() {
       // 1. Tool Name
       //    - Description: ...
       //    - Amazon Search: https://...
+      //    - Image URL: https://...
       // Handle variations in formatting
       const lines = recommendedSection.split('\n');
-      let currentTool: { name: string; description: string; amazonUrl: string } | null = null;
+      let currentTool: { name: string; description: string; amazonUrl: string; imageUrl: string } | null = null;
       
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
@@ -217,7 +218,8 @@ export default function FindToolScreen() {
           currentTool = {
             name: toolNameMatch[2].trim(),
             description: '',
-            amazonUrl: ''
+            amazonUrl: '',
+            imageUrl: ''
           };
         }
         
@@ -231,6 +233,12 @@ export default function FindToolScreen() {
         const amazonMatch = line.match(/^-\s*Amazon Search:\s*(https?:\/\/[^\s]+)/i);
         if (amazonMatch && currentTool) {
           currentTool.amazonUrl = amazonMatch[1].trim();
+        }
+        
+        // Check for Image URL line
+        const imageMatch = line.match(/^-\s*Image URL:\s*(https?:\/\/[^\s]+)/i);
+        if (imageMatch && currentTool) {
+          currentTool.imageUrl = imageMatch[1].trim();
         }
       }
       
@@ -315,7 +323,7 @@ export default function FindToolScreen() {
     return <>{elements}</>;
   };
 
-  const renderRecommendedTools = (tools: Array<{ name: string; description: string; amazonUrl: string }>) => {
+  const renderRecommendedTools = (tools: Array<{ name: string; description: string; amazonUrl: string; imageUrl: string }>) => {
     if (tools.length === 0) return null;
     
     return (
@@ -325,6 +333,13 @@ export default function FindToolScreen() {
         </Text>
         {tools.map((tool, index) => (
           <View key={index} style={styles.recommendedToolCard}>
+            {tool.imageUrl ? (
+              <Image
+                source={{ uri: tool.imageUrl }}
+                style={styles.recommendedToolImage}
+                resizeMode="contain"
+              />
+            ) : null}
             <Text style={[styles.recommendedToolName, { color: colors.text }]}>
               {index + 1}. {tool.name}
             </Text>
@@ -985,6 +1000,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
     borderColor: Platform.OS === 'ios' ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.2)',
+  },
+  recommendedToolImage: {
+    width: '100%',
+    height: 200,
+    borderRadius: 8,
+    marginBottom: 12,
+    backgroundColor: '#F5F5F5',
   },
   recommendedToolName: {
     fontSize: 18,
