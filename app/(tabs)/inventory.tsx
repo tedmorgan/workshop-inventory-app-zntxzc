@@ -50,6 +50,7 @@ type ToolInventoryItem = {
 export default function InventoryScreen() {
   const { colors: themeColors } = useTheme();
   const [inventory, setInventory] = useState<ToolInventoryItem[]>([]);
+  const [filteredInventory, setFilteredInventory] = useState<ToolInventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -61,6 +62,7 @@ export default function InventoryScreen() {
   const [expandedImageUrl, setExpandedImageUrl] = useState<string | null>(null);
   const params = useLocalSearchParams();
   const router = useRouter();
+  const filterBin = params.filterBin as string | undefined;
 
   // Zoom and pan state
   const scale = useSharedValue(1);
@@ -80,6 +82,15 @@ export default function InventoryScreen() {
       }
     }
   }, [params.editBinId, inventory]);
+
+  useEffect(() => {
+    if (filterBin && inventory.length > 0) {
+      const filtered = inventory.filter(item => item.bin_name === filterBin);
+      setFilteredInventory(filtered);
+    } else {
+      setFilteredInventory(inventory);
+    }
+  }, [filterBin, inventory]);
 
   useFocusEffect(
     useCallback(() => {
@@ -413,7 +424,7 @@ export default function InventoryScreen() {
             />
           }
         >
-          {inventory.length === 0 ? (
+            {filteredInventory.length === 0 ? (
             <View style={styles.emptyContainer}>
               <IconSymbol name="tray.fill" size={64} color={colors.textSecondary} />
               <Text style={[styles.emptyTitle, { color: colors.text }]}>No Tools Yet</Text>
@@ -445,7 +456,7 @@ export default function InventoryScreen() {
                 </View>
               </View>
 
-              {inventory.map((item) => (
+              {filteredInventory.map((item) => (
                 <View key={item.id} style={[styles.card, { backgroundColor: colors.card }]}>
                   <Pressable onPress={() => expandImage(item.image_url)}>
                     <Image source={{ uri: item.image_url }} style={styles.cardImage} />

@@ -168,6 +168,52 @@ export default function FindToolScreen() {
     router.push('/(tabs)/inventory');
   };
 
+  const openInventoryForBin = (binName: string) => {
+    router.push({
+      pathname: '/(tabs)/inventory',
+      params: { filterBin: binName }
+    });
+  };
+
+  const renderAIResponse = (response: string) => {
+    // Split response into lines and detect bin names/locations
+    const lines = response.split('\n');
+    const elements: React.ReactNode[] = [];
+    
+    lines.forEach((line, lineIndex) => {
+      // Match patterns like "Bin Name: Something" or "- Bin Name: Something"
+      const binNameMatch = line.match(/(?:^|\s|-)(?:\*\*)?Bin Name(?:\*\*)?:\s*(.+?)(?:\n|$)/i);
+      
+      if (binNameMatch) {
+        const binName = binNameMatch[1].trim();
+        const beforeBin = line.substring(0, binNameMatch.index! + binNameMatch[0].indexOf(':') + 1);
+        const afterBin = line.substring(binNameMatch.index! + binNameMatch[0].length);
+        
+        elements.push(
+          <Text key={`line-${lineIndex}`} style={[styles.aiResponseText, { color: colors.text }]} selectable={false}>
+            {beforeBin}{' '}
+            <Text 
+              style={[styles.aiResponseText, styles.binLink, { color: colors.primary }]}
+              onPress={() => openInventoryForBin(binName)}
+            >
+              {binName}
+            </Text>
+            {afterBin}
+            {'\n'}
+          </Text>
+        );
+      } else {
+        elements.push(
+          <Text key={`line-${lineIndex}`} style={[styles.aiResponseText, { color: colors.text }]} selectable={false}>
+            {line}{lineIndex < lines.length - 1 ? '\n' : ''}
+          </Text>
+        );
+      }
+    });
+    
+    return <>{elements}</>;
+  };
+
   const expandImage = (imageUrl: string) => {
     console.log('🖼️ Expanding image');
     setExpandedImageUrl(imageUrl);
@@ -477,12 +523,7 @@ export default function FindToolScreen() {
                       directionalLockEnabled={true}
                       scrollEnabled={true}
                     >
-                      <Text 
-                        style={[styles.aiResponseText, { color: colors.text }]}
-                        selectable={false}
-                      >
-                        {aiResponse}
-                      </Text>
+                      {renderAIResponse(aiResponse)}
                     </ScrollView>
                   </View>
                   <Pressable style={styles.viewInventoryButton} onPress={openViewInventory}>
@@ -781,6 +822,10 @@ const styles = StyleSheet.create({
   aiResponseText: {
     fontSize: 16,
     lineHeight: 24,
+  },
+  binLink: {
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
   resultsHeader: {
     marginBottom: 16,
