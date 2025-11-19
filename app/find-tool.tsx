@@ -178,8 +178,9 @@ export default function FindToolScreen() {
   };
 
   const renderAIResponse = (response: string) => {
-    // Split response into lines and detect bin names
-    const lines = response.split('\n');
+    // Remove excessive empty lines (replace double+ newlines with single)
+    const cleanedResponse = response.replace(/\n\n+/g, '\n');
+    const lines = cleanedResponse.split('\n');
     const elements: React.ReactNode[] = [];
     
     console.log('🔍 Rendering AI response, total lines:', lines.length);
@@ -189,7 +190,7 @@ export default function FindToolScreen() {
     });
     
     lines.forEach((line, lineIndex) => {
-      // Skip empty lines to reduce spacing
+      // Skip empty lines
       if (line.trim() === '') {
         return;
       }
