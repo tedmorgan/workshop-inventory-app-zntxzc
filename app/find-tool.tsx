@@ -53,7 +53,6 @@ export default function FindToolScreen() {
   const [searching, setSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [expandedImageUrl, setExpandedImageUrl] = useState<string | null>(null);
-  const [parentScrollEnabled, setParentScrollEnabled] = useState(true);
 
   // Zoom and pan state
   const scale = useSharedValue(1);
@@ -430,8 +429,6 @@ export default function FindToolScreen() {
               contentContainerStyle={styles.scrollContent}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
-              nestedScrollEnabled={true}
-              scrollEnabled={parentScrollEnabled}
             >
               {!hasSearched ? (
                 <View style={styles.emptyState}>
@@ -471,30 +468,10 @@ export default function FindToolScreen() {
                       AI Recommendation
                     </Text>
                   </View>
-                  <View 
-                    style={[styles.aiResponseCardWrapper, { backgroundColor: colors.card }]}
-                    onStartShouldSetResponder={() => {
-                      setParentScrollEnabled(false);
-                      return false;
-                    }}
-                    onResponderRelease={() => {
-                      setTimeout(() => setParentScrollEnabled(true), 100);
-                    }}
-                  >
-                    <ScrollView 
-                      style={styles.aiResponseCardScroll}
-                      contentContainerStyle={styles.aiResponseCardContent}
-                      nestedScrollEnabled={true}
-                      showsVerticalScrollIndicator={true}
-                      keyboardShouldPersistTaps="handled"
-                      scrollEventThrottle={16}
-                      bounces={true}
-                      alwaysBounceVertical={false}
-                    >
-                      <Text style={[styles.aiResponseText, { color: colors.text }]}>
-                        {aiResponse}
-                      </Text>
-                    </ScrollView>
+                  <View style={[styles.aiResponseCard, { backgroundColor: colors.card }]}>
+                    <Text style={[styles.aiResponseText, { color: colors.text }]}>
+                      {aiResponse}
+                    </Text>
                   </View>
                   <Pressable style={styles.viewInventoryButton} onPress={openViewInventory}>
                     <IconSymbol name="tray.fill" size={20} color={colors.primary} />
