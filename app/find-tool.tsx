@@ -469,7 +469,10 @@ export default function FindToolScreen() {
                     </Text>
                   </View>
                   <View style={[styles.aiResponseCard, { backgroundColor: colors.card }]}>
-                    <Text style={[styles.aiResponseText, { color: colors.text }]}>
+                    <Text 
+                      style={[styles.aiResponseText, { color: colors.text }]}
+                      selectable={false}
+                    >
                       {aiResponse}
                     </Text>
                   </View>
@@ -754,17 +757,10 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
   },
-  aiResponseCardWrapper: {
+  aiResponseCard: {
     borderRadius: 12,
-    marginBottom: 16,
-    maxHeight: 400,
-    overflow: 'hidden',
-  },
-  aiResponseCardScroll: {
-    flex: 1,
-  },
-  aiResponseCardContent: {
     padding: 20,
+    marginBottom: 16,
   },
   aiResponseText: {
     fontSize: 16,
