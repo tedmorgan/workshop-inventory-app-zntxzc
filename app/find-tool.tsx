@@ -180,61 +180,101 @@ export default function FindToolScreen() {
   const renderAIResponse = (response: string) => {
     // Remove excessive empty lines (replace double+ newlines with single)
     const cleanedResponse = response.replace(/\n\n+/g, '\n');
-    const lines = cleanedResponse.split('\n');
     
     console.log('🔍 Rendering AI response');
     console.log('📝 Response preview (first 200 chars):', cleanedResponse.substring(0, 200));
     
-    const elements: React.ReactNode[] = [];
+    // Find all tool names (lines starting with number.)
+    const toolNameRegex = /^(\d+\.\s+.+)$/gm;
+    const toolNames: Array<{ index: number; text: string }> = [];
+    let match;
     
-    lines.forEach((line, lineIndex) => {
-      // Check if this line is a tool name (starts with number and period)
-      const toolNameMatch = line.match(/^(\d+\.\s+)(.+)$/);
+    while ((match = toolNameRegex.exec(cleanedResponse)) !== null) {
+      console.log('🔧 Found tool name:', match[1]);
+      toolNames.push({
+        index: match.index,
+        text: match[1]
+      });
+    }
+    
+    // Find all bin names and their positions
+    const binNameRegex = /Bin [Nn]ame:\s*([^\n]+)/g;
+    const binNames: Array<{ index: number; name: string; length: number }> = [];
+    
+    while ((match = binNameRegex.exec(cleanedResponse)) !== null) {
+      const binName = match[1].trim();
+      const labelEnd = match.index + match[0].indexOf(':') + 1;
       
-      if (toolNameMatch) {
-        // This is a tool name line - make it bold and larger
-        elements.push(
-          <Text key={`line-${lineIndex}`} style={[styles.aiResponseText, styles.toolName, { color: colors.text }]}>
-            {line}{'\n'}
+      console.log('✅ Found bin name at index', match.index, ':', binName);
+      
+      binNames.push({
+        index: labelEnd,
+        name: binName,
+        length: binName.length
+      });
+    }
+    
+    // Build the parts array
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    let partKey = 0;
+    
+    // Combine and sort all special elements by index
+    const allSpecial = [
+      ...toolNames.map(t => ({ type: 'tool', index: t.index, data: t })),
+      ...binNames.map(b => ({ type: 'bin', index: b.index, data: b }))
+    ].sort((a, b) => a.index - b.index);
+    
+    allSpecial.forEach((item) => {
+      if (item.type === 'tool') {
+        const tool = item.data as typeof toolNames[0];
+        // Add text before tool name
+        if (tool.index > lastIndex) {
+          parts.push(cleanedResponse.substring(lastIndex, tool.index));
+        }
+        // Add bold tool name
+        parts.push(
+          <Text key={`tool-${partKey++}`} style={[styles.aiResponseText, styles.toolName, { color: colors.text }]}>
+            {tool.text}
           </Text>
         );
+        lastIndex = tool.index + tool.text.length;
       } else {
-        // Check if line contains a bin name
-        const binNameMatch = line.match(/^(.*)Bin [Nn]ame:\s*(.+?)(\s*-?\s*)$/);
-        
-        if (binNameMatch) {
-          const beforeBinName = binNameMatch[1];
-          const binName = binNameMatch[2].trim();
-          
-          console.log('✅ Found bin name:', binName);
-          
-          elements.push(
-            <Text key={`line-${lineIndex}`} style={[styles.aiResponseText, { color: colors.text }]}>
-              {beforeBinName}Bin name: <Text 
-                style={[styles.aiResponseText, styles.binLink, { color: colors.primary }]}
-                onPress={() => {
-                  console.log('🔗 Bin name pressed:', binName);
-                  openInventoryForBin(binName);
-                }}
-                suppressHighlighting={true}
-              >
-                {binName}
-              </Text>
-              {'\n'}
-            </Text>
-          );
-        } else {
-          // Regular line
-          elements.push(
-            <Text key={`line-${lineIndex}`} style={[styles.aiResponseText, { color: colors.text }]}>
-              {line}{'\n'}
-            </Text>
-          );
+        const bin = item.data as typeof binNames[0];
+        // Add text before bin name
+        if (bin.index > lastIndex) {
+          parts.push(cleanedResponse.substring(lastIndex, bin.index));
         }
+        // Add space after colon
+        parts.push(' ');
+        // Add clickable bin name
+        parts.push(
+          <Text 
+            key={`bin-${partKey++}`}
+            style={[styles.aiResponseText, styles.binLink, { color: colors.primary }]}
+            onPress={() => {
+              console.log('🔗 Bin name pressed:', bin.name);
+              openInventoryForBin(bin.name);
+            }}
+            suppressHighlighting={true}
+          >
+            {bin.name}
+          </Text>
+        );
+        lastIndex = bin.index + 1 + bin.name.length;
       }
     });
     
-    return <>{elements}</>;
+    // Add remaining text
+    if (lastIndex < cleanedResponse.length) {
+      parts.push(cleanedResponse.substring(lastIndex));
+    }
+    
+    return (
+      <Text style={[styles.aiResponseText, { color: colors.text }]}>
+        {parts}
+      </Text>
+    );
   };
 
   const expandImage = (imageUrl: string) => {
