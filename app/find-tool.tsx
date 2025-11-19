@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -54,6 +54,8 @@ export default function FindToolScreen() {
   const [searching, setSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [expandedImageUrl, setExpandedImageUrl] = useState<string | null>(null);
+  const [failedImageUrls, setFailedImageUrls] = useState<Set<string>>(new Set());
+  const [toolImageUrls, setToolImageUrls] = useState<Map<string, string>>(new Map());
 
   // Zoom and pan state
   const scale = useSharedValue(1);
@@ -126,6 +128,8 @@ export default function FindToolScreen() {
     setHasSearched(true);
     setSearchResults([]);
     setAiResponse('');
+    setFailedImageUrls(new Set());
+    setToolImageUrls(new Map());
 
     try {
       console.log('🤖 Advanced AI search for:', advancedSearchQuery);
@@ -184,30 +188,62 @@ export default function FindToolScreen() {
     });
   };
 
-  const getToolImageUrl = (tool: { name: string; imageUrl: string; amazonUrl: string }): string | null => {
-    // If GPT provided an image URL, use it (but validate it's not a placeholder)
-    if (tool.imageUrl && tool.imageUrl.startsWith('http') && !tool.imageUrl.includes('via.placeholder.com')) {
-      console.log('✅ Using GPT-provided image URL:', tool.imageUrl);
-      return tool.imageUrl;
+  const fetchToolImage = async (toolName: string) => {
+    // Check if we already have this image
+    if (toolImageUrls.has(toolName)) {
+      return toolImageUrls.get(toolName) || null;
     }
-    
-    // Fallback: Try to extract ASIN from Amazon URL and use Amazon image service
-    if (tool.amazonUrl) {
-      const asinMatch = tool.amazonUrl.match(/\/dp\/([A-Z0-9]{10})/i) || 
-                        tool.amazonUrl.match(/\/product\/([A-Z0-9]{10})/i) ||
-                        tool.amazonUrl.match(/ASIN[\/=]([A-Z0-9]{10})/i);
-      if (asinMatch) {
-        const asin = asinMatch[1];
-        const amazonImageUrl = `https://images-na.ssl-images-amazon.com/images/P/${asin}.01._AC_SL1500_.jpg`;
-        console.log('✅ Using Amazon image URL from ASIN:', amazonImageUrl);
-        return amazonImageUrl;
+
+    try {
+      console.log('🖼️ Fetching image for:', toolName);
+      const { data, error } = await supabase.functions.invoke('search-tool-image', {
+        body: { toolName: toolName },
+      });
+
+      if (error) {
+        console.error('❌ Error fetching image:', error);
+        return null;
       }
+
+      if (data?.imageUrl) {
+        console.log('✅ Image found for', toolName, ':', data.imageUrl);
+        setToolImageUrls(prev => new Map(prev).set(toolName, data.imageUrl));
+        return data.imageUrl;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('❌ Error fetching tool image:', error);
+      return null;
+    }
+  };
+
+  const getToolImageUrl = (tool: { name: string; imageUrl: string; amazonUrl: string }): string | null => {
+    // First check if we've already fetched an image for this tool
+    if (toolImageUrls.has(tool.name)) {
+      return toolImageUrls.get(tool.name) || null;
     }
     
-    // No valid image URL found
-    console.log('⚠️ No valid image URL found for:', tool.name);
+    // Return null to show placeholder while fetching
     return null;
   };
+
+  // Fetch images for recommended tools when AI response changes
+  useEffect(() => {
+    if (!aiResponse) return;
+
+    const { recommendedTools } = parseRecommendedTools(aiResponse);
+    
+    // Fetch images for each recommended tool
+    recommendedTools.forEach((tool) => {
+      // Only fetch if we don't already have an image for this tool
+      if (!toolImageUrls.has(tool.name)) {
+        fetchToolImage(tool.name).catch(err => {
+          console.error('Failed to fetch image for', tool.name, ':', err);
+        });
+      }
+    });
+  }, [aiResponse]);
 
   const parseRecommendedTools = (response: string): { inventorySection: string; recommendedTools: Array<{ name: string; description: string; amazonUrl: string; imageUrl: string }> } => {
     const separator = '---';
@@ -361,17 +397,23 @@ export default function FindToolScreen() {
         </Text>
         {tools.map((tool, index) => {
           const imageUrl = getToolImageUrl(tool);
-          console.log(`🖼️ Tool ${index + 1} (${tool.name}): Using image URL:`, imageUrl);
+          const hasFailed = imageUrl ? failedImageUrls.has(imageUrl) : true;
+          const shouldShowImage = imageUrl && !hasFailed;
+          
+          console.log(`🖼️ Tool ${index + 1} (${tool.name}): Using image URL:`, imageUrl, 'Failed:', hasFailed);
           
           return (
             <View key={index} style={styles.recommendedToolCard}>
-              {imageUrl ? (
+              {shouldShowImage ? (
                 <Image
-                  source={{ uri: imageUrl }}
+                  source={{ uri: imageUrl! }}
                   style={styles.recommendedToolImage}
                   resizeMode="contain"
-                  onError={(error) => {
-                    console.error(`❌ Failed to load image for ${tool.name}:`, error.nativeEvent.error);
+                  onError={() => {
+                    // Silently handle image load failures - show placeholder instead
+                    if (imageUrl) {
+                      setFailedImageUrls(prev => new Set(prev).add(imageUrl));
+                    }
                   }}
                 />
               ) : (
