@@ -53,6 +53,7 @@ export default function FindToolScreen() {
   const [searching, setSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [expandedImageUrl, setExpandedImageUrl] = useState<string | null>(null);
+  const [parentScrollEnabled, setParentScrollEnabled] = useState(true);
 
   // Zoom and pan state
   const scale = useSharedValue(1);
@@ -430,6 +431,7 @@ export default function FindToolScreen() {
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               nestedScrollEnabled={true}
+              scrollEnabled={parentScrollEnabled}
             >
               {!hasSearched ? (
                 <View style={styles.emptyState}>
@@ -469,7 +471,16 @@ export default function FindToolScreen() {
                       AI Recommendation
                     </Text>
                   </View>
-                  <View style={[styles.aiResponseCardWrapper, { backgroundColor: colors.card }]}>
+                  <View 
+                    style={[styles.aiResponseCardWrapper, { backgroundColor: colors.card }]}
+                    onStartShouldSetResponder={() => {
+                      setParentScrollEnabled(false);
+                      return false;
+                    }}
+                    onResponderRelease={() => {
+                      setTimeout(() => setParentScrollEnabled(true), 100);
+                    }}
+                  >
                     <ScrollView 
                       style={styles.aiResponseCardScroll}
                       contentContainerStyle={styles.aiResponseCardContent}
