@@ -468,11 +468,17 @@ export default function FindToolScreen() {
                       AI Recommendation
                     </Text>
                   </View>
-                  <View style={[styles.aiResponseCard, { backgroundColor: colors.card }]}>
+                  <ScrollView 
+                    style={[styles.aiResponseCard, { backgroundColor: colors.card }]}
+                    contentContainerStyle={styles.aiResponseCardContent}
+                    nestedScrollEnabled={true}
+                    showsVerticalScrollIndicator={true}
+                    keyboardShouldPersistTaps="handled"
+                  >
                     <Text style={[styles.aiResponseText, { color: colors.text }]}>
                       {aiResponse}
                     </Text>
-                  </View>
+                  </ScrollView>
                   <Pressable style={styles.viewInventoryButton} onPress={openViewInventory}>
                     <IconSymbol name="tray.fill" size={20} color={colors.primary} />
                     <Text style={[styles.viewInventoryText, { color: colors.primary }]}>
@@ -756,8 +762,11 @@ const styles = StyleSheet.create({
   },
   aiResponseCard: {
     borderRadius: 12,
-    padding: 20,
     marginBottom: 16,
+    maxHeight: 400,
+  },
+  aiResponseCardContent: {
+    padding: 20,
   },
   aiResponseText: {
     fontSize: 16,
