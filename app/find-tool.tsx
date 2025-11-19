@@ -201,28 +201,24 @@ export default function FindToolScreen() {
         console.log('✅ Found bin name match on line', lineIndex, ':', binName);
         
         elements.push(
-          <Text key={`line-${lineIndex}`} style={[styles.aiResponseText, { color: colors.text }]}>
-            {textBeforeBinName}{binNameLabel}{' '}
-            <Pressable 
+          <Text key={`line-${lineIndex}`} style={[styles.aiResponseText, { color: colors.text }]} selectable={false}>
+            {textBeforeBinName}
+            {binNameLabel}{' '}
+            <Text 
+              style={[styles.aiResponseText, styles.binLink, { color: colors.primary }]}
               onPress={() => {
                 console.log('🔗 Bin name pressed:', binName);
                 openInventoryForBin(binName);
               }}
-              hitSlop={{ top: 10, bottom: 10, left: 5, right: 5 }}
-              style={({ pressed }) => [
-                { opacity: pressed ? 0.5 : 1 }
-              ]}
             >
-              <Text style={[styles.aiResponseText, styles.binLink, { color: colors.primary }]}>
-                {binName}
-              </Text>
-            </Pressable>
+              {binName}
+            </Text>
             {'\n'}
           </Text>
         );
       } else {
         elements.push(
-          <Text key={`line-${lineIndex}`} style={[styles.aiResponseText, { color: colors.text }]}>
+          <Text key={`line-${lineIndex}`} style={[styles.aiResponseText, { color: colors.text }]} selectable={false}>
             {line}{lineIndex < lines.length - 1 ? '\n' : ''}
           </Text>
         );
