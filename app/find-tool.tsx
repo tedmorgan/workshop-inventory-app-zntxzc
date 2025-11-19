@@ -181,30 +181,30 @@ export default function FindToolScreen() {
     const elements: React.ReactNode[] = [];
     
     lines.forEach((line, lineIndex) => {
-      // Match patterns like "Bin Name: Something" or "- Bin Name: Something"
-      const binNameMatch = line.match(/(?:^|\s|-)(?:\*\*)?Bin Name(?:\*\*)?:\s*(.+?)(?:\n|$)/i);
+      // Match patterns like "Bin Name: Something", "Bin Location: Something" or "- Bin Name: Something"
+      // This regex looks for "Bin Name:" or "Bin Location:" followed by the actual bin name
+      const binMatch = line.match(/(?:^|\s|-)(?:\*\*)?Bin (?:Name|Location)(?:\*\*)?:\s*(.+?)$/i);
       
-      if (binNameMatch) {
-        const binName = binNameMatch[1].trim();
-        const beforeBin = line.substring(0, binNameMatch.index! + binNameMatch[0].indexOf(':') + 1);
-        const afterBin = line.substring(binNameMatch.index! + binNameMatch[0].length);
+      if (binMatch) {
+        const binName = binMatch[1].trim();
+        const beforeBin = line.substring(0, binMatch.index! + binMatch[0].indexOf(':') + 1);
         
         elements.push(
-          <Text key={`line-${lineIndex}`} style={[styles.aiResponseText, { color: colors.text }]} selectable={false}>
+          <Text key={`line-${lineIndex}`} style={[styles.aiResponseText, { color: colors.text }]}>
             {beforeBin}{' '}
             <Text 
               style={[styles.aiResponseText, styles.binLink, { color: colors.primary }]}
               onPress={() => openInventoryForBin(binName)}
+              suppressHighlighting={true}
             >
               {binName}
             </Text>
-            {afterBin}
             {'\n'}
           </Text>
         );
       } else {
         elements.push(
-          <Text key={`line-${lineIndex}`} style={[styles.aiResponseText, { color: colors.text }]} selectable={false}>
+          <Text key={`line-${lineIndex}`} style={[styles.aiResponseText, { color: colors.text }]}>
             {line}{lineIndex < lines.length - 1 ? '\n' : ''}
           </Text>
         );
@@ -520,8 +520,8 @@ export default function FindToolScreen() {
                       contentContainerStyle={styles.aiResponseCardContent}
                       showsVerticalScrollIndicator={true}
                       scrollEventThrottle={16}
-                      directionalLockEnabled={true}
-                      scrollEnabled={true}
+                      nestedScrollEnabled={true}
+                      bounces={true}
                     >
                       {renderAIResponse(aiResponse)}
                     </ScrollView>
@@ -818,6 +818,7 @@ const styles = StyleSheet.create({
   },
   aiResponseCardContent: {
     padding: 20,
+    paddingBottom: 40,
   },
   aiResponseText: {
     fontSize: 16,
