@@ -176,14 +176,14 @@ export default function FindToolScreen() {
   };
 
   const renderAIResponse = (response: string) => {
-    // Split response into lines and detect bin names/locations
+    // Split response into lines and detect bin names
     const lines = response.split('\n');
     const elements: React.ReactNode[] = [];
     
     lines.forEach((line, lineIndex) => {
-      // Match patterns like "Bin Name: Something", "Bin Location: Something" or "- Bin Name: Something"
-      // This regex looks for "Bin Name:" or "Bin Location:" followed by the actual bin name
-      const binMatch = line.match(/(?:^|\s|-)(?:\*\*)?Bin (?:Name|Location)(?:\*\*)?:\s*(.+?)$/i);
+      // Match patterns like "Bin Name: Something" or "- Bin Name: Something"
+      // Only match "Bin Name:", not "Bin Location:"
+      const binMatch = line.match(/(?:^|\s|-)(?:\*\*)?Bin Name(?:\*\*)?:\s*(.+?)$/i);
       
       if (binMatch) {
         const binName = binMatch[1].trim();
