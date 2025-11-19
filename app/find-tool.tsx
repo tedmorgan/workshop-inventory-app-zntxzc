@@ -429,6 +429,7 @@ export default function FindToolScreen() {
               contentContainerStyle={styles.scrollContent}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled={true}
             >
               {!hasSearched ? (
                 <View style={styles.emptyState}>
@@ -468,17 +469,22 @@ export default function FindToolScreen() {
                       AI Recommendation
                     </Text>
                   </View>
-                  <ScrollView 
-                    style={[styles.aiResponseCard, { backgroundColor: colors.card }]}
-                    contentContainerStyle={styles.aiResponseCardContent}
-                    nestedScrollEnabled={true}
-                    showsVerticalScrollIndicator={true}
-                    keyboardShouldPersistTaps="handled"
-                  >
-                    <Text style={[styles.aiResponseText, { color: colors.text }]}>
-                      {aiResponse}
-                    </Text>
-                  </ScrollView>
+                  <View style={[styles.aiResponseCardWrapper, { backgroundColor: colors.card }]}>
+                    <ScrollView 
+                      style={styles.aiResponseCardScroll}
+                      contentContainerStyle={styles.aiResponseCardContent}
+                      nestedScrollEnabled={true}
+                      showsVerticalScrollIndicator={true}
+                      keyboardShouldPersistTaps="handled"
+                      scrollEventThrottle={16}
+                      bounces={true}
+                      alwaysBounceVertical={false}
+                    >
+                      <Text style={[styles.aiResponseText, { color: colors.text }]}>
+                        {aiResponse}
+                      </Text>
+                    </ScrollView>
+                  </View>
                   <Pressable style={styles.viewInventoryButton} onPress={openViewInventory}>
                     <IconSymbol name="tray.fill" size={20} color={colors.primary} />
                     <Text style={[styles.viewInventoryText, { color: colors.primary }]}>
@@ -760,10 +766,14 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
   },
-  aiResponseCard: {
+  aiResponseCardWrapper: {
     borderRadius: 12,
     marginBottom: 16,
     maxHeight: 400,
+    overflow: 'hidden',
+  },
+  aiResponseCardScroll: {
+    flex: 1,
   },
   aiResponseCardContent: {
     padding: 20,
