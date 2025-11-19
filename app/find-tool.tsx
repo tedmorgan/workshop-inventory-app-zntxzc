@@ -543,6 +543,7 @@ export default function FindToolScreen() {
               scrollEnabled={true}
               bounces={true}
               alwaysBounceVertical={false}
+              nestedScrollEnabled={true}
             >
               {!hasSearched ? (
                 <View style={styles.emptyState}>
