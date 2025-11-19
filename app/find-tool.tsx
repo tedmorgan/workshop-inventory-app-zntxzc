@@ -180,6 +180,8 @@ export default function FindToolScreen() {
     const lines = response.split('\n');
     const elements: React.ReactNode[] = [];
     
+    console.log('🔍 Rendering AI response, total lines:', lines.length);
+    
     lines.forEach((line, lineIndex) => {
       // Match patterns like "Bin Name: Something" or "- Bin Name: Something"
       // Only match "Bin Name:", not "Bin Location:"
@@ -190,20 +192,29 @@ export default function FindToolScreen() {
         const textBeforeBinName = line.substring(0, binMatch.index!);
         const binNameLabel = line.substring(binMatch.index!, binMatch.index! + 'Bin Name:'.length);
         
+        console.log('✅ Found bin name match:', binName);
+        
         elements.push(
-          <Text key={`line-${lineIndex}`} style={[styles.aiResponseText, { color: colors.text }]}>
-            {textBeforeBinName}{binNameLabel}{' '}
-            <Text 
-              style={[styles.aiResponseText, styles.binLink, { color: colors.primary }]}
+          <View key={`line-${lineIndex}`} style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+            <Text style={[styles.aiResponseText, { color: colors.text }]}>
+              {textBeforeBinName}{binNameLabel}{' '}
+            </Text>
+            <Pressable 
               onPress={() => {
-                console.log('🔗 Opening inventory for bin:', binName);
+                console.log('🔗 Bin name pressed:', binName);
                 openInventoryForBin(binName);
               }}
+              hitSlop={{ top: 10, bottom: 10, left: 5, right: 5 }}
+              style={({ pressed }) => [
+                { opacity: pressed ? 0.5 : 1 }
+              ]}
             >
-              {binName}
-            </Text>
-            {'\n'}
-          </Text>
+              <Text style={[styles.aiResponseText, styles.binLink, { color: colors.primary }]}>
+                {binName}
+              </Text>
+            </Pressable>
+            <Text style={[styles.aiResponseText, { color: colors.text }]}>{'\n'}</Text>
+          </View>
         );
       } else {
         elements.push(
