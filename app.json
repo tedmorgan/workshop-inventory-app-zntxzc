@@ -17,6 +17,7 @@
       "bundleIdentifier": "com.anonymous.Natively",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
+        "CFBundleDisplayName": "Workshop AI",
         "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select images of your tools for inventory management.",
         "NSCameraUsageDescription": "This app needs access to your camera to take photos of your tools for inventory management."
       }
