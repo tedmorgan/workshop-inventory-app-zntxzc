@@ -184,6 +184,31 @@ export default function FindToolScreen() {
     });
   };
 
+  const getToolImageUrl = (tool: { name: string; imageUrl: string; amazonUrl: string }): string | null => {
+    // If GPT provided an image URL, use it (but validate it's not a placeholder)
+    if (tool.imageUrl && tool.imageUrl.startsWith('http') && !tool.imageUrl.includes('via.placeholder.com')) {
+      console.log('✅ Using GPT-provided image URL:', tool.imageUrl);
+      return tool.imageUrl;
+    }
+    
+    // Fallback: Try to extract ASIN from Amazon URL and use Amazon image service
+    if (tool.amazonUrl) {
+      const asinMatch = tool.amazonUrl.match(/\/dp\/([A-Z0-9]{10})/i) || 
+                        tool.amazonUrl.match(/\/product\/([A-Z0-9]{10})/i) ||
+                        tool.amazonUrl.match(/ASIN[\/=]([A-Z0-9]{10})/i);
+      if (asinMatch) {
+        const asin = asinMatch[1];
+        const amazonImageUrl = `https://images-na.ssl-images-amazon.com/images/P/${asin}.01._AC_SL1500_.jpg`;
+        console.log('✅ Using Amazon image URL from ASIN:', amazonImageUrl);
+        return amazonImageUrl;
+      }
+    }
+    
+    // No valid image URL found
+    console.log('⚠️ No valid image URL found for:', tool.name);
+    return null;
+  };
+
   const parseRecommendedTools = (response: string): { inventorySection: string; recommendedTools: Array<{ name: string; description: string; amazonUrl: string; imageUrl: string }> } => {
     const separator = '---';
     const parts = response.split(separator);
@@ -235,10 +260,13 @@ export default function FindToolScreen() {
           currentTool.amazonUrl = amazonMatch[1].trim();
         }
         
-        // Check for Image URL line
-        const imageMatch = line.match(/^-\s*Image URL:\s*(https?:\/\/[^\s]+)/i);
+        // Check for Image URL line - handle variations
+        const imageMatch = line.match(/^-\s*Image URL:\s*(https?:\/\/[^\s]+)/i) || 
+                          line.match(/^-\s*Image:\s*(https?:\/\/[^\s]+)/i) ||
+                          line.match(/Image URL:\s*(https?:\/\/[^\s]+)/i);
         if (imageMatch && currentTool) {
           currentTool.imageUrl = imageMatch[1].trim();
+          console.log('🖼️ Found image URL:', currentTool.imageUrl);
         }
       }
       
@@ -331,30 +359,45 @@ export default function FindToolScreen() {
         <Text style={[styles.recommendedToolsTitle, { color: colors.text }]}>
           Recommended Tools to Purchase
         </Text>
-        {tools.map((tool, index) => (
-          <View key={index} style={styles.recommendedToolCard}>
-            {tool.imageUrl ? (
-              <Image
-                source={{ uri: tool.imageUrl }}
-                style={styles.recommendedToolImage}
-                resizeMode="contain"
-              />
-            ) : null}
-            <Text style={[styles.recommendedToolName, { color: colors.text }]}>
-              {index + 1}. {tool.name}
-            </Text>
-            <Text style={[styles.recommendedToolDescription, { color: colors.textSecondary }]}>
-              {tool.description}
-            </Text>
-            <Pressable
-              onPress={() => openAmazonLink(tool.amazonUrl)}
-              style={styles.amazonLinkButton}
-            >
-              <IconSymbol name="link" size={16} color="#FFFFFF" />
-              <Text style={styles.amazonLinkText}>View on Amazon</Text>
-            </Pressable>
-          </View>
-        ))}
+        {tools.map((tool, index) => {
+          const imageUrl = getToolImageUrl(tool);
+          console.log(`🖼️ Tool ${index + 1} (${tool.name}): Using image URL:`, imageUrl);
+          
+          return (
+            <View key={index} style={styles.recommendedToolCard}>
+              {imageUrl ? (
+                <Image
+                  source={{ uri: imageUrl }}
+                  style={styles.recommendedToolImage}
+                  resizeMode="contain"
+                  onError={(error) => {
+                    console.error(`❌ Failed to load image for ${tool.name}:`, error.nativeEvent.error);
+                  }}
+                />
+              ) : (
+                <View style={styles.recommendedToolImagePlaceholder}>
+                  <IconSymbol name="photo" size={48} color={colors.textSecondary} />
+                  <Text style={[styles.placeholderText, { color: colors.textSecondary }]}>
+                    {tool.name}
+                  </Text>
+                </View>
+              )}
+              <Text style={[styles.recommendedToolName, { color: colors.text }]}>
+                {index + 1}. {tool.name}
+              </Text>
+              <Text style={[styles.recommendedToolDescription, { color: colors.textSecondary }]}>
+                {tool.description}
+              </Text>
+              <Pressable
+                onPress={() => openAmazonLink(tool.amazonUrl)}
+                style={styles.amazonLinkButton}
+              >
+                <IconSymbol name="link" size={16} color="#FFFFFF" />
+                <Text style={styles.amazonLinkText}>View on Amazon</Text>
+              </Pressable>
+            </View>
+          );
+        })}
       </View>
     );
   };
@@ -1007,6 +1050,21 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 12,
     backgroundColor: '#F5F5F5',
+  },
+  recommendedToolImagePlaceholder: {
+    width: '100%',
+    height: 200,
+    borderRadius: 8,
+    marginBottom: 12,
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  placeholderText: {
+    marginTop: 8,
+    fontSize: 14,
+    textAlign: 'center',
+    paddingHorizontal: 16,
   },
   recommendedToolName: {
     fontSize: 18,

@@ -92,10 +92,10 @@ Then list exactly 3 recommended tools that are NOT in their inventory, formatted
 1. [Tool Name]
    - Description: [Brief description of why this tool would be helpful]
    - Amazon Search: [Create an Amazon search URL using the format: https://www.amazon.com/s?k=TOOL+NAME+SEARCH+TERMS]
-   - Image URL: [Provide a direct image URL for this product. Use Amazon product image URLs if available, or other reliable product image sources. The URL should be a direct link to a JPG/PNG image file.]
+   - Image URL: [Provide a direct image URL for this product. IMPORTANT: Use actual Amazon product image URLs from Amazon product pages, or manufacturer product images. Do NOT use placeholder services. The URL must be a direct link to a JPG/PNG image file that will load in a web browser. If you cannot find a real product image URL, leave this field empty.]
    
    Format the Amazon URL by replacing spaces with + signs and making it search-friendly. For example, "circular saw" becomes "circular+saw".
-   For Image URL, try to find actual product images from Amazon or manufacturer websites. If you cannot find a specific image URL, use a placeholder format: https://via.placeholder.com/300x300?text=[TOOL+NAME] (replace spaces with +).
+   For Image URL, search for the actual product on Amazon and use the product image URL from the Amazon product page. The image URL should look like: https://m.media-amazon.com/images/I/... or https://images-na.ssl-images-amazon.com/images/I/...
 
 Be conversational and helpful. If no suitable tools are found in inventory, still recommend 3 tools they should acquire.
 
