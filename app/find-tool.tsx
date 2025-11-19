@@ -16,6 +16,7 @@ import {
   Keyboard,
   Dimensions,
   StatusBar,
+  Linking,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { IconSymbol } from '@/components/IconSymbol';
@@ -177,12 +178,75 @@ export default function FindToolScreen() {
     });
   };
 
-  const renderAIResponse = (response: string) => {
-    // Remove excessive empty lines (replace double+ newlines with single)
-    const cleanedResponse = response.replace(/\n\n+/g, '\n');
-    const lines = cleanedResponse.split('\n');
+  const openAmazonLink = (url: string) => {
+    Linking.openURL(url).catch(err => {
+      console.error('Failed to open Amazon link:', err);
+    });
+  };
+
+  const parseRecommendedTools = (response: string): { inventorySection: string; recommendedTools: Array<{ name: string; description: string; amazonUrl: string }> } => {
+    const separator = '---';
+    const parts = response.split(separator);
     
-    console.log('🔍 Rendering AI response');
+    const inventorySection = parts[0]?.trim() || response;
+    const recommendedSection = parts[1]?.trim() || '';
+    
+    const recommendedTools: Array<{ name: string; description: string; amazonUrl: string }> = [];
+    
+    if (recommendedSection) {
+      // Parse recommended tools section
+      // Look for patterns like:
+      // 1. Tool Name
+      //    - Description: ...
+      //    - Amazon Search: https://...
+      // Handle variations in formatting
+      const lines = recommendedSection.split('\n');
+      let currentTool: { name: string; description: string; amazonUrl: string } | null = null;
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        
+        // Check if this is a numbered tool name (1., 2., 3.)
+        const toolNameMatch = line.match(/^(\d+)\.\s*(.+)$/);
+        if (toolNameMatch) {
+          // Save previous tool if exists
+          if (currentTool && currentTool.amazonUrl) {
+            recommendedTools.push(currentTool);
+          }
+          // Start new tool
+          currentTool = {
+            name: toolNameMatch[2].trim(),
+            description: '',
+            amazonUrl: ''
+          };
+        }
+        
+        // Check for Description line
+        const descMatch = line.match(/^-\s*Description:\s*(.+)$/i);
+        if (descMatch && currentTool) {
+          currentTool.description = descMatch[1].trim();
+        }
+        
+        // Check for Amazon Search line
+        const amazonMatch = line.match(/^-\s*Amazon Search:\s*(https?:\/\/[^\s]+)/i);
+        if (amazonMatch && currentTool) {
+          currentTool.amazonUrl = amazonMatch[1].trim();
+        }
+      }
+      
+      // Add last tool if exists
+      if (currentTool && currentTool.amazonUrl) {
+        recommendedTools.push(currentTool);
+      }
+    }
+    
+    return { inventorySection, recommendedTools };
+  };
+
+  const renderInventorySection = (inventoryText: string) => {
+    // Remove excessive empty lines (replace double+ newlines with single)
+    const cleanedResponse = inventoryText.replace(/\n\n+/g, '\n');
+    const lines = cleanedResponse.split('\n');
     
     const elements: React.ReactNode[] = [];
     
@@ -203,20 +267,23 @@ export default function FindToolScreen() {
           </Text>
         );
       } else {
-        // Check if line contains a bin name
-        const binMatch = line.match(/^(.*?)(Bin [Nn]ame:\s*)(.+?)(\s*-?\s*.*)$/);
+        // Check if line contains a bin name - match everything after "Bin Name: " to end of line
+        const binMatch = line.match(/^(.*?)(Bin [Nn]ame:\s*)(.+)$/);
         
         if (binMatch) {
           const beforeBin = binMatch[1];
           const binLabel = binMatch[2];
           const binName = binMatch[3].trim();
-          const afterBin = binMatch[4];
           
           console.log('✅ Found bin name:', binName);
           
           // Render as separate components to avoid Text onPress interfering with scroll
           elements.push(
-            <View key={`line-${lineIndex}`} style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 2 }}>
+            <View 
+              key={`line-${lineIndex}`} 
+              style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 2 }}
+              onStartShouldSetResponder={() => false}
+            >
               <Text style={[styles.aiResponseText, { color: colors.text }]}>
                 {beforeBin}{binLabel}
               </Text>
@@ -226,14 +293,12 @@ export default function FindToolScreen() {
                   openInventoryForBin(binName);
                 }}
                 hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                delayPressIn={50}
               >
                 <Text style={[styles.aiResponseText, styles.binLink, { color: colors.primary }]}>
                   {binName}
                 </Text>
               </Pressable>
-              <Text style={[styles.aiResponseText, { color: colors.text }]}>
-                {afterBin}
-              </Text>
             </View>
           );
         } else {
@@ -248,6 +313,48 @@ export default function FindToolScreen() {
     });
     
     return <>{elements}</>;
+  };
+
+  const renderRecommendedTools = (tools: Array<{ name: string; description: string; amazonUrl: string }>) => {
+    if (tools.length === 0) return null;
+    
+    return (
+      <View style={styles.recommendedToolsSection}>
+        <Text style={[styles.recommendedToolsTitle, { color: colors.text }]}>
+          Recommended Tools to Purchase
+        </Text>
+        {tools.map((tool, index) => (
+          <View key={index} style={styles.recommendedToolCard}>
+            <Text style={[styles.recommendedToolName, { color: colors.text }]}>
+              {index + 1}. {tool.name}
+            </Text>
+            <Text style={[styles.recommendedToolDescription, { color: colors.textSecondary }]}>
+              {tool.description}
+            </Text>
+            <Pressable
+              onPress={() => openAmazonLink(tool.amazonUrl)}
+              style={styles.amazonLinkButton}
+            >
+              <IconSymbol name="link" size={16} color="#FFFFFF" />
+              <Text style={styles.amazonLinkText}>View on Amazon</Text>
+            </Pressable>
+          </View>
+        ))}
+      </View>
+    );
+  };
+
+  const renderAIResponse = (response: string) => {
+    console.log('🔍 Rendering AI response');
+    
+    const { inventorySection, recommendedTools } = parseRecommendedTools(response);
+    
+    return (
+      <>
+        {renderInventorySection(inventorySection)}
+        {renderRecommendedTools(recommendedTools)}
+      </>
+    );
   };
 
   const expandImage = (imageUrl: string) => {
@@ -859,6 +966,50 @@ const styles = StyleSheet.create({
   binLink: {
     fontWeight: '600',
     textDecorationLine: 'underline',
+  },
+  recommendedToolsSection: {
+    marginTop: 24,
+    paddingTop: 24,
+    borderTopWidth: 1,
+    borderTopColor: Platform.OS === 'ios' ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.2)',
+  },
+  recommendedToolsTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 16,
+  },
+  recommendedToolCard: {
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Platform.OS === 'ios' ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.2)',
+  },
+  recommendedToolName: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  recommendedToolDescription: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  amazonLinkButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FF9900',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  amazonLinkText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
   resultsHeader: {
     marginBottom: 16,

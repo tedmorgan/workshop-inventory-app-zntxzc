@@ -72,17 +72,30 @@ Deno.serve(async (req)=>{
         tools: item.tools
       })) || [];
     // Construct the prompt for OpenAI
-    const systemPrompt = `You are a helpful workshop tool assistant. Your job is to help users find tools in their workshop inventory based on their needs. 
+    const systemPrompt = `You are a helpful workshop tool assistant. Your job is to help users find tools in their workshop inventory based on their needs, and also recommend tools they don't have.
 
-When a user asks a question, analyze their tool inventory and recommend the most relevant tools and their locations. 
+When a user asks a question:
+1. First, analyze their tool inventory and recommend the most relevant tools and their locations from their existing inventory.
+2. Then, recommend exactly 3 tools that would be helpful but are NOT in their current inventory.
 
-Format your response as a clear, helpful answer that includes:
+Format your response in two sections:
+
+SECTION 1 - Tools in Your Inventory:
 - The specific tools that would be useful
 - The bin name where each tool is located
 - The bin location
 - Brief explanation of why these tools are suitable
 
-Be conversational and helpful. If no suitable tools are found, suggest what type of tools they might need to acquire. 
+SECTION 2 - Recommended Tools to Purchase:
+After the inventory section, add a separator line: "---"
+Then list exactly 3 recommended tools that are NOT in their inventory, formatted as:
+1. [Tool Name]
+   - Description: [Brief description of why this tool would be helpful]
+   - Amazon Search: [Create an Amazon search URL using the format: https://www.amazon.com/s?k=TOOL+NAME+SEARCH+TERMS]
+   
+   Format the Amazon URL by replacing spaces with + signs and making it search-friendly. For example, "circular saw" becomes "circular+saw".
+
+Be conversational and helpful. If no suitable tools are found in inventory, still recommend 3 tools they should acquire.
 
 CRITICAL FORMATTING RULE: You must write in plain text only. Never use asterisks (**) or any markdown formatting characters. Do not use ** for bold text. Write tool names, bin names, and bin locations in plain text without any asterisks. You can use numbered lists (1., 2., 3.) and bullet points (-) for structure, but absolutely no asterisks anywhere in your response.`;
     const userPrompt = `User Question: ${searchQuery}
@@ -90,9 +103,11 @@ CRITICAL FORMATTING RULE: You must write in plain text only. Never use asterisks
 Tool Inventory:
 ${JSON.stringify(formattedInventory, null, 2)}
 
-Please help the user find the list of tools and their bin locations that would address their question.
+Please help the user by:
+1. Finding tools from their inventory that address their question
+2. Recommending exactly 3 tools NOT in their inventory that would be helpful, with Amazon search links
 
-Remember: Write your response in plain text without using asterisks (**) or any markdown formatting. Use numbered lists and bullet points for structure, but no asterisks.`;
+Remember: Write your response in plain text without using asterisks (**) or any markdown formatting. Use numbered lists and bullet points for structure, but no asterisks. Include the "---" separator between the inventory section and the recommended tools section.`;
     console.log('🤖 Calling OpenAI API...');
     // Call OpenAI API
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
