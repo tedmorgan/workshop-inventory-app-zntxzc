@@ -147,7 +147,9 @@ export default function FindToolScreen() {
         return;
       }
 
-      console.log('✅ AI response received');
+      console.log('✅✅✅ AI RESPONSE RECEIVED - NEW CODE LOADED ✅✅✅');
+      console.log('📝 Response preview (first 200 chars):', data.response?.substring(0, 200));
+      console.log('📝 Full response length:', data.response?.length);
       setAiResponse(data.response || 'No response received from AI.');
     } catch (error) {
       console.error('❌ Error:', error);
@@ -181,6 +183,10 @@ export default function FindToolScreen() {
     const elements: React.ReactNode[] = [];
     
     console.log('🔍 Rendering AI response, total lines:', lines.length);
+    console.log('📄 First 3 lines of response:');
+    lines.slice(0, 3).forEach((line, idx) => {
+      console.log(`  Line ${idx}: "${line}"`);
+    });
     
     lines.forEach((line, lineIndex) => {
       // Match patterns like "Bin Name: Something" or "- Bin Name: Something"
@@ -192,13 +198,11 @@ export default function FindToolScreen() {
         const textBeforeBinName = line.substring(0, binMatch.index!);
         const binNameLabel = line.substring(binMatch.index!, binMatch.index! + 'Bin Name:'.length);
         
-        console.log('✅ Found bin name match:', binName);
+        console.log('✅ Found bin name match on line', lineIndex, ':', binName);
         
         elements.push(
-          <View key={`line-${lineIndex}`} style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-            <Text style={[styles.aiResponseText, { color: colors.text }]}>
-              {textBeforeBinName}{binNameLabel}{' '}
-            </Text>
+          <Text key={`line-${lineIndex}`} style={[styles.aiResponseText, { color: colors.text }]}>
+            {textBeforeBinName}{binNameLabel}{' '}
             <Pressable 
               onPress={() => {
                 console.log('🔗 Bin name pressed:', binName);
@@ -213,8 +217,8 @@ export default function FindToolScreen() {
                 {binName}
               </Text>
             </Pressable>
-            <Text style={[styles.aiResponseText, { color: colors.text }]}>{'\n'}</Text>
-          </View>
+            {'\n'}
+          </Text>
         );
       } else {
         elements.push(
@@ -225,6 +229,7 @@ export default function FindToolScreen() {
       }
     });
     
+    console.log('✨ Finished rendering, total elements:', elements.length);
     return <>{elements}</>;
   };
 
@@ -487,8 +492,10 @@ export default function FindToolScreen() {
 
             <ScrollView
               contentContainerStyle={styles.scrollContent}
-              showsVerticalScrollIndicator={false}
+              showsVerticalScrollIndicator={true}
               keyboardShouldPersistTaps="handled"
+              scrollEventThrottle={16}
+              removeClippedSubviews={false}
             >
               {!hasSearched ? (
                 <View style={styles.emptyState}>
