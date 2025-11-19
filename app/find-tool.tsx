@@ -189,6 +189,11 @@ export default function FindToolScreen() {
     });
     
     lines.forEach((line, lineIndex) => {
+      // Skip empty lines to reduce spacing
+      if (line.trim() === '') {
+        return;
+      }
+      
       // Match patterns like "Bin Name: Something" or "- Bin Name: Something"
       // Only match "Bin Name:", not "Bin Location:"
       const binMatch = line.match(/Bin Name:\s*(.+?)$/i);
@@ -219,7 +224,7 @@ export default function FindToolScreen() {
       } else {
         elements.push(
           <Text key={`line-${lineIndex}`} style={[styles.aiResponseText, { color: colors.text }]} selectable={false}>
-            {line}{lineIndex < lines.length - 1 ? '\n' : ''}
+            {line}{'\n'}
           </Text>
         );
       }
