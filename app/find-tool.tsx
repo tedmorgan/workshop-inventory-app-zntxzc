@@ -183,19 +183,22 @@ export default function FindToolScreen() {
     lines.forEach((line, lineIndex) => {
       // Match patterns like "Bin Name: Something" or "- Bin Name: Something"
       // Only match "Bin Name:", not "Bin Location:"
-      const binMatch = line.match(/(?:^|\s|-)(?:\*\*)?Bin Name(?:\*\*)?:\s*(.+?)$/i);
+      const binMatch = line.match(/Bin Name:\s*(.+?)$/i);
       
       if (binMatch) {
         const binName = binMatch[1].trim();
-        const beforeBin = line.substring(0, binMatch.index! + binMatch[0].indexOf(':') + 1);
+        const textBeforeBinName = line.substring(0, binMatch.index!);
+        const binNameLabel = line.substring(binMatch.index!, binMatch.index! + 'Bin Name:'.length);
         
         elements.push(
           <Text key={`line-${lineIndex}`} style={[styles.aiResponseText, { color: colors.text }]}>
-            {beforeBin}{' '}
+            {textBeforeBinName}{binNameLabel}{' '}
             <Text 
               style={[styles.aiResponseText, styles.binLink, { color: colors.primary }]}
-              onPress={() => openInventoryForBin(binName)}
-              suppressHighlighting={true}
+              onPress={() => {
+                console.log('🔗 Opening inventory for bin:', binName);
+                openInventoryForBin(binName);
+              }}
             >
               {binName}
             </Text>
@@ -514,17 +517,8 @@ export default function FindToolScreen() {
                       AI Recommendation
                     </Text>
                   </View>
-                  <View style={[styles.aiResponseCardWrapper, { backgroundColor: colors.card }]}>
-                    <ScrollView
-                      style={styles.aiResponseCardScroll}
-                      contentContainerStyle={styles.aiResponseCardContent}
-                      showsVerticalScrollIndicator={true}
-                      scrollEventThrottle={16}
-                      nestedScrollEnabled={true}
-                      bounces={true}
-                    >
-                      {renderAIResponse(aiResponse)}
-                    </ScrollView>
+                  <View style={[styles.aiResponseCard, { backgroundColor: colors.card }]}>
+                    {renderAIResponse(aiResponse)}
                   </View>
                   <Pressable style={styles.viewInventoryButton} onPress={openViewInventory}>
                     <IconSymbol name="tray.fill" size={20} color={colors.primary} />
@@ -807,18 +801,10 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
   },
-  aiResponseCardWrapper: {
+  aiResponseCard: {
     borderRadius: 12,
     marginBottom: 16,
-    height: 300,
-    overflow: 'hidden',
-  },
-  aiResponseCardScroll: {
-    flex: 1,
-  },
-  aiResponseCardContent: {
     padding: 20,
-    paddingBottom: 40,
   },
   aiResponseText: {
     fontSize: 16,
