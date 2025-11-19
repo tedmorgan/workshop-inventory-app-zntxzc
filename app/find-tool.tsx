@@ -492,6 +492,9 @@ export default function FindToolScreen() {
               keyboardShouldPersistTaps="handled"
               scrollEventThrottle={16}
               removeClippedSubviews={false}
+              scrollEnabled={true}
+              bounces={true}
+              alwaysBounceVertical={false}
             >
               {!hasSearched ? (
                 <View style={styles.emptyState}>
