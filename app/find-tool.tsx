@@ -225,6 +225,7 @@ export default function FindToolScreen() {
             console.log('🔗 Bin name pressed:', bin.name);
             openInventoryForBin(bin.name);
           }}
+          suppressHighlighting={true}
         >
           {bin.name}
         </Text>
@@ -239,7 +240,7 @@ export default function FindToolScreen() {
     }
     
     return (
-      <Text style={[styles.aiResponseText, { color: colors.text }]} selectable={false}>
+      <Text style={[styles.aiResponseText, { color: colors.text }]}>
         {parts}
       </Text>
     );
