@@ -180,101 +180,74 @@ export default function FindToolScreen() {
   const renderAIResponse = (response: string) => {
     // Remove excessive empty lines (replace double+ newlines with single)
     const cleanedResponse = response.replace(/\n\n+/g, '\n');
+    const lines = cleanedResponse.split('\n');
     
     console.log('🔍 Rendering AI response');
-    console.log('📝 Response preview (first 200 chars):', cleanedResponse.substring(0, 200));
     
-    // Find all tool names (lines starting with number.)
-    const toolNameRegex = /^(\d+\.\s+.+)$/gm;
-    const toolNames: Array<{ index: number; text: string }> = [];
-    let match;
+    const elements: React.ReactNode[] = [];
     
-    while ((match = toolNameRegex.exec(cleanedResponse)) !== null) {
-      console.log('🔧 Found tool name:', match[1]);
-      toolNames.push({
-        index: match.index,
-        text: match[1]
-      });
-    }
-    
-    // Find all bin names and their positions
-    const binNameRegex = /Bin [Nn]ame:\s*([^\n]+)/g;
-    const binNames: Array<{ index: number; name: string; length: number }> = [];
-    
-    while ((match = binNameRegex.exec(cleanedResponse)) !== null) {
-      const binName = match[1].trim();
-      const labelEnd = match.index + match[0].indexOf(':') + 1;
+    lines.forEach((line, lineIndex) => {
+      // Skip empty lines
+      if (line.trim() === '') {
+        return;
+      }
       
-      console.log('✅ Found bin name at index', match.index, ':', binName);
+      // Check if this line is a tool name (starts with number.)
+      const toolNameMatch = line.match(/^(\d+\.\s+)(.+)$/);
       
-      binNames.push({
-        index: labelEnd,
-        name: binName,
-        length: binName.length
-      });
-    }
-    
-    // Build the parts array
-    const parts: React.ReactNode[] = [];
-    let lastIndex = 0;
-    let partKey = 0;
-    
-    // Combine and sort all special elements by index
-    const allSpecial = [
-      ...toolNames.map(t => ({ type: 'tool', index: t.index, data: t })),
-      ...binNames.map(b => ({ type: 'bin', index: b.index, data: b }))
-    ].sort((a, b) => a.index - b.index);
-    
-    allSpecial.forEach((item) => {
-      if (item.type === 'tool') {
-        const tool = item.data as typeof toolNames[0];
-        // Add text before tool name
-        if (tool.index > lastIndex) {
-          parts.push(cleanedResponse.substring(lastIndex, tool.index));
-        }
-        // Add bold tool name
-        parts.push(
-          <Text key={`tool-${partKey++}`} style={[styles.aiResponseText, styles.toolName, { color: colors.text }]}>
-            {tool.text}
+      if (toolNameMatch) {
+        // Tool name - make it bold and larger
+        elements.push(
+          <Text key={`line-${lineIndex}`} style={[styles.aiResponseText, styles.toolName, { color: colors.text }]}>
+            {line}
           </Text>
         );
-        lastIndex = tool.index + tool.text.length;
       } else {
-        const bin = item.data as typeof binNames[0];
-        // Add text before bin name
-        if (bin.index > lastIndex) {
-          parts.push(cleanedResponse.substring(lastIndex, bin.index));
+        // Check if line contains a bin name
+        const binMatch = line.match(/^(.*?)(Bin [Nn]ame:\s*)(.+?)(\s*-?\s*.*)$/);
+        
+        if (binMatch) {
+          const beforeBin = binMatch[1];
+          const binLabel = binMatch[2];
+          const binName = binMatch[3].trim();
+          const afterBin = binMatch[4];
+          
+          console.log('✅ Found bin name:', binName);
+          
+          // Render as separate components to avoid Text onPress interfering with scroll
+          elements.push(
+            <View key={`line-${lineIndex}`} style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 2 }}>
+              <Text style={[styles.aiResponseText, { color: colors.text }]}>
+                {beforeBin}{binLabel}
+              </Text>
+              <Pressable
+                onPress={() => {
+                  console.log('🔗 Bin name pressed:', binName);
+                  openInventoryForBin(binName);
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+              >
+                <Text style={[styles.aiResponseText, styles.binLink, { color: colors.primary }]}>
+                  {binName}
+                </Text>
+              </Pressable>
+              <Text style={[styles.aiResponseText, { color: colors.text }]}>
+                {afterBin}
+              </Text>
+            </View>
+          );
+        } else {
+          // Regular line
+          elements.push(
+            <Text key={`line-${lineIndex}`} style={[styles.aiResponseText, { color: colors.text }]}>
+              {line}
+            </Text>
+          );
         }
-        // Add space after colon
-        parts.push(' ');
-        // Add clickable bin name
-        parts.push(
-          <Text 
-            key={`bin-${partKey++}`}
-            style={[styles.aiResponseText, styles.binLink, { color: colors.primary }]}
-            onPress={() => {
-              console.log('🔗 Bin name pressed:', bin.name);
-              openInventoryForBin(bin.name);
-            }}
-            suppressHighlighting={true}
-          >
-            {bin.name}
-          </Text>
-        );
-        lastIndex = bin.index + 1 + bin.name.length;
       }
     });
     
-    // Add remaining text
-    if (lastIndex < cleanedResponse.length) {
-      parts.push(cleanedResponse.substring(lastIndex));
-    }
-    
-    return (
-      <Text style={[styles.aiResponseText, { color: colors.text }]}>
-        {parts}
-      </Text>
-    );
+    return <>{elements}</>;
   };
 
   const expandImage = (imageUrl: string) => {
@@ -871,10 +844,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 16,
     padding: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 24,
   },
   aiResponseText: {
     fontSize: 16,
-    lineHeight: 24,
+    lineHeight: 28,
   },
   toolName: {
     fontSize: 18,
