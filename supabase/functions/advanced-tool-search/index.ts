@@ -84,7 +84,7 @@ Format your response as a clear, helpful answer that includes:
 
 Be conversational and helpful. If no suitable tools are found, suggest what type of tools they might need to acquire. 
 
-- Do not include asterisks in the reply`;
+- Do not include asterisks ** in the reply`;
     const userPrompt = `User Question: ${searchQuery}
 
 Tool Inventory:
