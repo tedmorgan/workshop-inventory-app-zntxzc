@@ -68,28 +68,18 @@ export default function AddToolsScreen() {
     loadExistingBinData();
   }, []);
 
-  // Scroll intro modal to top when it opens - FIXED VERSION
+  // Scroll intro modal to top when it opens - ensures user can read from the beginning
   useEffect(() => {
     if (showIntroModal) {
-      console.log('📜 Intro modal opened - forcing scroll to top');
+      console.log('📜 Intro modal opened - scrolling to top');
       
-      // Immediately scroll to top
-      setTimeout(() => {
+      // Wait for modal to fully render, then scroll to top
+      const timeoutId = setTimeout(() => {
         introModalScrollViewRef.current?.scrollTo({ x: 0, y: 0, animated: false });
-        console.log('📜 Executed immediate scroll to top');
-      }, 0);
-      
-      // Also scroll after a delay to ensure content is rendered
-      setTimeout(() => {
-        introModalScrollViewRef.current?.scrollTo({ x: 0, y: 0, animated: false });
-        console.log('📜 Executed delayed scroll to top');
+        console.log('📜 Scrolled to top');
       }, 100);
       
-      // Final scroll to be absolutely sure
-      setTimeout(() => {
-        introModalScrollViewRef.current?.scrollTo({ x: 0, y: 0, animated: false });
-        console.log('📜 Executed final scroll to top');
-      }, 300);
+      return () => clearTimeout(timeoutId);
     }
   }, [showIntroModal]);
 
@@ -975,54 +965,51 @@ export default function AddToolsScreen() {
         presentationStyle={Platform.OS === 'ios' ? 'overFullScreen' : undefined}
       >
         <TouchableWithoutFeedback onPress={closeIntroModal}>
-          <View style={styles.introModalOverlay}>
+        <View style={styles.introModalOverlay}>
             <TouchableWithoutFeedback>
               <View style={styles.introModalContent}>
-                <ScrollView
-                  ref={introModalScrollViewRef}
-                  style={styles.introModalScrollView}
-                  contentContainerStyle={styles.introModalScrollContent}
-                  showsVerticalScrollIndicator={true}
-                  bounces={false}
-                  onContentSizeChange={() => {
-                    // Force scroll to top when content size changes
-                    console.log('📜 Content size changed - scrolling to top');
-                    introModalScrollViewRef.current?.scrollTo({ x: 0, y: 0, animated: false });
-                  }}
-                >
-                  <View style={styles.introModalHeader}>
-                    <IconSymbol name="info.circle.fill" color={colors.primary} size={32} />
-                    <Text style={[styles.introModalTitle, { color: colors.text }]}>
-                      Welcome to Workshop!
-                    </Text>
-                  </View>
-
-                  <Text style={[styles.introModalText, { color: colors.text }]}>
-                    Workshop can help you keep track of where your tools are located. For each bin, remove all the tools & materials and place on a table spaced out like in the image. Take a photo and Workshop AI will identify each item. You can then edit and add to your Tool Inventory.
-                  </Text>
-
-                  <View style={styles.introImageContainer}>
-                    <Image
-                      source={require('@/assets/images/59a6d842-e6a8-4050-b2cd-0a1df289bf14.jpeg')}
-                      style={styles.introImage}
-                      resizeMode="contain"
-                    />
-                    <Text style={[styles.introImageCaption, { color: colors.textSecondary }]}>
-                      Example: Tools laid out on a table for AI identification
-                    </Text>
-                  </View>
-
-                  <Pressable
-                    style={styles.introModalButton}
-                    onPress={closeIntroModal}
-                  >
-                    <Text style={styles.introModalButtonText}>Got it!</Text>
-                    <IconSymbol name="arrow.right" color="#FFFFFF" size={20} />
-                  </Pressable>
-                </ScrollView>
+            <ScrollView
+              ref={introModalScrollViewRef}
+              style={styles.introModalScrollView}
+              contentContainerStyle={styles.introModalScrollContent}
+              showsVerticalScrollIndicator={true}
+                  bounces={true}
+                  scrollEnabled={true}
+                  nestedScrollEnabled={true}
+            >
+              <View style={styles.introModalHeader}>
+                <IconSymbol name="info.circle.fill" color={colors.primary} size={32} />
+                <Text style={[styles.introModalTitle, { color: colors.text }]}>
+                  Welcome to Workshop!
+                </Text>
               </View>
-            </TouchableWithoutFeedback>
+
+              <Text style={[styles.introModalText, { color: colors.text }]}>
+                Workshop can help you keep track of where your tools are located. For each bin, remove all the tools & materials and place on a table spaced out like in the image. Take a photo and Workshop AI will identify each item. You can then edit and add to your Tool Inventory.
+              </Text>
+
+              <View style={styles.introImageContainer}>
+                <Image
+                  source={require('@/assets/images/59a6d842-e6a8-4050-b2cd-0a1df289bf14.jpeg')}
+                  style={styles.introImage}
+                  resizeMode="contain"
+                />
+                <Text style={[styles.introImageCaption, { color: colors.textSecondary }]}>
+                  Example: Tools laid out on a table for AI identification
+                </Text>
+              </View>
+
+              <Pressable
+                style={styles.introModalButton}
+                onPress={closeIntroModal}
+              >
+                <Text style={styles.introModalButtonText}>Got it!</Text>
+                <IconSymbol name="arrow.right" color="#FFFFFF" size={20} />
+              </Pressable>
+            </ScrollView>
           </View>
+            </TouchableWithoutFeedback>
+        </View>
         </TouchableWithoutFeedback>
       </Modal>
 

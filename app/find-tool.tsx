@@ -17,12 +17,15 @@ import {
   Dimensions,
   StatusBar,
   Linking,
+  FlatList,
 } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Stack, useRouter, useFocusEffect } from 'expo-router';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import { supabase } from '@integrations/supabase/client';
 import { getDeviceId } from '@/utils/deviceId';
+import { useNavigation } from '@/contexts/NavigationContext';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -46,6 +49,7 @@ type SearchMode = 'simple' | 'advanced';
 
 export default function FindToolScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const [searchMode, setSearchMode] = useState<SearchMode>('simple');
   const [simpleSearchQuery, setSimpleSearchQuery] = useState('');
   const [advancedSearchQuery, setAdvancedSearchQuery] = useState('');
@@ -66,6 +70,63 @@ export default function FindToolScreen() {
   const savedTranslateY = useSharedValue(0);
   const originX = useSharedValue(0);
   const originY = useSharedValue(0);
+  
+  // Save search state to AsyncStorage
+  const saveSearchState = async () => {
+    try {
+      const state = {
+        searchMode,
+        simpleSearchQuery,
+        advancedSearchQuery,
+        searchResults,
+        aiResponse,
+        hasSearched,
+      };
+      await AsyncStorage.setItem('findToolSearchState', JSON.stringify(state));
+      console.log('💾 Saved search state');
+    } catch (error) {
+      console.error('❌ Failed to save search state:', error);
+    }
+  };
+
+  // Restore search state from AsyncStorage
+  const restoreSearchState = async () => {
+    try {
+      const stateStr = await AsyncStorage.getItem('findToolSearchState');
+      if (stateStr) {
+        const state = JSON.parse(stateStr);
+        console.log('📂 Restoring search state:', {
+          searchMode: state.searchMode,
+          hasSearched: state.hasSearched,
+          resultsCount: state.searchResults?.length || 0,
+          hasAiResponse: !!state.aiResponse
+        });
+        setSearchMode(state.searchMode);
+        setSimpleSearchQuery(state.simpleSearchQuery || '');
+        setAdvancedSearchQuery(state.advancedSearchQuery || '');
+        setSearchResults(state.searchResults || []);
+        setAiResponse(state.aiResponse || '');
+        setHasSearched(state.hasSearched || false);
+      }
+    } catch (error) {
+      console.error('❌ Failed to restore search state:', error);
+    }
+  };
+
+  // Restore state when screen gains focus
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('🔍 Find Tool screen focused');
+      restoreSearchState();
+    }, [])
+  );
+
+  // Save state whenever search results change
+  useEffect(() => {
+    if (hasSearched) {
+      saveSearchState();
+    }
+  }, [searchMode, simpleSearchQuery, advancedSearchQuery, searchResults, aiResponse, hasSearched]);
 
   const searchToolsSimple = async () => {
     if (!simpleSearchQuery.trim()) {
@@ -165,21 +226,36 @@ export default function FindToolScreen() {
   };
 
   const handleBinSelect = (item: ToolInventoryItem) => {
-    router.push({
-      pathname: '/(tabs)/inventory',
-      params: { editBinId: item.id },
-    });
-  };
-
-  const openViewInventory = () => {
+    console.log('📤 Setting returnToSearch = true, filterBinId:', item.id, 'bin:', item.bin_name);
+    navigation.setReturnToSearch(true);
+    navigation.setFilterBinId(item.id);
+    navigation.setEditBinId(null);
     router.push('/(tabs)/inventory');
   };
 
-  const openInventoryForBin = (binName: string) => {
-    router.push({
-      pathname: '/(tabs)/inventory',
-      params: { filterBin: binName }
-    });
+  const openViewInventory = () => {
+    console.log('📤 Setting returnToSearch = true');
+    navigation.setReturnToSearch(true);
+    navigation.setFilterBinId(null);
+    navigation.setEditBinId(null);
+    router.push('/(tabs)/inventory');
+  };
+
+  const openInventoryForBin = (binId: string | null, binName: string, binLocation?: string) => {
+    if (binId) {
+      console.log('📤 Using bin ID directly:', binId, 'for bin:', binName);
+      navigation.setReturnToSearch(true);
+      navigation.setFilterBinId(binId);
+      navigation.setEditBinId(null);
+      router.push('/(tabs)/inventory');
+    } else {
+      console.warn('⚠️ No bin ID provided for:', binName, binLocation, '- navigating without filter');
+      // Fallback: navigate without filter if bin ID is missing
+      navigation.setReturnToSearch(true);
+      navigation.setFilterBinId(null);
+      navigation.setEditBinId(null);
+      router.push('/(tabs)/inventory');
+    }
   };
 
   const openAmazonLink = (url: string) => {
@@ -333,76 +409,179 @@ export default function FindToolScreen() {
     return { inventorySection, recommendedTools };
   };
 
-  const renderInventorySection = (inventoryText: string) => {
-    // Remove excessive empty lines (replace double+ newlines with single)
-    const cleanedResponse = inventoryText.replace(/\n\n+/g, '\n');
-    const lines = cleanedResponse.split('\n');
+  // Parse inventory section into structured tool cards
+  const parseInventoryTools = (inventoryText: string) => {
+    const tools: Array<{
+      name: string;
+      binId: string | null;
+      binName: string;
+      binLocation: string;
+      description: string;
+    }> = [];
     
-    const elements: React.ReactNode[] = [];
+    const lines = inventoryText.split('\n');
+    let currentTool: any = null;
+    let description: string[] = [];
     
-    lines.forEach((line, lineIndex) => {
-      // Skip empty lines
-      if (line.trim() === '') {
+    lines.forEach((line) => {
+      const trimmedLine = line.trim();
+      if (!trimmedLine) return;
+      
+      // Check if this is a tool name (starts with number. OR starts with -)
+      const numberedMatch = trimmedLine.match(/^(\d+)\.\s*(.+)$/);
+      const bulletMatch = trimmedLine.match(/^-\s*(.+)$/);
+      
+      // Check if this line is a tool name
+      // It's a tool name if:
+      // 1. It starts with a number (1., 2., etc.) OR
+      // 2. It starts with "-" followed by text that is NOT "Bin ID:", "Bin Name:", "Bin Location:", "Explanation:", or "Description:"
+      //    Specifically, if it starts with "- Bin ID", "- Bin Name", "- Bin Location", "- Explanation", or "- Description", it's NOT a tool name
+      const isSubItem = bulletMatch && trimmedLine.match(/^-\s*(Bin [Ii][Dd]|Bin [Nn]ame|Bin [Ll]ocation|Explanation|Description):/i);
+      const isToolName = numberedMatch || (bulletMatch && !isSubItem);
+      
+      if (isToolName) {
+        // Save previous tool if exists
+        if (currentTool && currentTool.binName) {
+          currentTool.description = description.join(' ').trim();
+          tools.push(currentTool);
+        }
+        // Start new tool
+        const toolName = numberedMatch ? numberedMatch[2].trim() : bulletMatch![1].trim();
+        currentTool = {
+          name: toolName,
+          binId: null,
+          binName: '',
+          binLocation: '',
+          description: ''
+        };
+        description = [];
         return;
       }
       
-      // Check if this line is a tool name (starts with number.)
-      const toolNameMatch = line.match(/^(\d+\.\s+)(.+)$/);
+      // Check for bin ID (with or without leading dash) - must come before bin name check
+      const binIdMatch = trimmedLine.match(/^[-]?\s*Bin [Ii][Dd]:\s*(.+)$/i);
+      if (binIdMatch && currentTool) {
+        currentTool.binId = binIdMatch[1].trim();
+        return;
+      }
       
-      if (toolNameMatch) {
-        // Tool name - make it bold and larger
-        elements.push(
-          <Text key={`line-${lineIndex}`} style={[styles.aiResponseText, styles.toolName, { color: colors.text }]}>
-            {line}
-          </Text>
-        );
-      } else {
-        // Check if line contains a bin name - match everything after "Bin Name: " to end of line
-        const binMatch = line.match(/^(.*?)(Bin [Nn]ame:\s*)(.+)$/);
-        
-        if (binMatch) {
-          const beforeBin = binMatch[1];
-          const binLabel = binMatch[2];
-          const binName = binMatch[3].trim();
-          
-          console.log('✅ Found bin name:', binName);
-          
-          // Render as separate components to avoid Text onPress interfering with scroll
-          elements.push(
-            <View 
-              key={`line-${lineIndex}`} 
-              style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 2 }}
-              onStartShouldSetResponder={() => false}
-            >
-              <Text style={[styles.aiResponseText, { color: colors.text }]}>
-                {beforeBin}{binLabel}
-              </Text>
-              <Pressable
-                onPress={() => {
-                  console.log('🔗 Bin name pressed:', binName);
-                  openInventoryForBin(binName);
-                }}
-                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-                delayPressIn={50}
-              >
-                <Text style={[styles.aiResponseText, styles.binLink, { color: colors.primary }]}>
-                  {binName}
-                </Text>
-              </Pressable>
-            </View>
-          );
-        } else {
-          // Regular line
-          elements.push(
-            <Text key={`line-${lineIndex}`} style={[styles.aiResponseText, { color: colors.text }]}>
-              {line}
-            </Text>
-          );
+      // Check for bin name (with or without leading dash)
+      const binNameMatch = trimmedLine.match(/^[-]?\s*Bin [Nn]ame:\s*(.+)$/i);
+      if (binNameMatch && currentTool) {
+        currentTool.binName = binNameMatch[1].trim();
+        return;
+      }
+      
+      // Check for bin location (with or without leading dash)
+      const binLocationMatch = trimmedLine.match(/^[-]?\s*Bin [Ll]ocation:\s*(.+)$/i);
+      if (binLocationMatch && currentTool) {
+        currentTool.binLocation = binLocationMatch[1].trim();
+        return;
+      }
+      
+      // Check for explanation/description (with or without leading dash)
+      const explanationMatch = trimmedLine.match(/^[-]?\s*(Explanation|Description):\s*(.+)$/i);
+      if (explanationMatch && currentTool) {
+        // Add the explanation text (everything after "Explanation:" or "Description:")
+        const explanationText = explanationMatch[2].trim();
+        if (explanationText) {
+          description.push(explanationText);
+        }
+        // Don't return - continue to capture any continuation lines
+      }
+      
+      // Otherwise, if we have a current tool and it's not a known field, it's description/explanation continuation text
+      if (currentTool && trimmedLine && !trimmedLine.match(/^[-]?\s*(Bin [Ii][Dd]|Bin [Nn]ame|Bin [Ll]ocation|Explanation|Description):/i)) {
+        // Skip section headers and tool name lines
+        if (!trimmedLine.match(/^SECTION/i) && 
+            !trimmedLine.match(/^(\d+\.|-)\s/) && // Not a numbered or bulleted tool name
+            !trimmedLine.match(/^---/)) { // Not a separator
+          // This is continuation text for explanation/description
+          description.push(trimmedLine);
         }
       }
     });
     
-    return <>{elements}</>;
+    // Add last tool if exists
+    if (currentTool && currentTool.binName) {
+      // Join description with spaces, but preserve structure
+      currentTool.description = description.filter(d => d.trim()).join(' ').trim();
+      console.log('🔍 Tool parsed:', { name: currentTool.name, binId: currentTool.binId, binName: currentTool.binName, descriptionLength: currentTool.description.length });
+      tools.push(currentTool);
+    }
+    
+    return tools;
+  };
+
+  const renderInventorySection = (inventoryText: string) => {
+    console.log('🔍 Parsing inventory section, text length:', inventoryText.length);
+    console.log('🔍 First 200 chars:', inventoryText.substring(0, 200));
+    const tools = parseInventoryTools(inventoryText);
+    console.log('🔍 Parsed tools:', tools.length, tools.map(t => ({ name: t.name, binId: t.binId, binName: t.binName })));
+    
+    if (tools.length === 0) {
+      console.log('⚠️ No tools parsed, falling back to text rendering');
+      // Fallback to simple text rendering if parsing fails
+      // Clean up the text for better display
+      const cleanedText = inventoryText
+        .replace(/SECTION 1[^\n]*/i, '')
+        .replace(/Tools in Your Inventory:/i, '')
+        .trim();
+      
+      return (
+        <Text style={[styles.aiResponseText, { color: colors.text }]}>
+          {cleanedText}
+        </Text>
+      );
+    }
+    
+    return (
+      <>
+        {tools.map((tool, index) => (
+          <View key={index} style={[styles.toolCard, { backgroundColor: colors.background }]}>
+            <Text style={[styles.toolCardName, { color: colors.text }]}>
+              {index + 1}. {tool.name}
+            </Text>
+            
+            {tool.description && (
+              <Text style={[styles.toolCardDescription, { color: colors.textSecondary }]}>
+                {tool.description}
+              </Text>
+            )}
+            
+            <View style={styles.toolCardBinInfo}>
+              <View style={styles.toolCardBinDetails}>
+                <View style={styles.toolCardBinRow}>
+                  <IconSymbol name="archivebox.fill" size={16} color={colors.primary} />
+                  <Text style={[styles.toolCardBinText, { color: colors.text }]}>
+                    {tool.binName}
+                  </Text>
+                </View>
+                {tool.binLocation && (
+                  <View style={styles.toolCardBinRow}>
+                    <IconSymbol name="location.fill" size={16} color={colors.textSecondary} />
+                    <Text style={[styles.toolCardLocationText, { color: colors.textSecondary }]}>
+                      {tool.binLocation}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </View>
+            
+            <Pressable
+              style={styles.viewBinButton}
+              onPress={() => {
+                console.log('🔗 View bin pressed:', tool.binName, 'location:', tool.binLocation, 'binId:', tool.binId);
+                openInventoryForBin(tool.binId, tool.binName, tool.binLocation);
+              }}
+            >
+              <Text style={styles.viewBinButtonText}>View Bin</Text>
+              <IconSymbol name="arrow.right" size={16} color="#FFFFFF" />
+            </Pressable>
+          </View>
+        ))}
+      </>
+    );
   };
 
   const renderRecommendedTools = (tools: Array<{ name: string; description: string; amazonUrl: string; imageUrl: string }>) => {
@@ -740,8 +919,8 @@ export default function FindToolScreen() {
               removeClippedSubviews={false}
               scrollEnabled={true}
               bounces={true}
-              alwaysBounceVertical={false}
-              nestedScrollEnabled={true}
+              directionalLockEnabled={true}
+              alwaysBounceVertical={true}
             >
               {!hasSearched ? (
                 <View style={styles.emptyState}>
@@ -1084,6 +1263,62 @@ const styles = StyleSheet.create({
   binLink: {
     fontWeight: '600',
     textDecorationLine: 'underline',
+  },
+  toolCard: {
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Platform.OS === 'ios' ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.2)',
+  },
+  toolCardName: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  toolCardDescription: {
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 12,
+  },
+  toolCardBinInfo: {
+    marginTop: 8,
+    gap: 12,
+  },
+  toolCardBinDetails: {
+    gap: 4,
+    marginBottom: 12,
+  },
+  toolCardBinRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  toolCardBinText: {
+    fontSize: 15,
+    fontWeight: '600',
+    flex: 1,
+  },
+  toolCardLocationText: {
+    fontSize: 14,
+    flex: 1,
+  },
+  viewBinButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignSelf: 'stretch',
+  },
+  viewBinButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
   recommendedToolsSection: {
     marginTop: 24,

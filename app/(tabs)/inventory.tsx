@@ -10,6 +10,7 @@ import {
   ScrollView, 
   Platform, 
   Pressable, 
+  TouchableOpacity,
   Image, 
   Alert, 
   RefreshControl,
@@ -22,9 +23,12 @@ import {
   Dimensions,
   StatusBar,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from "@integrations/supabase/client";
 import { Stack, useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { getDeviceId } from "@/utils/deviceId";
+import { useNavigation } from "@/contexts/NavigationContext";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -49,6 +53,7 @@ type ToolInventoryItem = {
 
 export default function InventoryScreen() {
   const { colors: themeColors } = useTheme();
+  const insets = useSafeAreaInsets();
   const [inventory, setInventory] = useState<ToolInventoryItem[]>([]);
   const [filteredInventory, setFilteredInventory] = useState<ToolInventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,9 +65,45 @@ export default function InventoryScreen() {
   const [editedBinLocation, setEditedBinLocation] = useState('');
   const [saving, setSaving] = useState(false);
   const [expandedImageUrl, setExpandedImageUrl] = useState<string | null>(null);
+  const [currentFilterBinId, setCurrentFilterBinId] = useState<string | null>(null);
+  const filterBinReadRef = React.useRef(false);
   const params = useLocalSearchParams();
   const router = useRouter();
-  const filterBin = params.filterBin as string | undefined;
+  const navContext = useNavigation();
+  
+  // Check navigation context when screen gains focus
+  useFocusEffect(
+    useCallback(() => {
+      console.log('📋 Inventory screen focused');
+      console.log('📋 Inventory screen focused');
+      console.log('📋 Navigation context:', {
+        returnToSearch: navContext.returnToSearch,
+        filterBinId: navContext.filterBinId,
+        editBinId: navContext.editBinId,
+        currentFilterBinId: currentFilterBinId,
+        filterBinReadRef: filterBinReadRef.current
+      });
+      
+      // Read filterBinId when screen gains focus (in case screen was already mounted)
+      // Only read if we haven't read it yet and it exists
+      if (navContext.filterBinId && !filterBinReadRef.current) {
+        console.log('🔍 Reading filterBinId on focus:', navContext.filterBinId);
+        setCurrentFilterBinId(navContext.filterBinId);
+        filterBinReadRef.current = true;
+        // Don't clear it here - let the useEffect handle it
+      }
+      
+      // Reset the ref when we lose focus (so we can read a new filter next time)
+      return () => {
+        filterBinReadRef.current = false;
+      };
+    }, [navContext.returnToSearch, navContext.filterBinId, navContext.editBinId, currentFilterBinId])
+  );
+
+  // Debug returnToSearch state changes
+  useEffect(() => {
+    console.log('🔄 returnToSearch changed to:', navContext.returnToSearch);
+  }, [navContext.returnToSearch]);
 
   // Zoom and pan state
   const scale = useSharedValue(1);
@@ -75,22 +116,56 @@ export default function InventoryScreen() {
   const originY = useSharedValue(0);
 
   useEffect(() => {
-    if (params.editBinId && inventory.length > 0) {
-      const itemToEdit = inventory.find(item => item.id === params.editBinId);
+    if (navContext.editBinId && inventory.length > 0) {
+      const itemToEdit = inventory.find(item => item.id === navContext.editBinId);
       if (itemToEdit) {
         openEditModal(itemToEdit);
+        // Clear it after opening so it doesn't reopen
+        navContext.setEditBinId(null);
       }
     }
-  }, [params.editBinId, inventory]);
+  }, [navContext.editBinId, inventory]);
 
+  // Read filterBinId from context and store it locally (one-time read)
   useEffect(() => {
-    if (filterBin && inventory.length > 0) {
-      const filtered = inventory.filter(item => item.bin_name === filterBin);
-      setFilteredInventory(filtered);
+    if (navContext.filterBinId && !filterBinReadRef.current) {
+      console.log('🔍 Received filterBinId from context in useEffect:', navContext.filterBinId);
+      setCurrentFilterBinId(navContext.filterBinId);
+      filterBinReadRef.current = true;
+      console.log('🔍 Stored filterBinId in state:', navContext.filterBinId);
+      // Don't clear it yet - wait until filter is successfully applied
+    }
+  }, [navContext.filterBinId]);
+
+  // Apply the filter when inventory loads or filter changes
+  useEffect(() => {
+    console.log('🔍 Filter effect - currentFilterBinId:', currentFilterBinId, 'inventory.length:', inventory.length);
+    if (currentFilterBinId) {
+      if (inventory.length > 0) {
+        console.log('🔍 Filtering inventory by bin ID:', currentFilterBinId);
+        const filtered = inventory.filter(item => item.id === currentFilterBinId);
+        console.log('🔍 Filtered to', filtered.length, 'items out of', inventory.length);
+        if (filtered.length === 0) {
+          console.log('⚠️ No items matched filter! Bin ID:', currentFilterBinId);
+        } else {
+          console.log('✅ Found matching bin:', filtered[0].bin_name, filtered[0].bin_location);
+        }
+        setFilteredInventory(filtered);
+        
+        // Clear filterBinId from context after successfully applying filter
+        if (navContext.filterBinId === currentFilterBinId) {
+          console.log('🔍 Clearing filterBinId from context after successful filter');
+          navContext.setFilterBinId(null);
+        }
+      } else {
+        console.log('🔍 Inventory not loaded yet, waiting...');
+        // Don't update filteredInventory yet - wait for inventory to load
+      }
     } else {
+      console.log('🔍 No filter - showing all inventory');
       setFilteredInventory(inventory);
     }
-  }, [filterBin, inventory]);
+  }, [currentFilterBinId, inventory]);
 
   useFocusEffect(
     useCallback(() => {
@@ -414,6 +489,34 @@ export default function InventoryScreen() {
         }}
       />
       <View style={[styles.container, { backgroundColor: colors.background }]}>
+        {navContext.returnToSearch && (
+          <View 
+            style={[styles.backButtonContainer, { paddingTop: insets.top + 8 }]}
+          >
+            <TouchableOpacity
+              onPress={() => {
+                console.log('🔙 Back button pressed - starting navigation');
+                try {
+                  navContext.setReturnToSearch(false);
+                  setCurrentFilterBinId(null); // Clear the filter when going back
+                  filterBinReadRef.current = false; // Reset ref so we can read new filter next time
+                  console.log('🔙 returnToSearch set to false, filter cleared, ref reset');
+                  console.log('🔙 Navigating to /find-tool...');
+                  router.push('/find-tool');
+                  console.log('🔙 Navigation command sent');
+                } catch (error) {
+                  console.error('❌ Navigation error:', error);
+                }
+              }}
+              activeOpacity={0.7}
+              style={styles.backButton}
+              hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+            >
+              <IconSymbol name="chevron.left" size={24} color={colors.primary} />
+              <Text style={[styles.backButtonText, { color: colors.primary }]}>Back to Search</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           refreshControl={
@@ -658,6 +761,25 @@ export default function InventoryScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  backButtonContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    backgroundColor: colors.background,
+    borderBottomWidth: 1,
+    borderBottomColor: Platform.OS === 'ios' ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.2)',
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    minHeight: 44, // iOS minimum touch target
+  },
+  backButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
   scrollContent: {
     padding: 16,

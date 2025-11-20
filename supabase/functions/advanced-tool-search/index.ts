@@ -67,6 +67,7 @@ Deno.serve(async (req)=>{
     // Format inventory for the AI prompt
     const formattedInventory = inventory?.map((item, index)=>({
         entry: index + 1,
+        bin_id: item.id,
         bin_name: item.bin_name,
         bin_location: item.bin_location,
         tools: item.tools
@@ -84,9 +85,16 @@ SECTION 1 - Tools in Your Inventory:
 - List ALL tools from the inventory that are relevant to the user's question
 - For each tool, include:
   - The tool name
+  - The bin ID (from the inventory data - this is critical for navigation)
   - The bin name where it is located
   - The bin location
   - Brief explanation of why this tool is suitable
+- Format each tool as:
+  1. [Tool Name]
+     - Bin ID: [the bin_id from the inventory data]
+     - Bin Name: [bin name]
+     - Bin Location: [bin location]
+     - Explanation: [why this tool is suitable]
 - Do not limit yourself to just 3 tools - include all matching tools from the inventory
 
 SECTION 2 - Recommended Tools to Purchase:
