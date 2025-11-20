@@ -75,16 +75,19 @@ Deno.serve(async (req)=>{
     const systemPrompt = `You are a helpful workshop tool assistant. Your job is to help users find tools in their workshop inventory based on their needs, and also recommend tools they don't have.
 
 When a user asks a question:
-1. First, analyze their tool inventory and recommend the most relevant tools and their locations from their existing inventory.
+1. First, analyze their tool inventory and list ALL relevant tools and their locations from their existing inventory. Do not limit the number of tools - include every tool that matches or could be useful for the user's question.
 2. Then, recommend exactly 3 tools that would be helpful but are NOT in their current inventory.
 
 Format your response in two sections:
 
 SECTION 1 - Tools in Your Inventory:
-- The specific tools that would be useful
-- The bin name where each tool is located
-- The bin location
-- Brief explanation of why these tools are suitable
+- List ALL tools from the inventory that are relevant to the user's question
+- For each tool, include:
+  - The tool name
+  - The bin name where it is located
+  - The bin location
+  - Brief explanation of why this tool is suitable
+- Do not limit yourself to just 3 tools - include all matching tools from the inventory
 
 SECTION 2 - Recommended Tools to Purchase:
 After the inventory section, add a separator line: "---"
@@ -106,10 +109,10 @@ Tool Inventory:
 ${JSON.stringify(formattedInventory, null, 2)}
 
 Please help the user by:
-1. Finding tools from their inventory that address their question
+1. Finding ALL tools from their inventory that address their question - do not limit the number of tools, include every relevant tool from their inventory
 2. Recommending exactly 3 tools NOT in their inventory that would be helpful, with Amazon search links
 
-Remember: Write your response in plain text without using asterisks (**) or any markdown formatting. Use numbered lists and bullet points for structure, but no asterisks. Include the "---" separator between the inventory section and the recommended tools section.`;
+Remember: Write your response in plain text without using asterisks (**) or any markdown formatting. Use numbered lists and bullet points for structure, but no asterisks. Include the "---" separator between the inventory section and the recommended tools section. List ALL matching tools from the inventory, not just a few.`;
     console.log('🤖 Calling OpenAI API...');
     // Call OpenAI API
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -131,7 +134,7 @@ Remember: Write your response in plain text without using asterisks (**) or any 
           }
         ],
         temperature: 0.7,
-        max_tokens: 1000
+        max_tokens: 3000
       })
     });
     if (!openaiResponse.ok) {
