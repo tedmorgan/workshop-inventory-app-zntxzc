@@ -331,15 +331,212 @@ Write your response in plain text without using asterisks (**) or any markdown f
           console.log(`✅ Parsed ${fixedTools.length} tools from JSON format`);
         }
       } catch (error) {
-        console.warn('⚠️ Failed to parse JSON, falling back to text parsing:', error);
+        console.warn('⚠️ Failed to parse JSON, trying to extract incomplete JSON:', error);
         console.warn('⚠️ Error details:', error instanceof Error ? error.message : String(error));
-        console.warn('⚠️ Response preview:', aiResponse.substring(0, 500));
-        // Restore original response if we modified it
-        if (parsedFromJson) {
-          aiResponse = originalResponse;
-          parsedFromJson = false;
+        
+        // Try to extract incomplete JSON if it was truncated
+        try {
+          const jsonStart = aiResponse.indexOf('{');
+          if (jsonStart !== -1) {
+            const jsonSection = aiResponse.substring(jsonStart);
+            const tools: any[] = [];
+            
+            // Extract individual tool objects
+            let searchIndex = 0;
+            while (true) {
+              const toolStart = jsonSection.indexOf('{"tool_name"', searchIndex);
+              if (toolStart === -1) break;
+              
+              // Find matching closing brace
+              let braceCount = 0;
+              let inString = false;
+              let escapeNext = false;
+              let toolEnd = -1;
+              
+              for (let i = toolStart; i < jsonSection.length; i++) {
+                const char = jsonSection[i];
+                if (escapeNext) {
+                  escapeNext = false;
+                  continue;
+                }
+                if (char === '\\') {
+                  escapeNext = true;
+                  continue;
+                }
+                if (char === '"') {
+                  inString = !inString;
+                  continue;
+                }
+                if (!inString) {
+                  if (char === '{') braceCount++;
+                  if (char === '}') {
+                    braceCount--;
+                    if (braceCount === 0) {
+                      toolEnd = i + 1;
+                      break;
+                    }
+                  }
+                }
+              }
+              
+              if (toolEnd === -1) {
+                // Incomplete - extract fields individually
+                const partialJson = jsonSection.substring(toolStart);
+                const toolNameMatch = partialJson.match(/"tool_name"\s*:\s*"([^"]+)"/);
+                const binIdMatch = partialJson.match(/"bin_id"\s*:\s*"([^"]+)"/);
+                const binNameMatch = partialJson.match(/"bin_name"\s*:\s*"([^"]+)"/);
+                const binLocationMatch = partialJson.match(/"bin_location"\s*:\s*"([^"]+)"/);
+                const explanationMatch = partialJson.match(/"explanation"\s*:\s*"([^"]*)"/);
+                
+                if (toolNameMatch && binIdMatch && binNameMatch && binLocationMatch) {
+                  tools.push({
+                    tool_name: toolNameMatch[1],
+                    bin_id: binIdMatch[1],
+                    bin_name: binNameMatch[1],
+                    bin_location: binLocationMatch[1],
+                    explanation: explanationMatch ? explanationMatch[1] : undefined
+                  });
+                }
+                break;
+              } else {
+                try {
+                  const toolJson = jsonSection.substring(toolStart, toolEnd);
+                  const tool = JSON.parse(toolJson);
+                  if (tool.tool_name && tool.bin_id) {
+                    tools.push(tool);
+                  }
+                } catch (e) {
+                  // Skip invalid tool
+                }
+                searchIndex = toolEnd;
+              }
+            }
+            
+            if (tools.length > 0) {
+              console.log(`📦 Extracted ${tools.length} tools from incomplete JSON`);
+              
+              // Validate and fix bin IDs (reuse validation logic)
+              const fixedTools = tools.map((tool: any) => {
+                const originalBinId = tool.bin_id ? String(tool.bin_id).toLowerCase().trim() : null;
+                
+                if (!originalBinId) {
+                  // Try to find bin ID by name/location
+                  const binName = tool.bin_name ? String(tool.bin_name).toLowerCase().trim() : '';
+                  const binLocation = tool.bin_location ? String(tool.bin_location).toLowerCase().trim() : '';
+                  
+                  if (inventory && inventory.length > 0) {
+                    for (const item of inventory) {
+                      if (!item || !item.id) continue;
+                      const itemName = item.bin_name ? String(item.bin_name).toLowerCase().trim() : '';
+                      const itemLocation = item.bin_location ? String(item.bin_location).toLowerCase().trim() : '';
+                      
+                      if ((!binName || itemName.includes(binName) || binName.includes(itemName)) &&
+                          (!binLocation || itemLocation.includes(binLocation) || binLocation.includes(itemLocation))) {
+                        tool.bin_id = item.id;
+                        return tool;
+                      }
+                    }
+                  }
+                  return tool;
+                }
+                
+                // Validate bin ID
+                if (validBinIds.has(originalBinId)) {
+                  return tool;
+                }
+                
+                // Try fuzzy matching
+                let bestMatch: { id: string; distance: number } | null = null;
+                for (const validId of Array.from(validBinIds) as string[]) {
+                  let differences = 0;
+                  for (let k = 0; k < Math.min(originalBinId.length, validId.length); k++) {
+                    if (originalBinId[k] !== validId[k]) differences++;
+                  }
+                  differences += Math.abs(originalBinId.length - validId.length);
+                  
+                  if (differences <= 2 && (!bestMatch || differences < bestMatch.distance)) {
+                    bestMatch = { id: validId, distance: differences };
+                  }
+                }
+                
+                if (bestMatch && bestMatch.distance <= 2) {
+                  if (bestMatch.distance === 1) {
+                    tool.bin_id = bestMatch.id;
+                    console.log(`🔧 Fixed truncated JSON bin ID: ${originalBinId} -> ${bestMatch.id}`);
+                  } else {
+                    // For 2-char differences, verify by name
+                    const binName = tool.bin_name ? String(tool.bin_name).toLowerCase().trim() : '';
+                    const binLocation = tool.bin_location ? String(tool.bin_location).toLowerCase().trim() : '';
+                    
+                    if (inventory && inventory.length > 0) {
+                      for (const item of inventory) {
+                        if (item.id.toLowerCase() === bestMatch.id) {
+                          const itemName = item.bin_name ? String(item.bin_name).toLowerCase().trim() : '';
+                          const itemLocation = item.bin_location ? String(item.bin_location).toLowerCase().trim() : '';
+                          
+                          if ((!binName || itemName.includes(binName) || binName.includes(itemName)) &&
+                              (!binLocation || itemLocation.includes(binLocation) || binLocation.includes(itemLocation))) {
+                            tool.bin_id = bestMatch.id;
+                            console.log(`🔧 Fixed truncated JSON bin ID: ${originalBinId} -> ${bestMatch.id}`);
+                            break;
+                          }
+                        }
+                      }
+                    }
+                  }
+                } else {
+                  // Try name-based lookup
+                  const binName = tool.bin_name ? String(tool.bin_name).toLowerCase().trim() : '';
+                  const binLocation = tool.bin_location ? String(tool.bin_location).toLowerCase().trim() : '';
+                  
+                  if (inventory && inventory.length > 0) {
+                    for (const item of inventory) {
+                      if (!item || !item.id) continue;
+                      const itemName = item.bin_name ? String(item.bin_name).toLowerCase().trim() : '';
+                      const itemLocation = item.bin_location ? String(item.bin_location).toLowerCase().trim() : '';
+                      
+                      if ((!binName || itemName.includes(binName) || binName.includes(itemName)) &&
+                          (!binLocation || itemLocation.includes(binLocation) || binLocation.includes(itemLocation))) {
+                        tool.bin_id = item.id;
+                        console.log(`🔧 Fixed truncated JSON bin ID by name: ${originalBinId} -> ${item.id}`);
+                        break;
+                      }
+                    }
+                  }
+                }
+                
+                return tool;
+              });
+              
+              // Convert to text format
+              let textFormat = 'SECTION 1 - Tools in Your Inventory:\n\n';
+              fixedTools.forEach((tool: any, index: number) => {
+                if (!tool || !tool.tool_name) return;
+                textFormat += `${index + 1}. ${String(tool.tool_name || 'Unknown Tool')}\n`;
+                textFormat += `   - Bin ID: ${tool.bin_id || 'MISSING'}\n`;
+                textFormat += `   - Bin Name: ${String(tool.bin_name || '')}\n`;
+                textFormat += `   - Bin Location: ${String(tool.bin_location || '')}\n`;
+                if (tool.explanation) {
+                  textFormat += `   - Explanation: ${String(tool.explanation)}\n`;
+                }
+                textFormat += '\n';
+              });
+              
+              // Replace JSON section
+              const recommendedToolsSection = aiResponse.split('---').slice(1).join('---');
+              aiResponse = textFormat + (recommendedToolsSection ? '---' + recommendedToolsSection : '');
+              parsedFromJson = true;
+              console.log(`✅ Converted incomplete JSON to text format`);
+            }
+          }
+        } catch (extractError) {
+          console.warn('⚠️ Failed to extract incomplete JSON, falling back to text parsing:', extractError);
         }
-        // Continue with text parsing - don't throw, just log
+        
+        // Restore original response if we didn't successfully extract
+        if (!parsedFromJson) {
+          aiResponse = originalResponse;
+        }
       }
     }
     
