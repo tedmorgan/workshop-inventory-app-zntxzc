@@ -654,16 +654,46 @@ export default function FindToolScreen() {
     
     // Look for JSON - try multiple patterns
     let jsonStr = '';
+    
+    // Check if response mentions JSON format
+    const hasJsonFormat = /JSON FORMAT|json format|```json/i.test(response);
     const jsonCodeBlockMatch = response.match(/```json\s*(\{[\s\S]*?)\s*```/i);
-    const jsonInlineMatch = response.match(/\{\s*"inventory_tools"\s*:\s*\[([\s\S]*)/);
     
     if (jsonCodeBlockMatch) {
       jsonStr = jsonCodeBlockMatch[1];
-    } else if (jsonInlineMatch) {
-      // Find the start of the JSON object
-      const jsonStart = response.indexOf('{');
-      if (jsonStart !== -1) {
-        jsonStr = response.substring(jsonStart);
+    } else if (hasJsonFormat || response.includes('"inventory_tools"')) {
+      // Find the start of the JSON object (look for opening brace before "inventory_tools")
+      const inventoryToolsIndex = response.indexOf('"inventory_tools"');
+      if (inventoryToolsIndex !== -1) {
+        // Find the opening brace before "inventory_tools"
+        let jsonStart = -1;
+        for (let i = inventoryToolsIndex; i >= 0; i--) {
+          if (response[i] === '{') {
+            jsonStart = i;
+            break;
+          }
+        }
+        
+        if (jsonStart !== -1) {
+          // Extract JSON - try to find the end, or use rest of response before "---"
+          const separatorIndex = response.indexOf('---', jsonStart);
+          const endIndex = separatorIndex !== -1 ? separatorIndex : response.length;
+          jsonStr = response.substring(jsonStart, endIndex);
+          
+          // Try to close incomplete JSON arrays/objects
+          const openBraces = (jsonStr.match(/\{/g) || []).length;
+          const closeBraces = (jsonStr.match(/\}/g) || []).length;
+          const openBrackets = (jsonStr.match(/\[/g) || []).length;
+          const closeBrackets = (jsonStr.match(/\]/g) || []).length;
+          
+          // Add missing closing brackets/braces if needed
+          if (openBrackets > closeBrackets) {
+            jsonStr += ']'.repeat(openBrackets - closeBrackets);
+          }
+          if (openBraces > closeBraces) {
+            jsonStr += '}'.repeat(openBraces - closeBraces);
+          }
+        }
       }
     }
     
@@ -696,17 +726,20 @@ export default function FindToolScreen() {
       } catch (error) {
         // JSON might be truncated - try to extract individual tool objects manually
         console.warn('⚠️ Client-side: JSON parse failed, trying to extract incomplete JSON:', error);
+        console.log('📝 JSON string preview:', jsonStr.substring(0, 500));
         
         try {
           // Extract tool objects by finding individual JSON objects
-          // Look for pattern: {"tool_name": "...", "bin_id": "...", ...}
+          // Use original response to ensure we have the full context
+          const searchText = jsonStr || response;
           const tools: Array<{tool_name: string, bin_id: string, bin_name: string, bin_location: string, explanation?: string}> = [];
           
-          // Find all tool objects by looking for opening braces followed by "tool_name"
-          let searchIndex = 0;
-          while (true) {
-            const toolStart = jsonStr.indexOf('{"tool_name"', searchIndex);
-            if (toolStart === -1) break;
+          // Find all tool objects using regex to handle whitespace variations
+          const toolPattern = /\{\s*"tool_name"\s*:/g;
+          let match;
+          
+          while ((match = toolPattern.exec(searchText)) !== null) {
+            const toolStart = match.index;
             
             // Find the matching closing brace
             let braceCount = 0;
@@ -714,8 +747,8 @@ export default function FindToolScreen() {
             let escapeNext = false;
             let toolEnd = -1;
             
-            for (let i = toolStart; i < jsonStr.length; i++) {
-              const char = jsonStr[i];
+            for (let i = toolStart; i < searchText.length; i++) {
+              const char = searchText[i];
               
               if (escapeNext) {
                 escapeNext = false;
@@ -746,7 +779,7 @@ export default function FindToolScreen() {
             
             if (toolEnd === -1) {
               // Incomplete object - try to extract what we can
-              const partialJson = jsonStr.substring(toolStart);
+              const partialJson = searchText.substring(toolStart);
               // Try to parse fields individually
               const toolNameMatch = partialJson.match(/"tool_name"\s*:\s*"([^"]+)"/);
               const binIdMatch = partialJson.match(/"bin_id"\s*:\s*"([^"]+)"/);
@@ -767,7 +800,7 @@ export default function FindToolScreen() {
             } else {
               // Try to parse the complete object
               try {
-                const toolJson = jsonStr.substring(toolStart, toolEnd);
+                const toolJson = searchText.substring(toolStart, toolEnd);
                 const tool = JSON.parse(toolJson);
                 if (tool.tool_name && tool.bin_id) {
                   tools.push({
@@ -780,13 +813,14 @@ export default function FindToolScreen() {
                 }
               } catch (e) {
                 // Skip this object if it doesn't parse
+                console.warn('⚠️ Failed to parse tool object:', e);
               }
-              searchIndex = toolEnd;
             }
           }
           
           if (tools.length > 0) {
-            console.log(`📦 Client-side: Extracted ${tools.length} tools from incomplete JSON`);
+            console.log(`✅ Client-side: Extracted ${tools.length} tools from incomplete JSON`);
+            console.log('📋 Extracted tools:', tools.map(t => t.tool_name));
             
             // Convert to text format
             let textFormat = 'SECTION 1 - Tools in Your Inventory:\n\n';
@@ -807,7 +841,12 @@ export default function FindToolScreen() {
               const beforeJson = response.substring(0, jsonStartIndex).replace(/\(JSON FORMAT\)/i, '').trim();
               const afterJson = response.includes('---') ? response.split('---').slice(1).join('---') : '';
               processedResponse = beforeJson + '\n\n' + textFormat + (afterJson ? '---' + afterJson : '');
+              console.log('✅ Converted JSON to text format, length:', processedResponse.length);
+            } else {
+              console.warn('⚠️ Could not find JSON start in response');
             }
+          } else {
+            console.warn('⚠️ No tools extracted from JSON');
           }
         } catch (extractError) {
           console.warn('⚠️ Client-side: Failed to extract incomplete JSON, using original response:', extractError);
