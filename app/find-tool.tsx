@@ -65,7 +65,7 @@ export default function FindToolScreen() {
   const savedTranslateY = useSharedValue(0);
   const originX = useSharedValue(0);
   const originY = useSharedValue(0);
-  
+
   // Save search state to AsyncStorage
   const saveSearchState = async () => {
     try {
@@ -174,7 +174,7 @@ export default function FindToolScreen() {
       navigation.setReturnToSearch(true);
       navigation.setFilterBinId(binId);
       navigation.setEditBinId(null);
-      router.push('/(tabs)/inventory');
+    router.push('/(tabs)/inventory');
     } else {
       console.warn('⚠️ Invalid or missing bin ID:', binId, '- attempting lookup by name/location');
       // Fallback: try to find bin by name and location
@@ -649,7 +649,43 @@ export default function FindToolScreen() {
   const renderAIResponse = (response: string) => {
     console.log('🔍 Rendering AI response');
     
-    const { inventorySection, recommendedTools } = parseRecommendedTools(response);
+    // Check if response contains JSON format and convert it first
+    let processedResponse = response;
+    const jsonMatch = response.match(/```json\s*(\{[\s\S]*?\})\s*```/i) || 
+                      response.match(/\{[\s\S]*?"inventory_tools"[\s\S]*?\}/);
+    
+    if (jsonMatch) {
+      try {
+        const jsonStr = jsonMatch[1] || jsonMatch[0];
+        const jsonData = JSON.parse(jsonStr);
+        
+        if (jsonData && jsonData.inventory_tools && Array.isArray(jsonData.inventory_tools) && jsonData.inventory_tools.length > 0) {
+          console.log('📦 Client-side: Found JSON format, converting to text');
+          
+          // Convert JSON to text format
+          let textFormat = 'SECTION 1 - Tools in Your Inventory:\n\n';
+          jsonData.inventory_tools.forEach((tool: any, index: number) => {
+            if (!tool || !tool.tool_name) return;
+            textFormat += `${index + 1}. ${String(tool.tool_name || 'Unknown Tool')}\n`;
+            textFormat += `   - Bin ID: ${tool.bin_id || 'MISSING'}\n`;
+            textFormat += `   - Bin Name: ${String(tool.bin_name || '')}\n`;
+            textFormat += `   - Bin Location: ${String(tool.bin_location || '')}\n`;
+            if (tool.explanation) {
+              textFormat += `   - Explanation: ${String(tool.explanation)}\n`;
+            }
+            textFormat += '\n';
+          });
+          
+          // Replace JSON section with text format, keep recommended tools section if present
+          const recommendedToolsSection = response.split('---').slice(1).join('---');
+          processedResponse = textFormat + (recommendedToolsSection ? '---' + recommendedToolsSection : '');
+        }
+      } catch (error) {
+        console.warn('⚠️ Client-side: Failed to parse JSON, using original response:', error);
+      }
+    }
+    
+    const { inventorySection, recommendedTools } = parseRecommendedTools(processedResponse);
     
     return (
       <>
@@ -802,32 +838,32 @@ export default function FindToolScreen() {
           <View style={styles.innerContainer}>
             {/* Search Section */}
             <View style={styles.searchSection}>
-              <View style={[styles.advancedSearchContainer, { backgroundColor: colors.card }]}>
-                <View style={styles.advancedSearchHeader}>
-                  <IconSymbol name="sparkles" size={20} color={colors.primary} />
-                  <Text style={[styles.advancedSearchLabel, { color: colors.text }]}>
-                    Advanced Search
-                  </Text>
+                <View style={[styles.advancedSearchContainer, { backgroundColor: colors.card }]}>
+                  <View style={styles.advancedSearchHeader}>
+                    <IconSymbol name="sparkles" size={20} color={colors.primary} />
+                    <Text style={[styles.advancedSearchLabel, { color: colors.text }]}>
+                      Advanced Search
+                    </Text>
+                  </View>
+                  <TextInput
+                    style={[styles.advancedSearchInput, { color: colors.text }]}
+                    placeholder="What would be good to use for removing drywall?"
+                    placeholderTextColor={colors.textSecondary}
+                    value={advancedSearchQuery}
+                    onChangeText={setAdvancedSearchQuery}
+                    multiline
+                    numberOfLines={3}
+                    textAlignVertical="top"
+                  />
+                  {advancedSearchQuery.length > 0 && (
+                    <Pressable 
+                      style={styles.clearButton}
+                      onPress={() => setAdvancedSearchQuery('')}
+                    >
+                      <IconSymbol name="xmark.circle.fill" size={20} color={colors.textSecondary} />
+                    </Pressable>
+                  )}
                 </View>
-                <TextInput
-                  style={[styles.advancedSearchInput, { color: colors.text }]}
-                  placeholder="What would be good to use for removing drywall?"
-                  placeholderTextColor={colors.textSecondary}
-                  value={advancedSearchQuery}
-                  onChangeText={setAdvancedSearchQuery}
-                  multiline
-                  numberOfLines={3}
-                  textAlignVertical="top"
-                />
-                {advancedSearchQuery.length > 0 && (
-                  <Pressable 
-                    style={styles.clearButton}
-                    onPress={() => setAdvancedSearchQuery('')}
-                  >
-                    <IconSymbol name="xmark.circle.fill" size={20} color={colors.textSecondary} />
-                  </Pressable>
-                )}
-              </View>
               <Pressable
                 style={[styles.searchButton, (!canSearch || searching) && styles.searchButtonDisabled]}
                 onPress={searchToolsAdvanced}
