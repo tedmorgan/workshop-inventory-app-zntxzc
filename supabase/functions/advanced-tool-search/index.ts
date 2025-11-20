@@ -86,45 +86,34 @@ When a user asks a question:
 
 Format your response in two sections:
 
-SECTION 1 - Tools in Your Inventory:
-- List ALL tools from the inventory that are relevant to the user's question
-- For each tool, you MUST include:
-  - The tool name
-  - The bin ID (CRITICAL: Copy the EXACT bin_id value from the inventory data - DO NOT generate or invent bin IDs)
-  - The bin name where it is located
-- The bin location
-  - Brief explanation of why this tool is suitable
+SECTION 1 - Tools in Your Inventory (JSON FORMAT):
+You MUST return the inventory tools in JSON format for maximum accuracy. Format as a JSON array:
 
-CRITICAL BIN ID RULES - READ CAREFULLY:
-1. You MUST copy the exact bin_id value from the inventory JSON data provided below
+{
+  "inventory_tools": [
+    {
+      "tool_name": "Hammer",
+      "bin_id": "b3b014b1-540e-4c65-93c4-11f03c4cd2c9",
+      "bin_name": "2nd Drawer",
+      "bin_location": "Dropsaw Cabinet",
+      "explanation": "Brief explanation of why this tool is suitable"
+    }
+  ]
+}
+
+CRITICAL REQUIREMENTS FOR JSON:
+1. The "bin_id" field MUST be copied EXACTLY from the inventory JSON data provided below
 2. DO NOT generate, invent, or create new bin IDs - only use bin_ids that exist in the inventory data
 3. DO NOT modify or change any characters in the bin_id - copy it exactly as shown
 4. Each bin_id is a UUID format like: "b3b014b1-540e-4c65-93c4-11f03c4cd2c9"
 5. If a tool is in a bin, find that bin's bin_id in the inventory data and copy it EXACTLY
 6. The bin_id must match exactly - character for character - what appears in the inventory JSON
 7. WARNING: Generating incorrect bin IDs will break the application - users will not be able to find their tools
-8. If you cannot find the exact bin_id for a tool, DO NOT make one up - look harder in the inventory data
-9. Every bin_id you use MUST appear in the "VALID BIN IDs" list provided in the user prompt
-10. When in doubt, search the inventory JSON for the bin_name and copy its bin_id exactly
+8. Every bin_id you use MUST appear in the "VALID BIN IDs" list provided in the user prompt
+9. Include ALL relevant tools from the inventory - do not limit to just 3 tools
+10. The JSON must be valid and parseable
 
-EXAMPLE:
-If the inventory shows:
-  {
-    "bin_id": "b3b014b1-540e-4c65-93c4-11f03c4cd2c9",
-    "bin_name": "2nd Drawer",
-    "bin_location": "Dropsaw Cabinet",
-    "tools": ["Hammer", "Screwdriver"]
-  }
-
-Then for the tool "Hammer", you MUST write:
-  1. Hammer
-     - Bin ID: b3b014b1-540e-4c65-93c4-11f03c4cd2c9
-     - Bin Name: 2nd Drawer
-     - Bin Location: Dropsaw Cabinet
-     - Explanation: [why this tool is suitable]
-
-Format each tool EXACTLY as shown above. The Bin ID must be copied exactly from the inventory data.
-- Do not limit yourself to just 3 tools - include all matching tools from the inventory
+After the JSON, add a plain text section for readability (optional but helpful):
 
 SECTION 2 - Recommended Tools to Purchase:
 After the inventory section, add a separator line: "---"
@@ -218,15 +207,129 @@ Write your response in plain text without using asterisks (**) or any markdown f
     // Remove asterisks from the response as a fallback
     aiResponse = aiResponse.replace(/\*\*/g, '');
     
-    // Validate and fix bin IDs in the response
+    // Try to parse JSON format first (more accurate)
     const validBinIds = new Set(inventory?.map(item => item.id.toLowerCase()) || []);
+    let parsedFromJson = false;
     
-    // Create multiple lookup maps for better matching
-    const binIdMap = new Map<string, string>(); // Map bin_name+location to bin_id
-    const binNameMap = new Map<string, string>(); // Map bin_name to bin_id (for partial matches)
-    const toolToBinMap = new Map<string, string>(); // Map tool name to bin_id
+    // Look for JSON in the response
+    const jsonMatch = aiResponse.match(/```json\s*(\{[\s\S]*?\})\s*```/i) || 
+                      aiResponse.match(/\{[\s\S]*?"inventory_tools"[\s\S]*?\}/);
     
-    inventory?.forEach(item => {
+    if (jsonMatch) {
+      try {
+        const jsonStr = jsonMatch[1] || jsonMatch[0];
+        const jsonData = JSON.parse(jsonStr);
+        
+        if (jsonData.inventory_tools && Array.isArray(jsonData.inventory_tools)) {
+          console.log('📦 Found JSON format, parsing and validating...');
+          
+          // Validate and fix bin IDs in JSON
+          const fixedTools = jsonData.inventory_tools.map((tool: any) => {
+            const originalBinId = tool.bin_id?.toLowerCase().trim();
+            
+            if (!originalBinId) {
+              // Try to find bin ID by name/location
+              const binName = tool.bin_name?.toLowerCase().trim() || '';
+              const binLocation = tool.bin_location?.toLowerCase().trim() || '';
+              
+              // Find matching bin
+              for (const item of inventory || []) {
+                const itemName = item.bin_name?.toLowerCase().trim() || '';
+                const itemLocation = item.bin_location?.toLowerCase().trim() || '';
+                
+                if ((!binName || itemName.includes(binName) || binName.includes(itemName)) &&
+                    (!binLocation || itemLocation.includes(binLocation) || binLocation.includes(itemLocation))) {
+                  tool.bin_id = item.id;
+                  console.log(`➕ Added missing bin ID for ${tool.tool_name}: ${item.id}`);
+                  return tool;
+                }
+              }
+              return tool;
+            }
+            
+            // Validate bin ID
+            if (validBinIds.has(originalBinId)) {
+              return tool; // Valid, keep as is
+            }
+            
+            // Try fuzzy matching for typos
+            let bestMatch: { id: string; distance: number } | null = null;
+            for (const validId of Array.from(validBinIds) as string[]) {
+              let differences = 0;
+              for (let k = 0; k < Math.min(originalBinId.length, validId.length); k++) {
+                if (originalBinId[k] !== validId[k]) differences++;
+              }
+              differences += Math.abs(originalBinId.length - validId.length);
+              
+              if (differences <= 2 && (!bestMatch || differences < bestMatch.distance)) {
+                bestMatch = { id: validId, distance: differences };
+              }
+            }
+            
+            if (bestMatch && bestMatch.distance <= 2) {
+              console.log(`🔧 Fixed invalid bin ID in JSON: ${originalBinId} -> ${bestMatch.id} (${bestMatch.distance} char difference)`);
+              tool.bin_id = bestMatch.id;
+            } else {
+              // Try to find by bin name/location
+              const binName = tool.bin_name?.toLowerCase().trim() || '';
+              const binLocation = tool.bin_location?.toLowerCase().trim() || '';
+              
+              for (const item of inventory || []) {
+                const itemName = item.bin_name?.toLowerCase().trim() || '';
+                const itemLocation = item.bin_location?.toLowerCase().trim() || '';
+                
+                if ((!binName || itemName.includes(binName) || binName.includes(itemName)) &&
+                    (!binLocation || itemLocation.includes(binLocation) || binLocation.includes(itemLocation))) {
+                  console.log(`🔧 Fixed invalid bin ID in JSON by name match: ${originalBinId} -> ${item.id}`);
+                  tool.bin_id = item.id;
+                  break;
+                }
+              }
+            }
+            
+            return tool;
+          });
+          
+          // Convert JSON back to text format (for client compatibility)
+          let textFormat = 'SECTION 1 - Tools in Your Inventory:\n\n';
+          fixedTools.forEach((tool: any, index: number) => {
+            textFormat += `${index + 1}. ${tool.tool_name}\n`;
+            textFormat += `   - Bin ID: ${tool.bin_id || 'MISSING'}\n`;
+            textFormat += `   - Bin Name: ${tool.bin_name || ''}\n`;
+            textFormat += `   - Bin Location: ${tool.bin_location || ''}\n`;
+            if (tool.explanation) {
+              textFormat += `   - Explanation: ${tool.explanation}\n`;
+            }
+            textFormat += '\n';
+          });
+          
+          // Replace JSON section with text format, keep recommended tools section
+          const recommendedToolsSection = aiResponse.split('---').slice(1).join('---');
+          aiResponse = textFormat + (recommendedToolsSection ? '---' + recommendedToolsSection : '');
+          parsedFromJson = true;
+          console.log(`✅ Parsed ${fixedTools.length} tools from JSON format`);
+        }
+      } catch (error) {
+        console.warn('⚠️ Failed to parse JSON, falling back to text parsing:', error);
+      }
+    }
+    
+    // Initialize counters (used for both JSON and text parsing)
+    let invalidBinIdCount = 0;
+    let fixedBinIdCount = 0;
+    let addedBinIdCount = 0;
+    
+    // If JSON parsing didn't work, use text-based validation
+    if (!parsedFromJson) {
+      console.log('📝 Using text-based parsing (no JSON found)');
+      
+      // Validate and fix bin IDs in the response (text-based fallback)
+      // Create multiple lookup maps for better matching
+      const binIdMap = new Map<string, string>(); // Map bin_name+location to bin_id
+      const binNameMap = new Map<string, string>(); // Map bin_name to bin_id (for partial matches)
+      const toolToBinMap = new Map<string, string>(); // Map tool name to bin_id
+      
+      inventory?.forEach(item => {
       const key = `${item.bin_name?.toLowerCase().trim()}|${item.bin_location?.toLowerCase().trim()}`;
       binIdMap.set(key, item.id);
       
@@ -243,11 +346,9 @@ Write your response in plain text without using asterisks (**) or any markdown f
       });
     });
     
-    // Extract and validate bin IDs from response
-    const lines = aiResponse.split('\n');
-    let fixedResponse = '';
-    let invalidBinIdCount = 0;
-    let fixedBinIdCount = 0;
+      // Extract and validate bin IDs from response
+      const lines = aiResponse.split('\n');
+      let fixedResponse = '';
     
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -362,6 +463,7 @@ Write your response in plain text without using asterisks (**) or any markdown f
             }
             
             // Strategy 5: Fuzzy UUID matching - catch single-character typos
+            // Always run this as final fallback to catch typos
             if (!correctBinId) {
               // Calculate edit distance (Levenshtein-like) for UUIDs
               // For UUIDs, we'll check if they differ by only 1-2 characters
@@ -387,39 +489,41 @@ Write your response in plain text without using asterisks (**) or any markdown f
                 }
               }
               
+              // Apply fuzzy match if found
               if (bestMatch && bestMatch.distance <= 2) {
-                // Verify by checking if bin name matches (to avoid false positives)
-                // But be lenient - if UUID is very close, trust it
-                let binNameMatches = false;
-                let contextBinName = '';
-                
-                for (let j = Math.max(0, i - 5); j < Math.min(i + 10, lines.length); j++) {
-                  const binNameMatch = lines[j].match(/^[-]?\s*Bin [Nn]ame:\s*(.+)$/i);
-                  if (binNameMatch) {
-                    contextBinName = binNameMatch[1].trim().toLowerCase();
-                    // Find which bin this ID belongs to
-                    for (const [name, id] of binNameMap.entries()) {
-                      if (id.toLowerCase() === bestMatch.id) {
-                        // Check if names are similar (very lenient for close UUIDs)
-                        if (name.includes(contextBinName) || contextBinName.includes(name) || 
-                            name === contextBinName || 
-                            Math.abs(name.length - contextBinName.length) <= 5 ||
-                            // If UUID is only 1 char off, be very lenient
-                            (bestMatch.distance === 1 && (name.length > 0 && contextBinName.length > 0))) {
-                          binNameMatches = true;
-                          break;
+                // For 1-character differences, auto-fix immediately (very likely a typo)
+                if (bestMatch.distance === 1) {
+                  correctBinId = bestMatch.id;
+                  fixMethod = `fuzzy UUID match (1 char typo: ${binId.substring(0, 8)}... -> ${bestMatch.id.substring(0, 8)}...)`;
+                } else if (bestMatch.distance === 2) {
+                  // For 2-character differences, verify bin name matches
+                  let binNameMatches = false;
+                  let contextBinName = '';
+                  
+                  for (let j = Math.max(0, i - 5); j < Math.min(i + 10, lines.length); j++) {
+                    const binNameMatch = lines[j].match(/^[-]?\s*Bin [Nn]ame:\s*(.+)$/i);
+                    if (binNameMatch) {
+                      contextBinName = binNameMatch[1].trim().toLowerCase();
+                      // Find which bin this ID belongs to
+                      for (const [name, id] of binNameMap.entries()) {
+                        if (id.toLowerCase() === bestMatch.id) {
+                          // Check if names are similar (lenient for 2-char differences)
+                          if (name.includes(contextBinName) || contextBinName.includes(name) || 
+                              name === contextBinName || 
+                              Math.abs(name.length - contextBinName.length) <= 5) {
+                            binNameMatches = true;
+                            break;
+                          }
                         }
                       }
+                      if (binNameMatches) break;
                     }
-                    if (binNameMatches) break;
                   }
-                }
-                
-                // If UUID is only 1 character different, trust it even without perfect bin name match
-                // (GPT might have made a typo but got the right bin)
-                if (bestMatch.distance === 1 || binNameMatches) {
-                  correctBinId = bestMatch.id;
-                  fixMethod = `fuzzy UUID match (${bestMatch.distance} char difference${binNameMatches ? `, bin: ${contextBinName}` : ', auto-fixed'})`;
+                  
+                  if (binNameMatches) {
+                    correctBinId = bestMatch.id;
+                    fixMethod = `fuzzy UUID match (2 char difference, bin: ${contextBinName})`;
+                  }
                 }
               }
             }
@@ -443,11 +547,10 @@ Write your response in plain text without using asterisks (**) or any markdown f
       }
     }
     
-    // Second pass: Add missing bin IDs for tools that have bin names but no bin IDs
-    const lines2 = fixedResponse.split('\n');
-    let finalResponse = '';
-    let addedBinIdCount = 0;
-    let currentToolHasBinId = false;
+      // Second pass: Add missing bin IDs for tools that have bin names but no bin IDs
+      const lines2 = fixedResponse.split('\n');
+      let finalResponse = '';
+      let currentToolHasBinId = false;
     let currentBinName = '';
     let currentBinLocation = '';
     
@@ -531,17 +634,18 @@ Write your response in plain text without using asterisks (**) or any markdown f
       finalResponse += line + '\n';
     }
     
-    if (invalidBinIdCount > 0) {
-      console.warn(`⚠️ Found ${invalidBinIdCount} invalid bin IDs that could not be auto-fixed`);
-    }
-    if (fixedBinIdCount > 0) {
-      console.log(`✅ Auto-fixed ${fixedBinIdCount} invalid bin IDs`);
-    }
-    if (addedBinIdCount > 0) {
-      console.log(`➕ Added ${addedBinIdCount} missing bin IDs`);
-    }
-    
-    aiResponse = finalResponse;
+      if (invalidBinIdCount > 0) {
+        console.warn(`⚠️ Found ${invalidBinIdCount} invalid bin IDs that could not be auto-fixed`);
+      }
+      if (fixedBinIdCount > 0) {
+        console.log(`✅ Auto-fixed ${fixedBinIdCount} invalid bin IDs`);
+      }
+      if (addedBinIdCount > 0) {
+        console.log(`➕ Added ${addedBinIdCount} missing bin IDs`);
+      }
+      
+      aiResponse = finalResponse;
+    } // End of text-based validation (if JSON parsing failed)
     
     console.log('✅ AI response received and validated');
     return new Response(JSON.stringify({
