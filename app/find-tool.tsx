@@ -651,16 +651,29 @@ export default function FindToolScreen() {
     
     // Check if response contains JSON format and convert it first
     let processedResponse = response;
-    const jsonMatch = response.match(/```json\s*(\{[\s\S]*?\})\s*```/i) || 
-                      response.match(/\{[\s\S]*?"inventory_tools"[\s\S]*?\}/);
     
-    if (jsonMatch) {
+    // Look for JSON - try multiple patterns
+    let jsonStr = '';
+    const jsonCodeBlockMatch = response.match(/```json\s*(\{[\s\S]*?)\s*```/i);
+    const jsonInlineMatch = response.match(/\{\s*"inventory_tools"\s*:\s*\[([\s\S]*)/);
+    
+    if (jsonCodeBlockMatch) {
+      jsonStr = jsonCodeBlockMatch[1];
+    } else if (jsonInlineMatch) {
+      // Find the start of the JSON object
+      const jsonStart = response.indexOf('{');
+      if (jsonStart !== -1) {
+        jsonStr = response.substring(jsonStart);
+      }
+    }
+    
+    if (jsonStr) {
       try {
-        const jsonStr = jsonMatch[1] || jsonMatch[0];
+        // Try to parse complete JSON first
         const jsonData = JSON.parse(jsonStr);
         
         if (jsonData && jsonData.inventory_tools && Array.isArray(jsonData.inventory_tools) && jsonData.inventory_tools.length > 0) {
-          console.log('📦 Client-side: Found JSON format, converting to text');
+          console.log('📦 Client-side: Found complete JSON format, converting to text');
           
           // Convert JSON to text format
           let textFormat = 'SECTION 1 - Tools in Your Inventory:\n\n';
@@ -681,7 +694,124 @@ export default function FindToolScreen() {
           processedResponse = textFormat + (recommendedToolsSection ? '---' + recommendedToolsSection : '');
         }
       } catch (error) {
-        console.warn('⚠️ Client-side: Failed to parse JSON, using original response:', error);
+        // JSON might be truncated - try to extract individual tool objects manually
+        console.warn('⚠️ Client-side: JSON parse failed, trying to extract incomplete JSON:', error);
+        
+        try {
+          // Extract tool objects by finding individual JSON objects
+          // Look for pattern: {"tool_name": "...", "bin_id": "...", ...}
+          const tools: Array<{tool_name: string, bin_id: string, bin_name: string, bin_location: string, explanation?: string}> = [];
+          
+          // Find all tool objects by looking for opening braces followed by "tool_name"
+          let searchIndex = 0;
+          while (true) {
+            const toolStart = jsonStr.indexOf('{"tool_name"', searchIndex);
+            if (toolStart === -1) break;
+            
+            // Find the matching closing brace
+            let braceCount = 0;
+            let inString = false;
+            let escapeNext = false;
+            let toolEnd = -1;
+            
+            for (let i = toolStart; i < jsonStr.length; i++) {
+              const char = jsonStr[i];
+              
+              if (escapeNext) {
+                escapeNext = false;
+                continue;
+              }
+              
+              if (char === '\\') {
+                escapeNext = true;
+                continue;
+              }
+              
+              if (char === '"') {
+                inString = !inString;
+                continue;
+              }
+              
+              if (!inString) {
+                if (char === '{') braceCount++;
+                if (char === '}') {
+                  braceCount--;
+                  if (braceCount === 0) {
+                    toolEnd = i + 1;
+                    break;
+                  }
+                }
+              }
+            }
+            
+            if (toolEnd === -1) {
+              // Incomplete object - try to extract what we can
+              const partialJson = jsonStr.substring(toolStart);
+              // Try to parse fields individually
+              const toolNameMatch = partialJson.match(/"tool_name"\s*:\s*"([^"]+)"/);
+              const binIdMatch = partialJson.match(/"bin_id"\s*:\s*"([^"]+)"/);
+              const binNameMatch = partialJson.match(/"bin_name"\s*:\s*"([^"]+)"/);
+              const binLocationMatch = partialJson.match(/"bin_location"\s*:\s*"([^"]+)"/);
+              const explanationMatch = partialJson.match(/"explanation"\s*:\s*"([^"]*)"/);
+              
+              if (toolNameMatch && binIdMatch && binNameMatch && binLocationMatch) {
+                tools.push({
+                  tool_name: toolNameMatch[1],
+                  bin_id: binIdMatch[1],
+                  bin_name: binNameMatch[1],
+                  bin_location: binLocationMatch[1],
+                  explanation: explanationMatch ? explanationMatch[1] : undefined
+                });
+              }
+              break; // Stop after incomplete object
+            } else {
+              // Try to parse the complete object
+              try {
+                const toolJson = jsonStr.substring(toolStart, toolEnd);
+                const tool = JSON.parse(toolJson);
+                if (tool.tool_name && tool.bin_id) {
+                  tools.push({
+                    tool_name: tool.tool_name,
+                    bin_id: tool.bin_id,
+                    bin_name: tool.bin_name || '',
+                    bin_location: tool.bin_location || '',
+                    explanation: tool.explanation
+                  });
+                }
+              } catch (e) {
+                // Skip this object if it doesn't parse
+              }
+              searchIndex = toolEnd;
+            }
+          }
+          
+          if (tools.length > 0) {
+            console.log(`📦 Client-side: Extracted ${tools.length} tools from incomplete JSON`);
+            
+            // Convert to text format
+            let textFormat = 'SECTION 1 - Tools in Your Inventory:\n\n';
+            tools.forEach((tool, index) => {
+              textFormat += `${index + 1}. ${tool.tool_name}\n`;
+              textFormat += `   - Bin ID: ${tool.bin_id}\n`;
+              textFormat += `   - Bin Name: ${tool.bin_name}\n`;
+              textFormat += `   - Bin Location: ${tool.bin_location}\n`;
+              if (tool.explanation) {
+                textFormat += `   - Explanation: ${tool.explanation}\n`;
+              }
+              textFormat += '\n';
+            });
+            
+            // Replace JSON section with text format
+            const jsonStartIndex = response.indexOf('{');
+            if (jsonStartIndex !== -1) {
+              const beforeJson = response.substring(0, jsonStartIndex).replace(/\(JSON FORMAT\)/i, '').trim();
+              const afterJson = response.includes('---') ? response.split('---').slice(1).join('---') : '';
+              processedResponse = beforeJson + '\n\n' + textFormat + (afterJson ? '---' + afterJson : '');
+            }
+          }
+        } catch (extractError) {
+          console.warn('⚠️ Client-side: Failed to extract incomplete JSON, using original response:', extractError);
+        }
       }
     }
     
