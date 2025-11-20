@@ -90,17 +90,36 @@ SECTION 1 - Tools in Your Inventory:
 - List ALL tools from the inventory that are relevant to the user's question
 - For each tool, you MUST include:
   - The tool name
-  - The bin ID (CRITICAL: Copy the exact bin_id value from the inventory data - this is REQUIRED and must be included for every tool)
+  - The bin ID (CRITICAL: Copy the EXACT bin_id value from the inventory data - DO NOT generate or invent bin IDs)
   - The bin name where it is located
   - The bin location
   - Brief explanation of why this tool is suitable
-- Format each tool EXACTLY as:
-  1. [Tool Name]
-     - Bin ID: [MUST copy the exact bin_id value from the inventory JSON - this is REQUIRED]
-     - Bin Name: [bin name]
-     - Bin Location: [bin location]
+
+CRITICAL BIN ID RULES:
+1. You MUST copy the exact bin_id value from the inventory JSON data provided below
+2. DO NOT generate, invent, or create new bin IDs - only use bin_ids that exist in the inventory data
+3. DO NOT modify or change any characters in the bin_id - copy it exactly as shown
+4. Each bin_id is a UUID format like: "b3b014b1-540e-4c65-93c4-11f03c4cd2c9"
+5. If a tool is in a bin, find that bin's bin_id in the inventory data and copy it EXACTLY
+6. The bin_id must match exactly - character for character - what appears in the inventory JSON
+
+EXAMPLE:
+If the inventory shows:
+  {
+    "bin_id": "b3b014b1-540e-4c65-93c4-11f03c4cd2c9",
+    "bin_name": "2nd Drawer",
+    "bin_location": "Dropsaw Cabinet",
+    "tools": ["Hammer", "Screwdriver"]
+  }
+
+Then for the tool "Hammer", you MUST write:
+  1. Hammer
+     - Bin ID: b3b014b1-540e-4c65-93c4-11f03c4cd2c9
+     - Bin Name: 2nd Drawer
+     - Bin Location: Dropsaw Cabinet
      - Explanation: [why this tool is suitable]
-- IMPORTANT: The Bin ID field is MANDATORY - you must include it for every single tool. Look at the inventory data and copy the bin_id value exactly as it appears.
+
+Format each tool EXACTLY as shown above. The Bin ID must be copied exactly from the inventory data.
 - Do not limit yourself to just 3 tools - include all matching tools from the inventory
 
 SECTION 2 - Recommended Tools to Purchase:
@@ -119,19 +138,38 @@ Be conversational and helpful. If no suitable tools are found in inventory, stil
 CRITICAL FORMATTING RULE: You must write in plain text only. Never use asterisks (**) or any markdown formatting characters. Do not use ** for bold text. Write tool names, bin names, and bin locations in plain text without any asterisks. You can use numbered lists (1., 2., 3.) and bullet points (-) for structure, but absolutely no asterisks anywhere in your response.`;
     const userPrompt = `User Question: ${searchQuery}
 
-Tool Inventory (JSON format - each entry has a "bin_id" field that you MUST copy):
+Tool Inventory (JSON format - each entry has a "bin_id" field that you MUST copy EXACTLY):
 ${JSON.stringify(formattedInventory, null, 2)}
 
-IMPORTANT: In the inventory data above, each entry has a "bin_id" field (it's the first field in each entry). You MUST copy this exact bin_id value into the "Bin ID:" field for each tool you list in SECTION 1.
+CRITICAL INSTRUCTIONS FOR BIN IDs:
+1. Look at the inventory data above - each entry has a "bin_id" field as the FIRST field
+2. When you list a tool in SECTION 1, you MUST find which inventory entry contains that tool
+3. Copy the EXACT "bin_id" value from that inventory entry
+4. Paste it into the "Bin ID:" field - DO NOT change any characters
+5. DO NOT generate, invent, or create new bin IDs - only use bin_ids from the inventory data above
+6. DO NOT modify the bin_id in any way - copy it character-for-character exactly as shown
+
+EXAMPLE:
+If you want to list "Hammer" and the inventory shows:
+  {
+    "bin_id": "b3b014b1-540e-4c65-93c4-11f03c4cd2c9",
+    "bin_name": "2nd Drawer",
+    "tools": ["Hammer", "Screwdriver"]
+  }
+Then write: "Bin ID: b3b014b1-540e-4c65-93c4-11f03c4cd2c9" (copy exactly, no changes)
+
+VALID BIN IDs (these are the ONLY valid bin_ids - use ONLY these):
+${binIds.slice(0, 20).map(id => `- ${id}`).join('\n')}
+${binIds.length > 20 ? `... and ${binIds.length - 20} more (see full list in inventory data above)` : ''}
 
 Please help the user by:
 1. Finding ALL tools from their inventory that address their question - do not limit the number of tools, include every relevant tool from their inventory
-2. For EACH tool you list, you MUST include the Bin ID field. Look at the inventory data above - each entry has a "bin_id" field. Copy that exact value into the "Bin ID:" field for that tool. This is CRITICAL and REQUIRED.
+2. For EACH tool you list, you MUST include the Bin ID field with the EXACT bin_id from the inventory data above. Use ONLY the bin_ids listed in the "VALID BIN IDs" section above.
 3. Recommending exactly 3 tools NOT in their inventory that would be helpful, with Amazon search links
 
-CRITICAL REQUIREMENT: Every tool in SECTION 1 must have a "Bin ID:" field with the exact bin_id value from the inventory data. Do not skip this field. Do not make up bin IDs. Copy them exactly from the inventory JSON data provided above.
+REMEMBER: Only use bin_ids from the "VALID BIN IDs" list above. Do not create new ones. Copy them exactly.
 
-Remember: Write your response in plain text without using asterisks (**) or any markdown formatting. Use numbered lists and bullet points for structure, but no asterisks. Include the "---" separator between the inventory section and the recommended tools section. List ALL matching tools from the inventory, not just a few.`;
+Write your response in plain text without using asterisks (**) or any markdown formatting. Use numbered lists and bullet points for structure, but no asterisks. Include the "---" separator between the inventory section and the recommended tools section. List ALL matching tools from the inventory, not just a few.`;
     console.log('🤖 Calling OpenAI API...');
     // Call OpenAI API
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -175,7 +213,89 @@ Remember: Write your response in plain text without using asterisks (**) or any 
     // Remove asterisks from the response as a fallback
     aiResponse = aiResponse.replace(/\*\*/g, '');
     
-    console.log('✅ AI response received');
+    // Validate and fix bin IDs in the response
+    const validBinIds = new Set(inventory?.map(item => item.id.toLowerCase()) || []);
+    const binIdMap = new Map<string, string>(); // Map bin_name+location to bin_id
+    inventory?.forEach(item => {
+      const key = `${item.bin_name?.toLowerCase().trim()}|${item.bin_location?.toLowerCase().trim()}`;
+      binIdMap.set(key, item.id);
+    });
+    
+    // Extract and validate bin IDs from response
+    const lines = aiResponse.split('\n');
+    let fixedResponse = '';
+    let invalidBinIdCount = 0;
+    let fixedBinIdCount = 0;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const binIdMatch = line.match(/^[-]?\s*Bin [Ii][Dd]:\s*(.+)$/i);
+      
+      if (binIdMatch) {
+        const rawBinId = binIdMatch[1].trim();
+        const uuidMatch = rawBinId.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+        
+        if (uuidMatch) {
+          const binId = uuidMatch[1].toLowerCase();
+          
+          // Check if bin ID is valid
+          if (validBinIds.has(binId)) {
+            fixedResponse += line + '\n';
+          } else {
+            // Try to find correct bin ID by matching bin name and location
+            let fixed = false;
+            
+            // Look ahead for bin name and location
+            for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
+              const binNameMatch = lines[j].match(/^[-]?\s*Bin [Nn]ame:\s*(.+)$/i);
+              const binLocationMatch = lines[j].match(/^[-]?\s*Bin [Ll]ocation:\s*(.+)$/i);
+              
+              if (binNameMatch || binLocationMatch) {
+                const binName = binNameMatch ? binNameMatch[1].trim().toLowerCase() : '';
+                const binLocation = binLocationMatch ? binLocationMatch[1].trim().toLowerCase() : '';
+                
+                // Try to find matching bin
+                for (const [key, correctBinId] of binIdMap.entries()) {
+                  const [name, location] = key.split('|');
+                  if ((!binName || name.includes(binName) || binName.includes(name)) &&
+                      (!binLocation || location.includes(binLocation) || binLocation.includes(location))) {
+                    // Replace with correct bin ID (replace the entire value after "Bin ID:")
+                    fixedResponse += line.replace(/Bin [Ii][Dd]:\s*.+/i, `Bin ID: ${correctBinId}`) + '\n';
+                    fixedBinIdCount++;
+                    fixed = true;
+                    console.log(`🔧 Fixed invalid bin ID: ${binId} -> ${correctBinId} (${binNameMatch?.[1] || 'unknown'})`);
+                    break;
+                  }
+                }
+                
+                if (fixed) break;
+              }
+            }
+            
+            if (!fixed) {
+              invalidBinIdCount++;
+              console.warn(`⚠️ Invalid bin ID found but could not fix: ${binId}`);
+              fixedResponse += line + '\n'; // Keep original (will be handled by client-side fallback)
+            }
+          }
+        } else {
+          fixedResponse += line + '\n';
+        }
+      } else {
+        fixedResponse += line + '\n';
+      }
+    }
+    
+    if (invalidBinIdCount > 0) {
+      console.warn(`⚠️ Found ${invalidBinIdCount} invalid bin IDs that could not be auto-fixed`);
+    }
+    if (fixedBinIdCount > 0) {
+      console.log(`✅ Auto-fixed ${fixedBinIdCount} invalid bin IDs`);
+    }
+    
+    aiResponse = fixedResponse;
+    
+    console.log('✅ AI response received and validated');
     return new Response(JSON.stringify({
       response: aiResponse,
       inventoryCount: inventory?.length || 0
