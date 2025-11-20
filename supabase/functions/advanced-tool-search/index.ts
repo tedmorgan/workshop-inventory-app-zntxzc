@@ -361,6 +361,69 @@ Write your response in plain text without using asterisks (**) or any markdown f
               }
             }
             
+            // Strategy 5: Fuzzy UUID matching - catch single-character typos
+            if (!correctBinId) {
+              // Calculate edit distance (Levenshtein-like) for UUIDs
+              // For UUIDs, we'll check if they differ by only 1-2 characters
+              const invalidId = binId;
+              let bestMatch: { id: string; distance: number } | null = null;
+              
+              // Convert Set to Array for iteration
+              const validBinIdsArray = Array.from(validBinIds) as string[];
+              
+              for (const validId of validBinIdsArray) {
+                // Count character differences
+                let differences = 0;
+                for (let k = 0; k < Math.min(invalidId.length, validId.length); k++) {
+                  if (invalidId[k] !== validId[k]) {
+                    differences++;
+                  }
+                }
+                differences += Math.abs(invalidId.length - validId.length);
+                
+                // If very close (1-2 character difference), it's likely a typo
+                if (differences <= 2 && (!bestMatch || differences < bestMatch.distance)) {
+                  bestMatch = { id: validId, distance: differences };
+                }
+              }
+              
+              if (bestMatch && bestMatch.distance <= 2) {
+                // Verify by checking if bin name matches (to avoid false positives)
+                // But be lenient - if UUID is very close, trust it
+                let binNameMatches = false;
+                let contextBinName = '';
+                
+                for (let j = Math.max(0, i - 5); j < Math.min(i + 10, lines.length); j++) {
+                  const binNameMatch = lines[j].match(/^[-]?\s*Bin [Nn]ame:\s*(.+)$/i);
+                  if (binNameMatch) {
+                    contextBinName = binNameMatch[1].trim().toLowerCase();
+                    // Find which bin this ID belongs to
+                    for (const [name, id] of binNameMap.entries()) {
+                      if (id.toLowerCase() === bestMatch.id) {
+                        // Check if names are similar (very lenient for close UUIDs)
+                        if (name.includes(contextBinName) || contextBinName.includes(name) || 
+                            name === contextBinName || 
+                            Math.abs(name.length - contextBinName.length) <= 5 ||
+                            // If UUID is only 1 char off, be very lenient
+                            (bestMatch.distance === 1 && (name.length > 0 && contextBinName.length > 0))) {
+                          binNameMatches = true;
+                          break;
+                        }
+                      }
+                    }
+                    if (binNameMatches) break;
+                  }
+                }
+                
+                // If UUID is only 1 character different, trust it even without perfect bin name match
+                // (GPT might have made a typo but got the right bin)
+                if (bestMatch.distance === 1 || binNameMatches) {
+                  correctBinId = bestMatch.id;
+                  fixMethod = `fuzzy UUID match (${bestMatch.distance} char difference${binNameMatches ? `, bin: ${contextBinName}` : ', auto-fixed'})`;
+                }
+              }
+            }
+            
             if (correctBinId) {
               fixedResponse += line.replace(/Bin [Ii][Dd]:\s*.+/i, `Bin ID: ${correctBinId}`) + '\n';
               fixedBinIdCount++;
