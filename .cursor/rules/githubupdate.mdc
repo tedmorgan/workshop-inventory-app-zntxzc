@@ -1,0 +1,5 @@
+---
+description: Github Publish
+alwaysApply: false
+---
+- if supabase edge functions are updated, push files to Github

@@ -172,16 +172,23 @@ export default function InventoryScreen() {
           const binExists = inventory.some(item => item.id === currentFilterBinId);
           console.log('⚠️ Bin ID exists in inventory:', binExists);
           if (!binExists) {
-            console.log('⚠️ Bin ID not found in inventory - this might be a stale filter');
-            // Try to find by name as fallback
-            const binNameMatch = inventory.find(item => 
-              item.bin_name?.toLowerCase().includes('drywall') || 
-              item.bin_name?.toLowerCase().includes('masonry') ||
-              item.bin_name?.toLowerCase().includes('tiling')
-            );
-            if (binNameMatch) {
-              console.log('🔍 Found potential match by name:', binNameMatch.bin_name, 'ID:', binNameMatch.id);
-            }
+            console.log('⚠️ Bin ID not found in inventory - this might be a stale or incorrect bin ID from GPT');
+            console.log('⚠️ This suggests GPT may have returned an incorrect bin ID. Available bin IDs:', inventory.map(i => i.id).slice(0, 10));
+            console.log('⚠️ Available bin names:', inventory.map(i => `${i.bin_name} (${i.bin_location})`).slice(0, 10));
+            
+            // Show all inventory since we can't match the bin ID
+            // The user can manually find the bin they're looking for
+            console.log('⚠️ Showing all inventory since bin ID does not exist');
+            setFilteredInventory(inventory);
+            
+            // Clear the invalid filter
+            setTimeout(() => {
+              if (navContext.filterBinId === currentFilterBinId) {
+                console.log('🔍 Clearing invalid filterBinId from context');
+                navContext.setFilterBinId(null);
+                setCurrentFilterBinId(null);
+              }
+            }, 1000);
           }
         } else {
           console.log('✅ Found matching bin:', filtered[0].bin_name, filtered[0].bin_location);

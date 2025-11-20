@@ -64,6 +64,10 @@ Deno.serve(async (req)=>{
       });
     }
     console.log(`✅ Found ${inventory?.length || 0} inventory items`);
+    // Log bin IDs for debugging
+    const binIds = inventory?.map(item => item.id) || [];
+    console.log(`📋 Bin IDs in inventory (first 10):`, binIds.slice(0, 10));
+    
     // Format inventory for the AI prompt
     // IMPORTANT: bin_id is the first field so GPT sees it prominently
     const formattedInventory = inventory?.map((item, index)=>({

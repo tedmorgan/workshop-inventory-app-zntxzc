@@ -194,12 +194,25 @@ export default function FindToolScreen() {
           return;
         }
         
-        // Find the bin matching name and location
+        // Find the bin matching name and location (flexible matching)
         const matchingBin = data?.find(item => {
-          const nameMatch = item.bin_name?.trim().toLowerCase() === binName.trim().toLowerCase();
-          const locationMatch = !binLocation || item.bin_location?.trim().toLowerCase() === binLocation.trim().toLowerCase();
-          return nameMatch && locationMatch;
+          const itemBinName = item.bin_name?.trim().toLowerCase() || '';
+          const searchBinName = binName.trim().toLowerCase();
+          // Try exact match first
+          let nameMatch = itemBinName === searchBinName;
+          // If no exact match, try partial match (either contains the other)
+          if (!nameMatch) {
+            nameMatch = itemBinName.includes(searchBinName) || searchBinName.includes(itemBinName);
+          }
+          const locationMatch = !binLocation || 
+            item.bin_location?.trim().toLowerCase() === binLocation.trim().toLowerCase() ||
+            item.bin_location?.trim().toLowerCase().includes(binLocation.trim().toLowerCase()) ||
+            binLocation.trim().toLowerCase().includes(item.bin_location?.trim().toLowerCase() || '');
+          return nameMatch && (locationMatch || !binLocation);
         });
+        
+        console.log('🔍 Fallback lookup - searching for:', binName, binLocation);
+        console.log('🔍 Available bins:', data?.map(i => `${i.bin_name} (${i.bin_location})`).slice(0, 5));
         
         if (matchingBin) {
           console.log('✅ Found bin ID via lookup:', matchingBin.id, 'for bin:', binName);
