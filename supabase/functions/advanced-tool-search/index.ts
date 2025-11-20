@@ -210,6 +210,7 @@ Write your response in plain text without using asterisks (**) or any markdown f
     // Try to parse JSON format first (more accurate)
     const validBinIds = new Set(inventory?.map(item => item.id.toLowerCase()) || []);
     let parsedFromJson = false;
+    const originalResponse = aiResponse; // Preserve original in case of errors
     
     // Look for JSON in the response
     const jsonMatch = aiResponse.match(/```json\s*(\{[\s\S]*?\})\s*```/i) || 
@@ -220,28 +221,36 @@ Write your response in plain text without using asterisks (**) or any markdown f
         const jsonStr = jsonMatch[1] || jsonMatch[0];
         const jsonData = JSON.parse(jsonStr);
         
-        if (jsonData.inventory_tools && Array.isArray(jsonData.inventory_tools)) {
+        if (jsonData && jsonData.inventory_tools && Array.isArray(jsonData.inventory_tools) && jsonData.inventory_tools.length > 0) {
           console.log('📦 Found JSON format, parsing and validating...');
           
           // Validate and fix bin IDs in JSON
           const fixedTools = jsonData.inventory_tools.map((tool: any) => {
-            const originalBinId = tool.bin_id?.toLowerCase().trim();
+            if (!tool || typeof tool !== 'object') {
+              console.warn('⚠️ Invalid tool object in JSON:', tool);
+              return null;
+            }
+            
+            const originalBinId = tool.bin_id ? String(tool.bin_id).toLowerCase().trim() : null;
             
             if (!originalBinId) {
               // Try to find bin ID by name/location
-              const binName = tool.bin_name?.toLowerCase().trim() || '';
-              const binLocation = tool.bin_location?.toLowerCase().trim() || '';
+              const binName = tool.bin_name ? String(tool.bin_name).toLowerCase().trim() : '';
+              const binLocation = tool.bin_location ? String(tool.bin_location).toLowerCase().trim() : '';
               
               // Find matching bin
-              for (const item of inventory || []) {
-                const itemName = item.bin_name?.toLowerCase().trim() || '';
-                const itemLocation = item.bin_location?.toLowerCase().trim() || '';
-                
-                if ((!binName || itemName.includes(binName) || binName.includes(itemName)) &&
-                    (!binLocation || itemLocation.includes(binLocation) || binLocation.includes(itemLocation))) {
-                  tool.bin_id = item.id;
-                  console.log(`➕ Added missing bin ID for ${tool.tool_name}: ${item.id}`);
-                  return tool;
+              if (inventory && inventory.length > 0) {
+                for (const item of inventory) {
+                  if (!item || !item.id) continue;
+                  const itemName = item.bin_name ? String(item.bin_name).toLowerCase().trim() : '';
+                  const itemLocation = item.bin_location ? String(item.bin_location).toLowerCase().trim() : '';
+                  
+                  if ((!binName || itemName.includes(binName) || binName.includes(itemName)) &&
+                      (!binLocation || itemLocation.includes(binLocation) || binLocation.includes(itemLocation))) {
+                    tool.bin_id = item.id;
+                    console.log(`➕ Added missing bin ID for ${tool.tool_name || 'unknown'}: ${item.id}`);
+                    return tool;
+                  }
                 }
               }
               return tool;
@@ -271,34 +280,46 @@ Write your response in plain text without using asterisks (**) or any markdown f
               tool.bin_id = bestMatch.id;
             } else {
               // Try to find by bin name/location
-              const binName = tool.bin_name?.toLowerCase().trim() || '';
-              const binLocation = tool.bin_location?.toLowerCase().trim() || '';
+              const binName = tool.bin_name ? String(tool.bin_name).toLowerCase().trim() : '';
+              const binLocation = tool.bin_location ? String(tool.bin_location).toLowerCase().trim() : '';
               
-              for (const item of inventory || []) {
-                const itemName = item.bin_name?.toLowerCase().trim() || '';
-                const itemLocation = item.bin_location?.toLowerCase().trim() || '';
-                
-                if ((!binName || itemName.includes(binName) || binName.includes(itemName)) &&
-                    (!binLocation || itemLocation.includes(binLocation) || binLocation.includes(itemLocation))) {
-                  console.log(`🔧 Fixed invalid bin ID in JSON by name match: ${originalBinId} -> ${item.id}`);
-                  tool.bin_id = item.id;
-                  break;
+              if (inventory && inventory.length > 0) {
+                for (const item of inventory) {
+                  if (!item || !item.id) continue;
+                  const itemName = item.bin_name ? String(item.bin_name).toLowerCase().trim() : '';
+                  const itemLocation = item.bin_location ? String(item.bin_location).toLowerCase().trim() : '';
+                  
+                  if ((!binName || itemName.includes(binName) || binName.includes(itemName)) &&
+                      (!binLocation || itemLocation.includes(binLocation) || binLocation.includes(itemLocation))) {
+                    console.log(`🔧 Fixed invalid bin ID in JSON by name match: ${originalBinId} -> ${item.id}`);
+                    tool.bin_id = item.id;
+                    break;
+                  }
                 }
               }
             }
             
             return tool;
-          });
+          }).filter((tool: any) => tool !== null); // Remove any null entries
+          
+          if (fixedTools.length === 0) {
+            console.warn('⚠️ No valid tools found in JSON, falling back to text parsing');
+            throw new Error('No valid tools in JSON');
+          }
           
           // Convert JSON back to text format (for client compatibility)
           let textFormat = 'SECTION 1 - Tools in Your Inventory:\n\n';
           fixedTools.forEach((tool: any, index: number) => {
-            textFormat += `${index + 1}. ${tool.tool_name}\n`;
+            if (!tool || !tool.tool_name) {
+              console.warn('⚠️ Skipping invalid tool:', tool);
+              return;
+            }
+            textFormat += `${index + 1}. ${String(tool.tool_name || 'Unknown Tool')}\n`;
             textFormat += `   - Bin ID: ${tool.bin_id || 'MISSING'}\n`;
-            textFormat += `   - Bin Name: ${tool.bin_name || ''}\n`;
-            textFormat += `   - Bin Location: ${tool.bin_location || ''}\n`;
+            textFormat += `   - Bin Name: ${String(tool.bin_name || '')}\n`;
+            textFormat += `   - Bin Location: ${String(tool.bin_location || '')}\n`;
             if (tool.explanation) {
-              textFormat += `   - Explanation: ${tool.explanation}\n`;
+              textFormat += `   - Explanation: ${String(tool.explanation)}\n`;
             }
             textFormat += '\n';
           });
@@ -311,6 +332,14 @@ Write your response in plain text without using asterisks (**) or any markdown f
         }
       } catch (error) {
         console.warn('⚠️ Failed to parse JSON, falling back to text parsing:', error);
+        console.warn('⚠️ Error details:', error instanceof Error ? error.message : String(error));
+        console.warn('⚠️ Response preview:', aiResponse.substring(0, 500));
+        // Restore original response if we modified it
+        if (parsedFromJson) {
+          aiResponse = originalResponse;
+          parsedFromJson = false;
+        }
+        // Continue with text parsing - don't throw, just log
       }
     }
     
