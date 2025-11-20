@@ -91,11 +91,18 @@ export default function InventoryScreen() {
         setCurrentFilterBinId(navContext.filterBinId);
         filterBinReadRef.current = true;
         // Don't clear it here - let the useEffect handle it
+      } else if (!navContext.filterBinId && currentFilterBinId && !filterBinReadRef.current) {
+        // If context is null but we have a local filter, keep using it (might be applying)
+        console.log('🔍 Context filterBinId is null but keeping local filter:', currentFilterBinId);
+        filterBinReadRef.current = true;
       }
       
       // Reset the ref when we lose focus (so we can read a new filter next time)
+      // But only if we don't have an active filter
       return () => {
-        filterBinReadRef.current = false;
+        if (!currentFilterBinId) {
+          filterBinReadRef.current = false;
+        }
       };
     }, [navContext.returnToSearch, navContext.filterBinId, navContext.editBinId, currentFilterBinId])
   );
@@ -128,14 +135,23 @@ export default function InventoryScreen() {
 
   // Read filterBinId from context and store it locally (one-time read)
   useEffect(() => {
-    if (navContext.filterBinId && !filterBinReadRef.current) {
-      console.log('🔍 Received filterBinId from context in useEffect:', navContext.filterBinId);
-      setCurrentFilterBinId(navContext.filterBinId);
-      filterBinReadRef.current = true;
-      console.log('🔍 Stored filterBinId in state:', navContext.filterBinId);
+    if (navContext.filterBinId) {
+      if (!filterBinReadRef.current) {
+        console.log('🔍 Received filterBinId from context in useEffect:', navContext.filterBinId);
+        setCurrentFilterBinId(navContext.filterBinId);
+        filterBinReadRef.current = true;
+        console.log('🔍 Stored filterBinId in state:', navContext.filterBinId);
+      } else if (currentFilterBinId !== navContext.filterBinId) {
+        // If we already read one but context has a different one, update it
+        console.log('🔍 Updating filterBinId from context:', navContext.filterBinId, 'old:', currentFilterBinId);
+        setCurrentFilterBinId(navContext.filterBinId);
+      }
       // Don't clear it yet - wait until filter is successfully applied
+    } else if (navContext.filterBinId === null && currentFilterBinId && filterBinReadRef.current) {
+      // If context was cleared but we still have a filter, keep it (might be applying)
+      console.log('🔍 Context filterBinId cleared but keeping local filter:', currentFilterBinId);
     }
-  }, [navContext.filterBinId]);
+  }, [navContext.filterBinId, currentFilterBinId]);
 
   // Apply the filter when inventory loads or filter changes
   useEffect(() => {
@@ -143,19 +159,41 @@ export default function InventoryScreen() {
     if (currentFilterBinId) {
       if (inventory.length > 0) {
         console.log('🔍 Filtering inventory by bin ID:', currentFilterBinId);
+        console.log('🔍 Available bin IDs in inventory:', inventory.map(i => i.id).slice(0, 5));
         const filtered = inventory.filter(item => item.id === currentFilterBinId);
         console.log('🔍 Filtered to', filtered.length, 'items out of', inventory.length);
-        if (filtered.length === 0) {
-          console.log('⚠️ No items matched filter! Bin ID:', currentFilterBinId);
-        } else {
-          console.log('✅ Found matching bin:', filtered[0].bin_name, filtered[0].bin_location);
-        }
+        
+        // Always set filteredInventory, even if empty, to show we're filtering
         setFilteredInventory(filtered);
         
-        // Clear filterBinId from context after successfully applying filter
-        if (navContext.filterBinId === currentFilterBinId) {
-          console.log('🔍 Clearing filterBinId from context after successful filter');
-          navContext.setFilterBinId(null);
+        if (filtered.length === 0) {
+          console.log('⚠️ No items matched filter! Bin ID:', currentFilterBinId);
+          console.log('⚠️ Checking if bin ID exists in inventory...');
+          const binExists = inventory.some(item => item.id === currentFilterBinId);
+          console.log('⚠️ Bin ID exists in inventory:', binExists);
+          if (!binExists) {
+            console.log('⚠️ Bin ID not found in inventory - this might be a stale filter');
+            // Try to find by name as fallback
+            const binNameMatch = inventory.find(item => 
+              item.bin_name?.toLowerCase().includes('drywall') || 
+              item.bin_name?.toLowerCase().includes('masonry') ||
+              item.bin_name?.toLowerCase().includes('tiling')
+            );
+            if (binNameMatch) {
+              console.log('🔍 Found potential match by name:', binNameMatch.bin_name, 'ID:', binNameMatch.id);
+            }
+          }
+        } else {
+          console.log('✅ Found matching bin:', filtered[0].bin_name, filtered[0].bin_location);
+          
+          // Only clear filterBinId from context after successfully filtering AND showing results
+          // Use a small delay to ensure the UI has updated and state has propagated
+          setTimeout(() => {
+            if (navContext.filterBinId === currentFilterBinId && filtered.length > 0) {
+              console.log('🔍 Clearing filterBinId from context after successful filter');
+              navContext.setFilterBinId(null);
+            }
+          }, 500);
         }
       } else {
         console.log('🔍 Inventory not loaded yet, waiting...');

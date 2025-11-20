@@ -45,15 +45,10 @@ type ToolInventoryItem = {
   device_id: string;
 };
 
-type SearchMode = 'simple' | 'advanced';
-
 export default function FindToolScreen() {
   const router = useRouter();
   const navigation = useNavigation();
-  const [searchMode, setSearchMode] = useState<SearchMode>('simple');
-  const [simpleSearchQuery, setSimpleSearchQuery] = useState('');
   const [advancedSearchQuery, setAdvancedSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<ToolInventoryItem[]>([]);
   const [aiResponse, setAiResponse] = useState<string>('');
   const [searching, setSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
@@ -75,10 +70,7 @@ export default function FindToolScreen() {
   const saveSearchState = async () => {
     try {
       const state = {
-        searchMode,
-        simpleSearchQuery,
         advancedSearchQuery,
-        searchResults,
         aiResponse,
         hasSearched,
       };
@@ -96,15 +88,10 @@ export default function FindToolScreen() {
       if (stateStr) {
         const state = JSON.parse(stateStr);
         console.log('📂 Restoring search state:', {
-          searchMode: state.searchMode,
           hasSearched: state.hasSearched,
-          resultsCount: state.searchResults?.length || 0,
           hasAiResponse: !!state.aiResponse
         });
-        setSearchMode(state.searchMode);
-        setSimpleSearchQuery(state.simpleSearchQuery || '');
         setAdvancedSearchQuery(state.advancedSearchQuery || '');
-        setSearchResults(state.searchResults || []);
         setAiResponse(state.aiResponse || '');
         setHasSearched(state.hasSearched || false);
       }
@@ -126,58 +113,7 @@ export default function FindToolScreen() {
     if (hasSearched) {
       saveSearchState();
     }
-  }, [searchMode, simpleSearchQuery, advancedSearchQuery, searchResults, aiResponse, hasSearched]);
-
-  const searchToolsSimple = async () => {
-    if (!simpleSearchQuery.trim()) {
-      return;
-    }
-
-    Keyboard.dismiss();
-    setSearching(true);
-    setHasSearched(true);
-    setAiResponse('');
-
-    try {
-      console.log('🔍 Simple search for:', simpleSearchQuery);
-
-      // Get device ID
-      const deviceId = await getDeviceId();
-      console.log('📱 Device ID:', deviceId.substring(0, 8) + '...');
-
-      // Query with device_id filter
-      const { data, error } = await supabase
-        .from('tool_inventory')
-        .select('*')
-        .eq('device_id', deviceId)
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error('❌ Search error:', error);
-        return;
-      }
-
-      console.log(`📦 Found ${data?.length || 0} total items`);
-
-      // Filter results on client side
-      const searchLower = simpleSearchQuery.toLowerCase();
-      const filtered = (data || []).filter((item) => {
-        const toolsMatch = item.tools.some((tool) =>
-          tool.toLowerCase().includes(searchLower)
-        );
-        const binNameMatch = item.bin_name.toLowerCase().includes(searchLower);
-        const binLocationMatch = item.bin_location.toLowerCase().includes(searchLower);
-        return toolsMatch || binNameMatch || binLocationMatch;
-      });
-
-      console.log(`✅ Filtered to ${filtered.length} matching items`);
-      setSearchResults(filtered);
-    } catch (error) {
-      console.error('❌ Error:', error);
-    } finally {
-      setSearching(false);
-    }
-  };
+  }, [advancedSearchQuery, aiResponse, hasSearched]);
 
   const searchToolsAdvanced = async () => {
     if (!advancedSearchQuery.trim()) {
@@ -187,7 +123,6 @@ export default function FindToolScreen() {
     Keyboard.dismiss();
     setSearching(true);
     setHasSearched(true);
-    setSearchResults([]);
     setAiResponse('');
     setFailedImageUrls(new Set());
     setToolImageUrls(new Map());
@@ -225,14 +160,6 @@ export default function FindToolScreen() {
     }
   };
 
-  const handleBinSelect = (item: ToolInventoryItem) => {
-    console.log('📤 Setting returnToSearch = true, filterBinId:', item.id, 'bin:', item.bin_name);
-    navigation.setReturnToSearch(true);
-    navigation.setFilterBinId(item.id);
-    navigation.setEditBinId(null);
-    router.push('/(tabs)/inventory');
-  };
-
   const openViewInventory = () => {
     console.log('📤 Setting returnToSearch = true');
     navigation.setReturnToSearch(true);
@@ -241,20 +168,59 @@ export default function FindToolScreen() {
     router.push('/(tabs)/inventory');
   };
 
-  const openInventoryForBin = (binId: string | null, binName: string, binLocation?: string) => {
-    if (binId) {
+  const openInventoryForBin = async (binId: string | null, binName: string, binLocation?: string) => {
+    if (binId && binId.match(/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i)) {
       console.log('📤 Using bin ID directly:', binId, 'for bin:', binName);
       navigation.setReturnToSearch(true);
       navigation.setFilterBinId(binId);
       navigation.setEditBinId(null);
       router.push('/(tabs)/inventory');
     } else {
-      console.warn('⚠️ No bin ID provided for:', binName, binLocation, '- navigating without filter');
-      // Fallback: navigate without filter if bin ID is missing
-      navigation.setReturnToSearch(true);
-      navigation.setFilterBinId(null);
-      navigation.setEditBinId(null);
-      router.push('/(tabs)/inventory');
+      console.warn('⚠️ Invalid or missing bin ID:', binId, '- attempting lookup by name/location');
+      // Fallback: try to find bin by name and location
+      try {
+        const deviceId = await getDeviceId();
+        const { data, error } = await supabase
+          .from('tool_inventory')
+          .select('id, bin_name, bin_location')
+          .eq('device_id', deviceId);
+        
+        if (error) {
+          console.error('❌ Error fetching inventory for bin lookup:', error);
+          navigation.setReturnToSearch(true);
+          navigation.setFilterBinId(null);
+          navigation.setEditBinId(null);
+          router.push('/(tabs)/inventory');
+          return;
+        }
+        
+        // Find the bin matching name and location
+        const matchingBin = data?.find(item => {
+          const nameMatch = item.bin_name?.trim().toLowerCase() === binName.trim().toLowerCase();
+          const locationMatch = !binLocation || item.bin_location?.trim().toLowerCase() === binLocation.trim().toLowerCase();
+          return nameMatch && locationMatch;
+        });
+        
+        if (matchingBin) {
+          console.log('✅ Found bin ID via lookup:', matchingBin.id, 'for bin:', binName);
+          navigation.setReturnToSearch(true);
+          navigation.setFilterBinId(matchingBin.id);
+          navigation.setEditBinId(null);
+          router.push('/(tabs)/inventory');
+        } else {
+          console.warn('⚠️ Could not find matching bin for:', binName, binLocation, '- navigating without filter');
+          navigation.setReturnToSearch(true);
+          navigation.setFilterBinId(null);
+          navigation.setEditBinId(null);
+          router.push('/(tabs)/inventory');
+        }
+      } catch (error) {
+        console.error('❌ Error in openInventoryForBin fallback:', error);
+        navigation.setReturnToSearch(true);
+        navigation.setFilterBinId(null);
+        navigation.setEditBinId(null);
+        router.push('/(tabs)/inventory');
+      }
     }
   };
 
@@ -459,9 +425,28 @@ export default function FindToolScreen() {
       }
       
       // Check for bin ID (with or without leading dash) - must come before bin name check
+      // UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (8-4-4-4-12 hex digits)
       const binIdMatch = trimmedLine.match(/^[-]?\s*Bin [Ii][Dd]:\s*(.+)$/i);
       if (binIdMatch && currentTool) {
-        currentTool.binId = binIdMatch[1].trim();
+        const rawBinId = binIdMatch[1].trim();
+        console.log('🔍 Raw bin ID text:', rawBinId);
+        
+        // Extract UUID from the text (might have extra characters)
+        const uuidMatch = rawBinId.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+        if (uuidMatch) {
+          const binId = uuidMatch[1].toLowerCase();
+          // Validate it's a proper UUID format
+          if (binId.match(/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i)) {
+            currentTool.binId = binId;
+            console.log('✅ Valid bin ID parsed:', binId);
+          } else {
+            console.warn('⚠️ Invalid bin ID format after extraction:', binId);
+            currentTool.binId = null;
+          }
+        } else {
+          console.warn('⚠️ No UUID found in bin ID text:', rawBinId);
+          currentTool.binId = null;
+        }
         return;
       }
       
@@ -518,6 +503,13 @@ export default function FindToolScreen() {
     console.log('🔍 First 200 chars:', inventoryText.substring(0, 200));
     const tools = parseInventoryTools(inventoryText);
     console.log('🔍 Parsed tools:', tools.length, tools.map(t => ({ name: t.name, binId: t.binId, binName: t.binName })));
+    
+    // Check for missing bin IDs
+    const toolsWithoutBinId = tools.filter(t => !t.binId);
+    if (toolsWithoutBinId.length > 0) {
+      console.warn('⚠️ WARNING: Found', toolsWithoutBinId.length, 'tools without bin IDs:', toolsWithoutBinId.map(t => t.name));
+      console.warn('⚠️ GPT did not include bin IDs for these tools. They will use fallback lookup by name/location.');
+    }
     
     if (tools.length === 0) {
       console.log('⚠️ No tools parsed, falling back to text rendering');
@@ -779,8 +771,7 @@ export default function FindToolScreen() {
     };
   });
 
-  const currentSearchQuery = searchMode === 'simple' ? simpleSearchQuery : advancedSearchQuery;
-  const canSearch = currentSearchQuery.trim().length > 0;
+  const canSearch = advancedSearchQuery.trim().length > 0;
 
   return (
     <>
@@ -796,111 +787,37 @@ export default function FindToolScreen() {
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={styles.innerContainer}>
-            {/* Search Mode Toggle */}
-            <View style={styles.modeToggleContainer}>
-              <Pressable
-                style={[
-                  styles.modeButton,
-                  searchMode === 'simple' && styles.modeButtonActive,
-                  { backgroundColor: searchMode === 'simple' ? colors.primary : colors.card }
-                ]}
-                onPress={() => {
-                  setSearchMode('simple');
-                  setHasSearched(false);
-                  setSearchResults([]);
-                  setAiResponse('');
-                }}
-              >
-                <IconSymbol 
-                  name="magnifyingglass" 
-                  size={18} 
-                  color={searchMode === 'simple' ? '#FFFFFF' : colors.text} 
-                />
-                <Text style={[
-                  styles.modeButtonText,
-                  { color: searchMode === 'simple' ? '#FFFFFF' : colors.text }
-                ]}>
-                  Simple Tool Search
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  styles.modeButton,
-                  searchMode === 'advanced' && styles.modeButtonActive,
-                  { backgroundColor: searchMode === 'advanced' ? colors.primary : colors.card }
-                ]}
-                onPress={() => {
-                  setSearchMode('advanced');
-                  setHasSearched(false);
-                  setSearchResults([]);
-                  setAiResponse('');
-                }}
-              >
-                <IconSymbol 
-                  name="sparkles" 
-                  size={18} 
-                  color={searchMode === 'advanced' ? '#FFFFFF' : colors.text} 
-                />
-                <Text style={[
-                  styles.modeButtonText,
-                  { color: searchMode === 'advanced' ? '#FFFFFF' : colors.text }
-                ]}>
-                  Advanced Search
-                </Text>
-              </Pressable>
-            </View>
-
             {/* Search Section */}
             <View style={styles.searchSection}>
-              {searchMode === 'simple' ? (
-                <View style={[styles.searchBar, { backgroundColor: colors.card }]}>
-                  <IconSymbol name="magnifyingglass" size={20} color={colors.textSecondary} />
-                  <TextInput
-                    style={[styles.searchInput, { color: colors.text }]}
-                    placeholder="Search for a tool, bin, or location..."
-                    placeholderTextColor={colors.textSecondary}
-                    value={simpleSearchQuery}
-                    onChangeText={setSimpleSearchQuery}
-                    onSubmitEditing={searchToolsSimple}
-                    returnKeyType="search"
-                  />
-                  {simpleSearchQuery.length > 0 && (
-                    <Pressable onPress={() => setSimpleSearchQuery('')}>
-                      <IconSymbol name="xmark.circle.fill" size={20} color={colors.textSecondary} />
-                    </Pressable>
-                  )}
+              <View style={[styles.advancedSearchContainer, { backgroundColor: colors.card }]}>
+                <View style={styles.advancedSearchHeader}>
+                  <IconSymbol name="sparkles" size={20} color={colors.primary} />
+                  <Text style={[styles.advancedSearchLabel, { color: colors.text }]}>
+                    Advanced Search
+                  </Text>
                 </View>
-              ) : (
-                <View style={[styles.advancedSearchContainer, { backgroundColor: colors.card }]}>
-                  <View style={styles.advancedSearchHeader}>
-                    <IconSymbol name="sparkles" size={20} color={colors.primary} />
-                    <Text style={[styles.advancedSearchLabel, { color: colors.text }]}>
-                      Advanced Search
-                    </Text>
-                  </View>
-                  <TextInput
-                    style={[styles.advancedSearchInput, { color: colors.text }]}
-                    placeholder="What would be good to use for removing drywall?"
-                    placeholderTextColor={colors.textSecondary}
-                    value={advancedSearchQuery}
-                    onChangeText={setAdvancedSearchQuery}
-                    multiline
-                    numberOfLines={3}
-                    textAlignVertical="top"
-                  />
-                  {advancedSearchQuery.length > 0 && (
-                    <Pressable 
-                      style={styles.clearButton}
-                      onPress={() => setAdvancedSearchQuery('')}
-                    >
-                      <IconSymbol name="xmark.circle.fill" size={20} color={colors.textSecondary} />
-                    </Pressable>
-                  )}
-                </View>
-              )}
+                <TextInput
+                  style={[styles.advancedSearchInput, { color: colors.text }]}
+                  placeholder="What would be good to use for removing drywall?"
+                  placeholderTextColor={colors.textSecondary}
+                  value={advancedSearchQuery}
+                  onChangeText={setAdvancedSearchQuery}
+                  multiline
+                  numberOfLines={3}
+                  textAlignVertical="top"
+                />
+                {advancedSearchQuery.length > 0 && (
+                  <Pressable 
+                    style={styles.clearButton}
+                    onPress={() => setAdvancedSearchQuery('')}
+                  >
+                    <IconSymbol name="xmark.circle.fill" size={20} color={colors.textSecondary} />
+                  </Pressable>
+                )}
+              </View>
               <Pressable
                 style={[styles.searchButton, (!canSearch || searching) && styles.searchButtonDisabled]}
-                onPress={searchMode === 'simple' ? searchToolsSimple : searchToolsAdvanced}
+                onPress={searchToolsAdvanced}
                 disabled={!canSearch || searching}
               >
                 {searching ? (
@@ -925,18 +842,15 @@ export default function FindToolScreen() {
               {!hasSearched ? (
                 <View style={styles.emptyState}>
                   <IconSymbol 
-                    name={searchMode === 'simple' ? 'magnifyingglass' : 'sparkles'} 
+                    name="sparkles" 
                     size={64} 
                     color={colors.textSecondary} 
                   />
                   <Text style={[styles.emptyTitle, { color: colors.text }]}>
-                    {searchMode === 'simple' ? 'Find Your Tools' : 'AI-Powered Tool Search'}
+                    AI-Powered Tool Search
                   </Text>
                   <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                    {searchMode === 'simple' 
-                      ? 'Search for any tool, bin name, or location to quickly find where your tools are stored'
-                      : 'Ask questions like "What tools do I need for drywall work?" and get AI-powered recommendations from your inventory'
-                    }
+                    Ask questions like "What tools do I need for drywall work?" and get AI-powered recommendations from your inventory
                   </Text>
                   <Pressable style={styles.viewInventoryButton} onPress={openViewInventory}>
                     <IconSymbol name="tray.fill" size={20} color={colors.primary} />
@@ -949,10 +863,10 @@ export default function FindToolScreen() {
                 <View style={styles.loadingState}>
                   <ActivityIndicator size="large" color={colors.primary} />
                   <Text style={[styles.loadingText, { color: colors.text }]}>
-                    {searchMode === 'simple' ? 'Searching...' : 'AI is analyzing your inventory...'}
+                    AI is analyzing your inventory...
                   </Text>
                 </View>
-              ) : searchMode === 'advanced' && aiResponse ? (
+              ) : aiResponse ? (
                 <View style={styles.aiResponseContainer}>
                   <View style={styles.aiResponseHeader}>
                     <IconSymbol name="sparkles" size={24} color={colors.primary} />
@@ -970,71 +884,6 @@ export default function FindToolScreen() {
                     </Text>
                   </Pressable>
                 </View>
-              ) : searchMode === 'simple' && searchResults.length === 0 ? (
-                <View style={styles.emptyState}>
-                  <IconSymbol name="exclamationmark.triangle.fill" size={64} color={colors.textSecondary} />
-                  <Text style={[styles.emptyTitle, { color: colors.text }]}>No Results Found</Text>
-                  <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                    We couldn&apos;t find any tools, bins, or locations matching &quot;{simpleSearchQuery}&quot;
-                  </Text>
-                  <Pressable style={styles.viewInventoryButton} onPress={openViewInventory}>
-                    <IconSymbol name="tray.fill" size={20} color={colors.primary} />
-                    <Text style={[styles.viewInventoryText, { color: colors.primary }]}>
-                      View Full Inventory
-                    </Text>
-                  </Pressable>
-                </View>
-              ) : searchMode === 'simple' && searchResults.length > 0 ? (
-                <>
-                  <View style={styles.resultsHeader}>
-                    <Text style={[styles.resultsCount, { color: colors.text }]}>
-                      {searchResults.length} {searchResults.length === 1 ? 'result' : 'results'} found
-                    </Text>
-                  </View>
-
-                  {searchResults.map((item) => (
-                    <Pressable
-                      key={item.id}
-                      style={[styles.resultCard, { backgroundColor: colors.card }]}
-                      onPress={() => handleBinSelect(item)}
-                    >
-                      <Pressable onPress={() => expandImage(item.image_url)}>
-                        <Image source={{ uri: item.image_url }} style={styles.resultImage} />
-                      </Pressable>
-                      <View style={styles.resultContent}>
-                        <View style={styles.resultHeader}>
-                          <View style={styles.binInfo}>
-                            <IconSymbol name="archivebox.fill" size={20} color={colors.primary} />
-                            <Text style={[styles.binName, { color: colors.text }]}>{item.bin_name}</Text>
-                          </View>
-                          <IconSymbol name="chevron.right" size={20} color={colors.textSecondary} />
-                        </View>
-
-                        <View style={styles.locationRow}>
-                          <IconSymbol name="location.fill" size={16} color={colors.textSecondary} />
-                          <Text style={[styles.location, { color: colors.textSecondary }]}>
-                            {item.bin_location}
-                          </Text>
-                        </View>
-
-                        <View style={styles.toolsContainer}>
-                          <Text style={[styles.toolsTitle, { color: colors.text }]}>Tools in this bin:</Text>
-                          {item.tools.slice(0, 3).map((tool, index) => (
-                            <View key={index} style={styles.toolRow}>
-                              <Text style={[styles.toolBullet, { color: colors.primary }]}>•</Text>
-                              <Text style={[styles.toolText, { color: colors.text }]}>{tool}</Text>
-                            </View>
-                          ))}
-                          {item.tools.length > 3 && (
-                            <Text style={[styles.moreTools, { color: colors.textSecondary }]}>
-                              +{item.tools.length - 3} more tool{item.tools.length - 3 !== 1 ? 's' : ''}
-                            </Text>
-                          )}
-                        </View>
-                      </View>
-                    </Pressable>
-                  ))}
-                </>
               ) : null}
 
               <View style={styles.bottomSpacer} />

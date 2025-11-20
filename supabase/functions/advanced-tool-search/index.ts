@@ -65,9 +65,10 @@ Deno.serve(async (req)=>{
     }
     console.log(`✅ Found ${inventory?.length || 0} inventory items`);
     // Format inventory for the AI prompt
+    // IMPORTANT: bin_id is the first field so GPT sees it prominently
     const formattedInventory = inventory?.map((item, index)=>({
+        bin_id: item.id, // CRITICAL: This is the bin ID - must be included in response
         entry: index + 1,
-        bin_id: item.id,
         bin_name: item.bin_name,
         bin_location: item.bin_location,
         tools: item.tools
@@ -83,18 +84,19 @@ Format your response in two sections:
 
 SECTION 1 - Tools in Your Inventory:
 - List ALL tools from the inventory that are relevant to the user's question
-- For each tool, include:
+- For each tool, you MUST include:
   - The tool name
-  - The bin ID (from the inventory data - this is critical for navigation)
+  - The bin ID (CRITICAL: Copy the exact bin_id value from the inventory data - this is REQUIRED and must be included for every tool)
   - The bin name where it is located
   - The bin location
   - Brief explanation of why this tool is suitable
-- Format each tool as:
+- Format each tool EXACTLY as:
   1. [Tool Name]
-     - Bin ID: [the bin_id from the inventory data]
+     - Bin ID: [MUST copy the exact bin_id value from the inventory JSON - this is REQUIRED]
      - Bin Name: [bin name]
      - Bin Location: [bin location]
      - Explanation: [why this tool is suitable]
+- IMPORTANT: The Bin ID field is MANDATORY - you must include it for every single tool. Look at the inventory data and copy the bin_id value exactly as it appears.
 - Do not limit yourself to just 3 tools - include all matching tools from the inventory
 
 SECTION 2 - Recommended Tools to Purchase:
@@ -113,12 +115,17 @@ Be conversational and helpful. If no suitable tools are found in inventory, stil
 CRITICAL FORMATTING RULE: You must write in plain text only. Never use asterisks (**) or any markdown formatting characters. Do not use ** for bold text. Write tool names, bin names, and bin locations in plain text without any asterisks. You can use numbered lists (1., 2., 3.) and bullet points (-) for structure, but absolutely no asterisks anywhere in your response.`;
     const userPrompt = `User Question: ${searchQuery}
 
-Tool Inventory:
+Tool Inventory (JSON format - each entry has a "bin_id" field that you MUST copy):
 ${JSON.stringify(formattedInventory, null, 2)}
+
+IMPORTANT: In the inventory data above, each entry has a "bin_id" field (it's the first field in each entry). You MUST copy this exact bin_id value into the "Bin ID:" field for each tool you list in SECTION 1.
 
 Please help the user by:
 1. Finding ALL tools from their inventory that address their question - do not limit the number of tools, include every relevant tool from their inventory
-2. Recommending exactly 3 tools NOT in their inventory that would be helpful, with Amazon search links
+2. For EACH tool you list, you MUST include the Bin ID field. Look at the inventory data above - each entry has a "bin_id" field. Copy that exact value into the "Bin ID:" field for that tool. This is CRITICAL and REQUIRED.
+3. Recommending exactly 3 tools NOT in their inventory that would be helpful, with Amazon search links
+
+CRITICAL REQUIREMENT: Every tool in SECTION 1 must have a "Bin ID:" field with the exact bin_id value from the inventory data. Do not skip this field. Do not make up bin IDs. Copy them exactly from the inventory JSON data provided above.
 
 Remember: Write your response in plain text without using asterisks (**) or any markdown formatting. Use numbered lists and bullet points for structure, but no asterisks. Include the "---" separator between the inventory section and the recommended tools section. List ALL matching tools from the inventory, not just a few.`;
     console.log('🤖 Calling OpenAI API...');
