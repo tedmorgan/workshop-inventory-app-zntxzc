@@ -92,16 +92,20 @@ SECTION 1 - Tools in Your Inventory:
   - The tool name
   - The bin ID (CRITICAL: Copy the EXACT bin_id value from the inventory data - DO NOT generate or invent bin IDs)
   - The bin name where it is located
-  - The bin location
+- The bin location
   - Brief explanation of why this tool is suitable
 
-CRITICAL BIN ID RULES:
+CRITICAL BIN ID RULES - READ CAREFULLY:
 1. You MUST copy the exact bin_id value from the inventory JSON data provided below
 2. DO NOT generate, invent, or create new bin IDs - only use bin_ids that exist in the inventory data
 3. DO NOT modify or change any characters in the bin_id - copy it exactly as shown
 4. Each bin_id is a UUID format like: "b3b014b1-540e-4c65-93c4-11f03c4cd2c9"
 5. If a tool is in a bin, find that bin's bin_id in the inventory data and copy it EXACTLY
 6. The bin_id must match exactly - character for character - what appears in the inventory JSON
+7. WARNING: Generating incorrect bin IDs will break the application - users will not be able to find their tools
+8. If you cannot find the exact bin_id for a tool, DO NOT make one up - look harder in the inventory data
+9. Every bin_id you use MUST appear in the "VALID BIN IDs" list provided in the user prompt
+10. When in doubt, search the inventory JSON for the bin_name and copy its bin_id exactly
 
 EXAMPLE:
 If the inventory shows:
@@ -158,9 +162,10 @@ If you want to list "Hammer" and the inventory shows:
   }
 Then write: "Bin ID: b3b014b1-540e-4c65-93c4-11f03c4cd2c9" (copy exactly, no changes)
 
-VALID BIN IDs (these are the ONLY valid bin_ids - use ONLY these):
-${binIds.slice(0, 20).map(id => `- ${id}`).join('\n')}
-${binIds.length > 20 ? `... and ${binIds.length - 20} more (see full list in inventory data above)` : ''}
+VALID BIN IDs (these are the ONLY valid bin_ids - use ONLY these - DO NOT create new ones):
+${binIds.map(id => `- ${id}`).join('\n')}
+
+IMPORTANT: The above list contains ALL valid bin_ids. You MUST use ONLY these bin_ids. If a tool is in a bin, find that bin's bin_id in this list and copy it exactly. Do not generate, invent, or create any new bin_ids.
 
 Please help the user by:
 1. Finding ALL tools from their inventory that address their question - do not limit the number of tools, include every relevant tool from their inventory
@@ -215,10 +220,27 @@ Write your response in plain text without using asterisks (**) or any markdown f
     
     // Validate and fix bin IDs in the response
     const validBinIds = new Set(inventory?.map(item => item.id.toLowerCase()) || []);
+    
+    // Create multiple lookup maps for better matching
     const binIdMap = new Map<string, string>(); // Map bin_name+location to bin_id
+    const binNameMap = new Map<string, string>(); // Map bin_name to bin_id (for partial matches)
+    const toolToBinMap = new Map<string, string>(); // Map tool name to bin_id
+    
     inventory?.forEach(item => {
       const key = `${item.bin_name?.toLowerCase().trim()}|${item.bin_location?.toLowerCase().trim()}`;
       binIdMap.set(key, item.id);
+      
+      // Also map just bin name (for partial matching)
+      const binNameKey = item.bin_name?.toLowerCase().trim() || '';
+      if (binNameKey && !binNameMap.has(binNameKey)) {
+        binNameMap.set(binNameKey, item.id);
+      }
+      
+      // Map each tool to its bin ID
+      item.tools?.forEach((tool: string) => {
+        const toolKey = tool.toLowerCase().trim();
+        toolToBinMap.set(toolKey, item.id);
+      });
     });
     
     // Extract and validate bin IDs from response
@@ -242,10 +264,12 @@ Write your response in plain text without using asterisks (**) or any markdown f
           if (validBinIds.has(binId)) {
             fixedResponse += line + '\n';
           } else {
-            // Try to find correct bin ID by matching bin name and location
+            // Try multiple strategies to find correct bin ID
             let fixed = false;
+            let correctBinId: string | null = null;
+            let fixMethod = '';
             
-            // Look ahead for bin name and location
+            // Strategy 1: Look ahead for bin name and location (exact match)
             for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
               const binNameMatch = lines[j].match(/^[-]?\s*Bin [Nn]ame:\s*(.+)$/i);
               const binLocationMatch = lines[j].match(/^[-]?\s*Bin [Ll]ocation:\s*(.+)$/i);
@@ -254,25 +278,95 @@ Write your response in plain text without using asterisks (**) or any markdown f
                 const binName = binNameMatch ? binNameMatch[1].trim().toLowerCase() : '';
                 const binLocation = binLocationMatch ? binLocationMatch[1].trim().toLowerCase() : '';
                 
-                // Try to find matching bin
-                for (const [key, correctBinId] of binIdMap.entries()) {
+                // Try exact match first
+                const exactKey = `${binName}|${binLocation}`;
+                if (binIdMap.has(exactKey)) {
+                  correctBinId = binIdMap.get(exactKey)!;
+                  fixMethod = `exact match (${binNameMatch?.[1] || 'unknown'})`;
+                  break;
+                }
+                
+                // Try partial matches
+                for (const [key, id] of binIdMap.entries()) {
                   const [name, location] = key.split('|');
                   if ((!binName || name.includes(binName) || binName.includes(name)) &&
                       (!binLocation || location.includes(binLocation) || binLocation.includes(location))) {
-                    // Replace with correct bin ID (replace the entire value after "Bin ID:")
-                    fixedResponse += line.replace(/Bin [Ii][Dd]:\s*.+/i, `Bin ID: ${correctBinId}`) + '\n';
-                    fixedBinIdCount++;
-                    fixed = true;
-                    console.log(`🔧 Fixed invalid bin ID: ${binId} -> ${correctBinId} (${binNameMatch?.[1] || 'unknown'})`);
+                    correctBinId = id;
+                    fixMethod = `partial match (${binNameMatch?.[1] || 'unknown'})`;
                     break;
                   }
                 }
                 
-                if (fixed) break;
+                // Strategy 2: Try bin name only (if location doesn't match)
+                if (!correctBinId && binName) {
+                  // Try exact bin name match
+                  if (binNameMap.has(binName)) {
+                    correctBinId = binNameMap.get(binName)!;
+                    fixMethod = `bin name match (${binNameMatch?.[1]})`;
+                  } else {
+                    // Try partial bin name match
+                    for (const [name, id] of binNameMap.entries()) {
+                      if (name.includes(binName) || binName.includes(name)) {
+                        correctBinId = id;
+                        fixMethod = `partial bin name match (${binNameMatch?.[1]})`;
+                        break;
+                      }
+                    }
+                  }
+                }
+                
+                if (correctBinId) break;
               }
             }
             
-            if (!fixed) {
+            // Strategy 3: Look back for tool name and match to bin
+            if (!correctBinId) {
+              for (let j = Math.max(0, i - 10); j < i; j++) {
+                const toolMatch = lines[j].match(/^\s*(\d+)\.\s*(.+)$/);
+                if (toolMatch) {
+                  const toolName = toolMatch[2].trim().toLowerCase();
+                  // Try exact tool name match
+                  if (toolToBinMap.has(toolName)) {
+                    correctBinId = toolToBinMap.get(toolName)!;
+                    fixMethod = `tool name match (${toolMatch[2]})`;
+                    break;
+                  }
+                  // Try partial tool name match
+                  for (const [tool, id] of toolToBinMap.entries()) {
+                    if (tool.includes(toolName) || toolName.includes(tool)) {
+                      correctBinId = id;
+                      fixMethod = `partial tool name match (${toolMatch[2]})`;
+                      break;
+                    }
+                  }
+                  if (correctBinId) break;
+                }
+              }
+            }
+            
+            // Strategy 4: If we have bin name from context, try fuzzy matching
+            if (!correctBinId) {
+              // Look for any bin name mentioned nearby
+              for (let j = Math.max(0, i - 5); j < Math.min(i + 10, lines.length); j++) {
+                const binNameMatch = lines[j].match(/^[-]?\s*Bin [Nn]ame:\s*(.+)$/i);
+                if (binNameMatch) {
+                  const binName = binNameMatch[1].trim().toLowerCase();
+                  // Try all matching strategies again with this bin name
+                  if (binNameMap.has(binName)) {
+                    correctBinId = binNameMap.get(binName)!;
+                    fixMethod = `fuzzy bin name match (${binNameMatch[1]})`;
+                    break;
+                  }
+                }
+              }
+            }
+            
+            if (correctBinId) {
+              fixedResponse += line.replace(/Bin [Ii][Dd]:\s*.+/i, `Bin ID: ${correctBinId}`) + '\n';
+              fixedBinIdCount++;
+              fixed = true;
+              console.log(`🔧 Fixed invalid bin ID: ${binId} -> ${correctBinId} via ${fixMethod}`);
+            } else {
               invalidBinIdCount++;
               console.warn(`⚠️ Invalid bin ID found but could not fix: ${binId}`);
               fixedResponse += line + '\n'; // Keep original (will be handled by client-side fallback)
@@ -286,14 +380,105 @@ Write your response in plain text without using asterisks (**) or any markdown f
       }
     }
     
+    // Second pass: Add missing bin IDs for tools that have bin names but no bin IDs
+    const lines2 = fixedResponse.split('\n');
+    let finalResponse = '';
+    let addedBinIdCount = 0;
+    let currentToolHasBinId = false;
+    let currentBinName = '';
+    let currentBinLocation = '';
+    
+    for (let i = 0; i < lines2.length; i++) {
+      const line = lines2[i];
+      
+      // Check if this is a tool name (numbered list)
+      const toolMatch = line.match(/^\s*(\d+)\.\s*(.+)$/);
+      if (toolMatch) {
+        // Reset state for new tool
+        currentToolHasBinId = false;
+        currentBinName = '';
+        currentBinLocation = '';
+        finalResponse += line + '\n';
+        continue;
+      }
+      
+      // Check for bin ID
+      const binIdMatch = line.match(/^[-]?\s*Bin [Ii][Dd]:\s*(.+)$/i);
+      if (binIdMatch) {
+        currentToolHasBinId = true;
+        finalResponse += line + '\n';
+        continue;
+      }
+      
+      // Check for bin name
+      const binNameMatch = line.match(/^[-]?\s*Bin [Nn]ame:\s*(.+)$/i);
+      if (binNameMatch) {
+        currentBinName = binNameMatch[1].trim().toLowerCase();
+        finalResponse += line + '\n';
+        
+        // If we don't have a bin ID yet, check if we should add one
+        if (!currentToolHasBinId) {
+          // Look ahead to see if bin ID comes next
+          let hasBinIdAhead = false;
+          for (let j = i + 1; j < Math.min(i + 5, lines2.length); j++) {
+            if (lines2[j].match(/^[-]?\s*Bin [Ii][Dd]:/i)) {
+              hasBinIdAhead = true;
+              break;
+            }
+            // Stop if we hit next tool or section
+            if (lines2[j].match(/^\s*\d+\./) || lines2[j].trim() === '---') break;
+          }
+          
+          // If no bin ID ahead, add one based on bin name
+          if (!hasBinIdAhead && currentBinName) {
+            let binIdToAdd: string | null = null;
+            
+            // Try to find bin ID by name
+            if (binNameMap.has(currentBinName)) {
+              binIdToAdd = binNameMap.get(currentBinName)!;
+            } else {
+              // Try partial match
+              for (const [name, id] of binNameMap.entries()) {
+                if (name.includes(currentBinName) || currentBinName.includes(name)) {
+                  binIdToAdd = id;
+                  break;
+                }
+              }
+            }
+            
+            if (binIdToAdd) {
+              finalResponse += `  - Bin ID: ${binIdToAdd}\n`;
+              addedBinIdCount++;
+              currentToolHasBinId = true;
+              console.log(`➕ Added missing bin ID: ${binIdToAdd} for bin "${binNameMatch[1]}"`);
+            }
+          }
+        }
+        continue;
+      }
+      
+      // Check for bin location
+      const binLocationMatch = line.match(/^[-]?\s*Bin [Ll]ocation:\s*(.+)$/i);
+      if (binLocationMatch) {
+        currentBinLocation = binLocationMatch[1].trim().toLowerCase();
+        finalResponse += line + '\n';
+        continue;
+      }
+      
+      finalResponse += line + '\n';
+    }
+    
     if (invalidBinIdCount > 0) {
       console.warn(`⚠️ Found ${invalidBinIdCount} invalid bin IDs that could not be auto-fixed`);
     }
     if (fixedBinIdCount > 0) {
       console.log(`✅ Auto-fixed ${fixedBinIdCount} invalid bin IDs`);
     }
+    if (addedBinIdCount > 0) {
+      console.log(`➕ Added ${addedBinIdCount} missing bin IDs`);
+    }
     
-    aiResponse = fixedResponse;
+    aiResponse = finalResponse;
     
     console.log('✅ AI response received and validated');
     return new Response(JSON.stringify({
