@@ -514,6 +514,23 @@ export default function FindToolScreen() {
   const renderInventorySection = (inventoryText: string) => {
     console.log('🔍 Parsing inventory section, text length:', inventoryText.length);
     console.log('🔍 First 200 chars:', inventoryText.substring(0, 200));
+    
+    // Check if this is JSON format (should have been converted, but check anyway)
+    const isJsonFormat = /"inventory_tools"\s*:\s*\[\s*\]/.test(inventoryText) || 
+                         (inventoryText.includes('"inventory_tools"') && inventoryText.trim().startsWith('{'));
+    
+    if (isJsonFormat) {
+      // Check if it's an empty array
+      if (/"inventory_tools"\s*:\s*\[\s*\]/.test(inventoryText)) {
+        console.log('📦 Empty inventory_tools array - skipping inventory section');
+        return null; // Don't render anything for empty inventory
+      }
+      // If it's JSON but not empty, it should have been converted already
+      // But if it wasn't, skip it to avoid showing raw JSON
+      console.log('⚠️ JSON format detected but not converted - skipping to avoid raw JSON display');
+      return null;
+    }
+    
     const tools = parseInventoryTools(inventoryText);
     console.log('🔍 Parsed tools:', tools.length, tools.map(t => ({ name: t.name, binId: t.binId, binName: t.binName })));
     
@@ -525,14 +542,19 @@ export default function FindToolScreen() {
     }
     
     if (tools.length === 0) {
-      console.log('⚠️ No tools parsed, falling back to text rendering');
-      // Fallback to simple text rendering if parsing fails
-      // Clean up the text for better display
+      // Only show text if it's not empty/whitespace and not JSON
       const cleanedText = inventoryText
         .replace(/SECTION 1[^\n]*/i, '')
         .replace(/Tools in Your Inventory:/i, '')
+        .replace(/\(JSON FORMAT\)/i, '')
         .trim();
       
+      if (!cleanedText || cleanedText.length === 0 || cleanedText.startsWith('{')) {
+        // Empty or JSON - don't render
+        return null;
+      }
+      
+      console.log('⚠️ No tools parsed, showing text fallback');
       return (
         <Text style={[styles.aiResponseText, { color: colors.text }]}>
           {cleanedText}
@@ -675,23 +697,65 @@ export default function FindToolScreen() {
         }
         
         if (jsonStart !== -1) {
-          // Extract JSON - try to find the end, or use rest of response before "---"
-          const separatorIndex = response.indexOf('---', jsonStart);
-          const endIndex = separatorIndex !== -1 ? separatorIndex : response.length;
-          jsonStr = response.substring(jsonStart, endIndex);
+          // Find the matching closing brace for the root JSON object
+          let braceCount = 0;
+          let inString = false;
+          let escapeNext = false;
+          let jsonEnd = -1;
           
-          // Try to close incomplete JSON arrays/objects
-          const openBraces = (jsonStr.match(/\{/g) || []).length;
-          const closeBraces = (jsonStr.match(/\}/g) || []).length;
-          const openBrackets = (jsonStr.match(/\[/g) || []).length;
-          const closeBrackets = (jsonStr.match(/\]/g) || []).length;
-          
-          // Add missing closing brackets/braces if needed
-          if (openBrackets > closeBrackets) {
-            jsonStr += ']'.repeat(openBrackets - closeBrackets);
+          for (let i = jsonStart; i < response.length; i++) {
+            const char = response[i];
+            
+            if (escapeNext) {
+              escapeNext = false;
+              continue;
+            }
+            
+            if (char === '\\') {
+              escapeNext = true;
+              continue;
+            }
+            
+            if (char === '"') {
+              inString = !inString;
+              continue;
+            }
+            
+            if (!inString) {
+              if (char === '{') braceCount++;
+              if (char === '}') {
+                braceCount--;
+                if (braceCount === 0) {
+                  jsonEnd = i + 1;
+                  break;
+                }
+              }
+            }
           }
-          if (openBraces > closeBraces) {
-            jsonStr += '}'.repeat(openBraces - closeBraces);
+          
+          if (jsonEnd === -1) {
+            // JSON might be incomplete - try to find end by separator or end of line
+            const separatorIndex = response.indexOf('---', jsonStart);
+            const section2Index = response.indexOf('SECTION 2', jsonStart);
+            const endIndex = separatorIndex !== -1 ? separatorIndex : 
+                           (section2Index !== -1 ? section2Index : response.length);
+            jsonStr = response.substring(jsonStart, endIndex).trim();
+            
+            // Try to close incomplete JSON
+            const openBraces = (jsonStr.match(/\{/g) || []).length;
+            const closeBraces = (jsonStr.match(/\}/g) || []).length;
+            const openBrackets = (jsonStr.match(/\[/g) || []).length;
+            const closeBrackets = (jsonStr.match(/\]/g) || []).length;
+            
+            if (openBrackets > closeBrackets) {
+              jsonStr += ']'.repeat(openBrackets - closeBrackets);
+            }
+            if (openBraces > closeBraces) {
+              jsonStr += '}'.repeat(openBraces - closeBraces);
+            }
+          } else {
+            // Extract complete JSON object
+            jsonStr = response.substring(jsonStart, jsonEnd);
           }
         }
       }
@@ -702,26 +766,40 @@ export default function FindToolScreen() {
         // Try to parse complete JSON first
         const jsonData = JSON.parse(jsonStr);
         
-        if (jsonData && jsonData.inventory_tools && Array.isArray(jsonData.inventory_tools) && jsonData.inventory_tools.length > 0) {
-          console.log('📦 Client-side: Found complete JSON format, converting to text');
-          
-          // Convert JSON to text format
-          let textFormat = 'SECTION 1 - Tools in Your Inventory:\n\n';
-          jsonData.inventory_tools.forEach((tool: any, index: number) => {
-            if (!tool || !tool.tool_name) return;
-            textFormat += `${index + 1}. ${String(tool.tool_name || 'Unknown Tool')}\n`;
-            textFormat += `   - Bin ID: ${tool.bin_id || 'MISSING'}\n`;
-            textFormat += `   - Bin Name: ${String(tool.bin_name || '')}\n`;
-            textFormat += `   - Bin Location: ${String(tool.bin_location || '')}\n`;
-            if (tool.explanation) {
-              textFormat += `   - Explanation: ${String(tool.explanation)}\n`;
+        if (jsonData && jsonData.inventory_tools && Array.isArray(jsonData.inventory_tools)) {
+          if (jsonData.inventory_tools.length > 0) {
+            console.log('📦 Client-side: Found complete JSON format, converting to text');
+            
+            // Convert JSON to text format
+            let textFormat = 'SECTION 1 - Tools in Your Inventory:\n\n';
+            jsonData.inventory_tools.forEach((tool: any, index: number) => {
+              if (!tool || !tool.tool_name) return;
+              textFormat += `${index + 1}. ${String(tool.tool_name || 'Unknown Tool')}\n`;
+              textFormat += `   - Bin ID: ${tool.bin_id || 'MISSING'}\n`;
+              textFormat += `   - Bin Name: ${String(tool.bin_name || '')}\n`;
+              textFormat += `   - Bin Location: ${String(tool.bin_location || '')}\n`;
+              if (tool.explanation) {
+                textFormat += `   - Explanation: ${String(tool.explanation)}\n`;
+              }
+              textFormat += '\n';
+            });
+            
+            // Replace JSON section with text format, keep recommended tools section if present
+            const recommendedToolsSection = response.split('---').slice(1).join('---');
+            processedResponse = textFormat + (recommendedToolsSection ? '---' + recommendedToolsSection : '');
+          } else {
+            // Empty array - remove JSON section and keep recommended tools
+            console.log('📦 Client-side: Found empty inventory_tools array');
+            const jsonStartIndex = response.indexOf('{');
+            const jsonEndIndex = response.indexOf('}', jsonStartIndex);
+            if (jsonStartIndex !== -1) {
+              const beforeJson = response.substring(0, jsonStartIndex).replace(/\(JSON FORMAT\)/i, '').trim();
+              const afterJson = jsonEndIndex !== -1 ? response.substring(jsonEndIndex + 1) : response.substring(jsonStartIndex);
+              // Remove empty JSON and section header, keep recommended tools
+              const recommendedToolsSection = afterJson.includes('SECTION 2') ? afterJson.substring(afterJson.indexOf('SECTION 2')) : afterJson;
+              processedResponse = recommendedToolsSection.trim();
             }
-            textFormat += '\n';
-          });
-          
-          // Replace JSON section with text format, keep recommended tools section if present
-          const recommendedToolsSection = response.split('---').slice(1).join('---');
-          processedResponse = textFormat + (recommendedToolsSection ? '---' + recommendedToolsSection : '');
+          }
         }
       } catch (error) {
         // JSON might be truncated - try to extract individual tool objects manually
