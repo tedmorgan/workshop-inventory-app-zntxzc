@@ -511,9 +511,24 @@ export default function FindToolScreen() {
     return tools;
   };
 
-  const renderInventorySection = (inventoryText: string) => {
+  const renderInventorySection = (inventoryText: string, isEmptyInventory: boolean = false) => {
     console.log('🔍 Parsing inventory section, text length:', inventoryText.length);
     console.log('🔍 First 200 chars:', inventoryText.substring(0, 200));
+    
+    // Show message if inventory is empty
+    if (isEmptyInventory) {
+      return (
+        <View style={[styles.emptyInventoryCard, { backgroundColor: colors.background }]}>
+          <IconSymbol name="exclamationmark.triangle" size={32} color={colors.textSecondary} />
+          <Text style={[styles.emptyInventoryTitle, { color: colors.text }]}>
+            No Tools Found in Your Inventory
+          </Text>
+          <Text style={[styles.emptyInventoryMessage, { color: colors.textSecondary }]}>
+            We couldn't find any tools in your inventory that match your request. Check out the recommended tools below, or try a different search.
+          </Text>
+        </View>
+      );
+    }
     
     // Check if this is JSON format (should have been converted, but check anyway)
     const isJsonFormat = /"inventory_tools"\s*:\s*\[\s*\]/.test(inventoryText) || 
@@ -522,8 +537,18 @@ export default function FindToolScreen() {
     if (isJsonFormat) {
       // Check if it's an empty array
       if (/"inventory_tools"\s*:\s*\[\s*\]/.test(inventoryText)) {
-        console.log('📦 Empty inventory_tools array - skipping inventory section');
-        return null; // Don't render anything for empty inventory
+        console.log('📦 Empty inventory_tools array - showing empty message');
+        return (
+          <View style={[styles.emptyInventoryCard, { backgroundColor: colors.background }]}>
+            <IconSymbol name="exclamationmark.triangle" size={32} color={colors.textSecondary} />
+            <Text style={[styles.emptyInventoryTitle, { color: colors.text }]}>
+              No Tools Found in Your Inventory
+            </Text>
+            <Text style={[styles.emptyInventoryMessage, { color: colors.textSecondary }]}>
+              We couldn't find any tools in your inventory that match your request. Check out the recommended tools below, or try a different search.
+            </Text>
+          </View>
+        );
       }
       // If it's JSON but not empty, it should have been converted already
       // But if it wasn't, skip it to avoid showing raw JSON
@@ -673,6 +698,7 @@ export default function FindToolScreen() {
     
     // Check if response contains JSON format and convert it first
     let processedResponse = response;
+    let isEmptyInventory = false; // Track if inventory is empty
     
     // Look for JSON - try multiple patterns
     let jsonStr = '';
@@ -788,8 +814,9 @@ export default function FindToolScreen() {
             const recommendedToolsSection = response.split('---').slice(1).join('---');
             processedResponse = textFormat + (recommendedToolsSection ? '---' + recommendedToolsSection : '');
           } else {
-            // Empty array - remove JSON section and keep recommended tools
+            // Empty array - mark as empty and keep recommended tools
             console.log('📦 Client-side: Found empty inventory_tools array');
+            isEmptyInventory = true;
             const jsonStartIndex = response.indexOf('{');
             const jsonEndIndex = response.indexOf('}', jsonStartIndex);
             if (jsonStartIndex !== -1) {
@@ -936,7 +963,7 @@ export default function FindToolScreen() {
     
     return (
       <>
-        {renderInventorySection(inventorySection)}
+        {renderInventorySection(inventorySection, isEmptyInventory)}
         {renderRecommendedTools(recommendedTools)}
       </>
     );
@@ -1448,6 +1475,25 @@ const styles = StyleSheet.create({
   toolCardLocationText: {
     fontSize: 14,
     flex: 1,
+  },
+  emptyInventoryCard: {
+    borderRadius: 12,
+    padding: 24,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Platform.OS === 'ios' ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.2)',
+    alignItems: 'center',
+    gap: 12,
+  },
+  emptyInventoryTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  emptyInventoryMessage: {
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
   },
   viewBinButton: {
     flexDirection: 'row',
