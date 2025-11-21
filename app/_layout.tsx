@@ -90,6 +90,27 @@ export default function RootLayout() {
               <Stack>
                 {/* Main app with tabs */}
                 <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                
+                {/* Find Tool Screen - configure explicitly */}
+                <Stack.Screen 
+                  name="find-tool" 
+                  options={{ 
+                    title: 'Find Tool',
+                    headerBackTitle: 'Back',
+                    presentation: 'card', // Use card presentation for forward navigation
+                    animationTypeForReplace: 'push', // Make replace animate as push (forward)
+                  }} 
+                />
+
+                {/* Inventory Search Screen (stack version for Find Tool flow) */}
+                <Stack.Screen
+                  name="inventory-search"
+                  options={{
+                    title: 'Inventory',
+                    headerBackTitle: 'Back',
+                    presentation: 'card',
+                  }}
+                />
 
                 {/* Modal Demo Screens */}
                 <Stack.Screen

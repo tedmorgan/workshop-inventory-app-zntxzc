@@ -26,7 +26,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from "@integrations/supabase/client";
-import { Stack, useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
+import { Stack, useRouter, useFocusEffect, useLocalSearchParams, usePathname } from "expo-router";
 import { getDeviceId } from "@/utils/deviceId";
 import { useNavigation } from "@/contexts/NavigationContext";
 import Animated, {
@@ -70,6 +70,7 @@ export default function InventoryScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
   const navContext = useNavigation();
+  const pathname = usePathname();
   
   // Check navigation context when screen gains focus
   useFocusEffect(
@@ -540,17 +541,22 @@ export default function InventoryScreen() {
           >
             <TouchableOpacity
               onPress={() => {
-                console.log('🔙 Back button pressed - starting navigation');
+                console.log('🔙 [INVENTORY] Back to Search button pressed');
+                console.log('🔙 [INVENTORY] Current pathname:', pathname);
+                console.log('🔙 [INVENTORY] Navigation context BEFORE:', {
+                  returnToSearch: navContext.returnToSearch,
+                  filterBinId: navContext.filterBinId,
+                });
                 try {
+                  console.log('🔙 [INVENTORY] Returning to Find Tool (stack back)');
+                  // Clear state before navigating back
                   navContext.setReturnToSearch(false);
-                  setCurrentFilterBinId(null); // Clear the filter when going back
-                  filterBinReadRef.current = false; // Reset ref so we can read new filter next time
-                  console.log('🔙 returnToSearch set to false, filter cleared, ref reset');
-                  console.log('🔙 Navigating to /find-tool...');
-                  router.push('/find-tool');
-                  console.log('🔙 Navigation command sent');
+                  setCurrentFilterBinId(null);
+                  filterBinReadRef.current = false;
+                  router.back();
+                  console.log('🔙 [INVENTORY] Back command sent');
                 } catch (error) {
-                  console.error('❌ Navigation error:', error);
+                  console.error('❌ [INVENTORY] Navigation error:', error);
                 }
               }}
               activeOpacity={0.7}

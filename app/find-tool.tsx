@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -20,12 +20,12 @@ import {
   FlatList,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Stack, useRouter, useFocusEffect } from 'expo-router';
+import { Stack, useRouter, useFocusEffect, usePathname, useSegments } from 'expo-router';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import { supabase } from '@integrations/supabase/client';
 import { getDeviceId } from '@/utils/deviceId';
-import { useNavigation } from '@/contexts/NavigationContext';
+import { useNavigation as useNavContext } from '@/contexts/NavigationContext';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -47,7 +47,9 @@ type ToolInventoryItem = {
 
 export default function FindToolScreen() {
   const router = useRouter();
-  const navigation = useNavigation();
+  const navContext = useNavContext(); // Custom context for returnToSearch
+  const pathname = usePathname();
+  const segments = useSegments();
   const [advancedSearchQuery, setAdvancedSearchQuery] = useState('');
   const [aiResponse, setAiResponse] = useState<string>('');
   const [searching, setSearching] = useState(false);
@@ -55,6 +57,11 @@ export default function FindToolScreen() {
   const [expandedImageUrl, setExpandedImageUrl] = useState<string | null>(null);
   const [failedImageUrls, setFailedImageUrls] = useState<Set<string>>(new Set());
   const [toolImageUrls, setToolImageUrls] = useState<Map<string, string>>(new Map());
+  // Refs for scrolling to results
+  const scrollViewRef = useRef<ScrollView>(null);
+  const resultsContainerRef = useRef<View>(null);
+  const resultsYPosition = useRef<number>(0);
+  const searchInputRef = useRef<TextInput>(null);
 
   // Zoom and pan state
   const scale = useSharedValue(1);
@@ -103,9 +110,21 @@ export default function FindToolScreen() {
   // Restore state when screen gains focus
   useFocusEffect(
     React.useCallback(() => {
-      console.log('🔍 Find Tool screen focused');
+      console.log('🔍 [FIND-TOOL] Screen focused');
+      console.log('🔍 [FIND-TOOL] Pathname:', pathname);
+      console.log('🔍 [FIND-TOOL] Segments:', segments);
+      console.log('🔍 [FIND-TOOL] Navigation context:', {
+        returnToSearch: navContext.returnToSearch,
+        filterBinId: navContext.filterBinId,
+      });
+
+      if (navContext.returnToSearch) {
+        console.log('🔍 [FIND-TOOL] Resetting returnToSearch after returning from inventory');
+        navContext.setReturnToSearch(false);
+      }
+
       restoreSearchState();
-    }, [])
+    }, [pathname, segments, navContext.returnToSearch, navContext.filterBinId, navContext.setReturnToSearch])
   );
 
   // Save state whenever search results change
@@ -162,19 +181,19 @@ export default function FindToolScreen() {
 
   const openViewInventory = () => {
     console.log('📤 Setting returnToSearch = true');
-    navigation.setReturnToSearch(true);
-    navigation.setFilterBinId(null);
-    navigation.setEditBinId(null);
-    router.push('/(tabs)/inventory');
+    navContext.setReturnToSearch(true);
+    navContext.setFilterBinId(null);
+    navContext.setEditBinId(null);
+    router.push('/inventory-search');
   };
 
   const openInventoryForBin = async (binId: string | null, binName: string, binLocation?: string) => {
     if (binId && binId.match(/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i)) {
       console.log('📤 Using bin ID directly:', binId, 'for bin:', binName);
-      navigation.setReturnToSearch(true);
-      navigation.setFilterBinId(binId);
-      navigation.setEditBinId(null);
-    router.push('/(tabs)/inventory');
+      navContext.setReturnToSearch(true);
+      navContext.setFilterBinId(binId);
+      navContext.setEditBinId(null);
+      router.push('/inventory-search');
     } else {
       console.warn('⚠️ Invalid or missing bin ID:', binId, '- attempting lookup by name/location');
       // Fallback: try to find bin by name and location
@@ -187,10 +206,10 @@ export default function FindToolScreen() {
         
         if (error) {
           console.error('❌ Error fetching inventory for bin lookup:', error);
-          navigation.setReturnToSearch(true);
-          navigation.setFilterBinId(null);
-          navigation.setEditBinId(null);
-          router.push('/(tabs)/inventory');
+          navContext.setReturnToSearch(true);
+          navContext.setFilterBinId(null);
+          navContext.setEditBinId(null);
+          router.push('/inventory-search');
           return;
         }
         
@@ -216,23 +235,23 @@ export default function FindToolScreen() {
         
         if (matchingBin) {
           console.log('✅ Found bin ID via lookup:', matchingBin.id, 'for bin:', binName);
-          navigation.setReturnToSearch(true);
-          navigation.setFilterBinId(matchingBin.id);
-          navigation.setEditBinId(null);
-          router.push('/(tabs)/inventory');
+          navContext.setReturnToSearch(true);
+          navContext.setFilterBinId(matchingBin.id);
+          navContext.setEditBinId(null);
+          router.push('/inventory-search');
         } else {
           console.warn('⚠️ Could not find matching bin for:', binName, binLocation, '- navigating without filter');
-          navigation.setReturnToSearch(true);
-          navigation.setFilterBinId(null);
-          navigation.setEditBinId(null);
-          router.push('/(tabs)/inventory');
+          navContext.setReturnToSearch(true);
+          navContext.setFilterBinId(null);
+          navContext.setEditBinId(null);
+          router.push('/inventory-search');
         }
       } catch (error) {
         console.error('❌ Error in openInventoryForBin fallback:', error);
-        navigation.setReturnToSearch(true);
-        navigation.setFilterBinId(null);
-        navigation.setEditBinId(null);
-        router.push('/(tabs)/inventory');
+        navContext.setReturnToSearch(true);
+        navContext.setFilterBinId(null);
+        navContext.setEditBinId(null);
+        router.push('/inventory-search');
       }
     }
   };
@@ -317,6 +336,20 @@ export default function FindToolScreen() {
       }
     });
   }, [aiResponse]);
+
+  // Ensure ScrollView is scrollable when results appear
+  useEffect(() => {
+    if (aiResponse && !searching) {
+      // Dismiss keyboard and blur input to ensure ScrollView can receive touch events
+      Keyboard.dismiss();
+      searchInputRef.current?.blur();
+      // Small delay to ensure keyboard is fully dismissed and ScrollView is ready
+      setTimeout(() => {
+        // ScrollView should now be ready to receive touch gestures
+        // Users can immediately swipe to scroll
+      }, 100);
+    }
+  }, [aiResponse, searching]);
 
   const parseRecommendedTools = (response: string): { inventorySection: string; recommendedTools: Array<{ name: string; description: string; amazonUrl: string; imageUrl: string }> } => {
     const separator = '---';
@@ -621,7 +654,10 @@ export default function FindToolScreen() {
             </View>
             
             <Pressable
-              style={styles.viewBinButton}
+              style={({ pressed }) => [
+                styles.viewBinButton,
+                pressed && styles.viewBinButtonPressed
+              ]}
               onPress={() => {
                 console.log('🔗 View bin pressed:', tool.binName, 'location:', tool.binLocation, 'binId:', tool.binId);
                 openInventoryForBin(tool.binId, tool.binName, tool.binLocation);
@@ -681,7 +717,10 @@ export default function FindToolScreen() {
               </Text>
               <Pressable
                 onPress={() => openAmazonLink(tool.amazonUrl)}
-                style={styles.amazonLinkButton}
+                style={({ pressed }) => [
+                  styles.amazonLinkButton,
+                  pressed && styles.amazonLinkButtonPressed
+                ]}
               >
                 <IconSymbol name="link" size={16} color="#FFFFFF" />
                 <Text style={styles.amazonLinkText}>View on Amazon</Text>
@@ -1108,18 +1147,18 @@ export default function FindToolScreen() {
         style={[styles.container, { backgroundColor: colors.background }]}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View style={styles.innerContainer}>
-            {/* Search Section */}
-            <View style={styles.searchSection}>
+        <View style={styles.innerContainer}>
+          {/* Search Section */}
+          <View style={styles.searchSection}>
                 <View style={[styles.advancedSearchContainer, { backgroundColor: colors.card }]}>
                   <View style={styles.advancedSearchHeader}>
-                    <IconSymbol name="sparkles" size={20} color={colors.primary} />
+                    <IconSymbol name="sparkles" size={18} color={colors.primary} />
                     <Text style={[styles.advancedSearchLabel, { color: colors.text }]}>
-                      Advanced Search
+                      What do you need?
                     </Text>
                   </View>
                   <TextInput
+                    ref={searchInputRef}
                     style={[styles.advancedSearchInput, { color: colors.text }]}
                     placeholder="What would be good to use for removing drywall?"
                     placeholderTextColor={colors.textSecondary}
@@ -1152,15 +1191,18 @@ export default function FindToolScreen() {
             </View>
 
             <ScrollView
+              ref={scrollViewRef}
               contentContainerStyle={styles.scrollContent}
               showsVerticalScrollIndicator={true}
               keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
               scrollEventThrottle={16}
               removeClippedSubviews={false}
               scrollEnabled={true}
               bounces={true}
               directionalLockEnabled={true}
               alwaysBounceVertical={true}
+              nestedScrollEnabled={true}
             >
               {!hasSearched ? (
                 <View style={styles.emptyState}>
@@ -1186,11 +1228,18 @@ export default function FindToolScreen() {
                 <View style={styles.loadingState}>
                   <ActivityIndicator size="large" color={colors.primary} />
                   <Text style={[styles.loadingText, { color: colors.text }]}>
-                    AI is analyzing your inventory...
+                    AI is analyzing your inventory. Give us a second are we dig thru your stuff...
                   </Text>
                 </View>
               ) : aiResponse ? (
-                <View style={styles.aiResponseContainer}>
+                <View 
+                  ref={resultsContainerRef} 
+                  style={styles.aiResponseContainer}
+                  onLayout={(event) => {
+                    const { y } = event.nativeEvent.layout;
+                    resultsYPosition.current = y;
+                  }}
+                >
                   <View style={styles.aiResponseHeader}>
                     <IconSymbol name="sparkles" size={24} color={colors.primary} />
                     <Text style={[styles.aiResponseTitle, { color: colors.text }]}>
@@ -1211,8 +1260,7 @@ export default function FindToolScreen() {
 
               <View style={styles.bottomSpacer} />
             </ScrollView>
-          </View>
-        </TouchableWithoutFeedback>
+        </View>
       </KeyboardAvoidingView>
 
       {/* Full Screen Image Zoom Modal */}
@@ -1298,6 +1346,7 @@ const styles = StyleSheet.create({
   searchSection: {
     flexDirection: 'row',
     paddingHorizontal: 16,
+    paddingTop: 16,
     paddingBottom: 16,
     gap: 12,
   },
@@ -1317,13 +1366,16 @@ const styles = StyleSheet.create({
   advancedSearchContainer: {
     flex: 1,
     borderRadius: 12,
-    padding: 16,
+    padding: 14,
+    paddingRight: 16,
+    position: 'relative',
   },
   advancedSearchHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 4,
     marginBottom: 12,
+    paddingRight: 32,
   },
   advancedSearchLabel: {
     fontSize: 16,
@@ -1333,20 +1385,23 @@ const styles = StyleSheet.create({
     fontSize: 16,
     minHeight: 80,
     maxHeight: 120,
+    paddingRight: 32,
   },
   clearButton: {
     position: 'absolute',
     top: 16,
     right: 16,
+    padding: 4,
+    zIndex: 10,
   },
   searchButton: {
     backgroundColor: colors.primary,
-    paddingHorizontal: 24,
+    paddingHorizontal: 14,
     paddingVertical: 12,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    minWidth: 80,
+    minWidth: 90,
   },
   searchButtonDisabled: {
     opacity: 0.6,
@@ -1402,6 +1457,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 16,
+    textAlign: 'center',
   },
   aiResponseContainer: {
     flex: 1,
@@ -1506,6 +1562,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignSelf: 'stretch',
   },
+  viewBinButtonPressed: {
+    opacity: 0.7,
+  },
   viewBinButtonText: {
     color: '#FFFFFF',
     fontSize: 14,
@@ -1571,6 +1630,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 8,
     alignSelf: 'flex-start',
+  },
+  amazonLinkButtonPressed: {
+    opacity: 0.7,
   },
   amazonLinkText: {
     color: '#FFFFFF',

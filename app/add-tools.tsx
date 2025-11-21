@@ -62,6 +62,7 @@ export default function AddToolsScreen() {
   const binNameRef = useRef<TextInput>(null);
   const binLocationRef = useRef<TextInput>(null);
   const reanalyzeReasonRef = useRef<TextInput>(null);
+  const savedScrollPosition = useRef<number>(0);
 
   useEffect(() => {
     checkInventoryAndShowIntro();
@@ -553,6 +554,14 @@ export default function AddToolsScreen() {
     }
     
     setShowReanalyzeModal(false);
+    
+    // Restore scroll position after modal closes to prevent scroll to top
+    setTimeout(() => {
+      if (savedScrollPosition.current > 0) {
+        scrollViewRef.current?.scrollTo({ y: savedScrollPosition.current, animated: false });
+      }
+    }, 100);
+    
     analyzeImage(imageUri, reanalyzeReason.trim(), previousResponse);
   };
 
@@ -733,6 +742,10 @@ export default function AddToolsScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
+          onScroll={(event) => {
+            savedScrollPosition.current = event.nativeEvent.contentOffset.y;
+          }}
+          scrollEventThrottle={16}
         >
           {Platform.OS === 'web' && (
             <View style={styles.webNotice}>
@@ -1080,7 +1093,6 @@ export default function AddToolsScreen() {
                       multiline
                       numberOfLines={3}
                       textAlignVertical="top"
-                      autoFocus={true}
                       onFocus={() => {
                         // Scroll to make the text input visible when focused
                         setTimeout(() => {
