@@ -1,16 +1,41 @@
 {
+  "cli": {
+    "appVersionSource": "local"
+  },
   "build": {
+    "base": {
+      "node": "20.19.4"
+    },
     "development": {
+      "extends": "base",
       "developmentClient": true,
       "distribution": "internal",
       "autoIncrement": true
     },
     "preview": {
+      "extends": "base",
       "distribution": "internal",
-      "autoIncrement": true
+      "autoIncrement": true,
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "preview-apk": {
+      "extends": "base",
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
     },
     "production": {
+      "extends": "base",
       "autoIncrement": true
+    },
+    "production-apk": {
+      "extends": "base",
+      "android": {
+        "buildType": "apk"
+      }
     }
   }
 }
