@@ -1,6 +1,6 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { GoogleGenerativeAI } from "npm:@google/generative-ai@0.21.0";
+import { GoogleGenerativeAI } from "npm:@google/generative-ai@^0.21.0";
 
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
 
@@ -136,9 +136,10 @@ Deno.serve(async (req: Request) => {
     console.log(`[${requestId}] 🔧 Initializing Google Generative AI SDK...`);
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
     
-    // Use Gemini 2.5 Flash model
-    const modelName = 'gemini-2.5-flash';
+    // Use Gemini 3 Pro Preview model with low thinking level and high media resolution
+    const modelName = 'gemini-3-pro-preview';
     console.log(`[${requestId}] 🎯 Getting model: ${modelName}`);
+    console.log(`[${requestId}] ⚙️ Configuration: thinking_level=low, media_resolution=high`);
     const model = genAI.getGenerativeModel({ model: modelName });
     
     // Prepare the prompt based on whether this is a re-analysis
@@ -187,15 +188,23 @@ Please re-analyze the image taking the user's feedback into account. Correct any
     // Call Gemini API using the official SDK
     let result;
     try {
-      result = await model.generateContent([
-        promptText,
-        {
-          inlineData: {
-            mimeType: 'image/jpeg',
-            data: base64Data,
+      result = await model.generateContent(
+        [
+          promptText,
+          {
+            inlineData: {
+              mimeType: 'image/jpeg',
+              data: base64Data,
+            },
           },
-        },
-      ]);
+        ],
+        {
+          generationConfig: {
+            thinking_level: 'low',
+            media_resolution: 'media_resolution_high',
+          },
+        }
+      );
     } catch (apiError) {
       const endTime = Date.now();
       const duration = endTime - startTime;
