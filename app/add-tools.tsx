@@ -33,7 +33,7 @@ if (Platform.OS !== 'web') {
 export default function AddToolsScreen() {
   const router = useRouter();
   const [imageUri, setImageUri] = useState<string | null>(null);
-  const [toolsList, setToolsList] = useState<string>('');
+  const [toolsList, setToolsList] = useState<string[]>([]);
   const [binName, setBinName] = useState('');
   const [binLocation, setBinLocation] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
@@ -58,7 +58,6 @@ export default function AddToolsScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   const modalScrollViewRef = useRef<ScrollView>(null);
   const introModalScrollViewRef = useRef<ScrollView>(null);
-  const toolsListRef = useRef<TextInput>(null);
   const binNameRef = useRef<TextInput>(null);
   const binLocationRef = useRef<TextInput>(null);
   const reanalyzeReasonRef = useRef<TextInput>(null);
@@ -462,8 +461,7 @@ export default function AddToolsScreen() {
           setPreviousResponse(data.tools);
           console.log('💾 Stored tools in previousResponse state');
           
-          const toolsText = data.tools.join('\n');
-          setToolsList(toolsText);
+          setToolsList(data.tools);
           
           const analysisType = data.isReanalysis ? 'Re-analysis' : 'Analysis';
           Alert.alert(
@@ -628,14 +626,30 @@ export default function AddToolsScreen() {
     }
   };
 
+  const addNewTool = () => {
+    setToolsList([...toolsList, '']);
+  };
+
+  const removeTool = (index: number) => {
+    const newTools = toolsList.filter((_, i) => i !== index);
+    setToolsList(newTools);
+  };
+
+  const updateTool = (index: number, newValue: string) => {
+    const newTools = [...toolsList];
+    newTools[index] = newValue;
+    setToolsList(newTools);
+  };
+
   const saveInventory = async () => {
     if (!imageUri) {
       Alert.alert('Missing Image', 'Please take a photo of your tools');
       return;
     }
 
-    if (!toolsList.trim()) {
-      Alert.alert('Missing Tools', 'Please enter the tools or wait for AI analysis');
+    const filteredTools = toolsList.filter(tool => tool.trim().length > 0);
+    if (filteredTools.length === 0) {
+      Alert.alert('Missing Tools', 'Please enter at least one tool or wait for AI analysis');
       return;
     }
 
@@ -669,11 +683,8 @@ export default function AddToolsScreen() {
 
       console.log(`✅ Image uploaded: ${imageUrl.substring(0, 50)}...`);
 
-      // Step 2: Prepare tools array
-      const tools = toolsList
-        .split('\n')
-        .map(t => t.trim())
-        .filter(t => t.length > 0);
+      // Step 2: Prepare tools array (already filtered)
+      const tools = filteredTools;
 
       console.log(`📝 Prepared ${tools.length} tools`);
 
@@ -765,7 +776,7 @@ export default function AddToolsScreen() {
                   style={styles.changeImageButton}
                   onPress={() => {
                     setImageUri(null);
-                    setToolsList('');
+                    setToolsList([]);
                     setPreviousResponse([]);
                     setImageBase64('');
                   }}
@@ -821,31 +832,29 @@ export default function AddToolsScreen() {
                   </View>
                 )}
                 <Text style={styles.helperText}>
-                  Enter each tool on a new line. {Platform.OS !== 'web' ? 'AI will identify tools automatically when you take a photo.' : 'Enter tools manually in web preview.'}
+                  {Platform.OS !== 'web' ? 'AI will identify tools automatically when you take a photo. You can edit or add more tools below.' : 'Enter tools manually in web preview.'}
                 </Text>
-                <TextInput
-                  ref={toolsListRef}
-                  style={styles.textArea}
-                  placeholder="Example:&#10;Hammer&#10;Screwdriver set&#10;Wrench&#10;Pliers"
-                  placeholderTextColor={colors.textSecondary}
-                  multiline
-                  numberOfLines={8}
-                  value={toolsList}
-                  onChangeText={setToolsList}
-                  textAlignVertical="top"
-                  onFocus={() => {
-                    // Scroll to make the text area visible when focused
-                    setTimeout(() => {
-                      toolsListRef.current?.measureLayout(
-                        scrollViewRef.current as any,
-                        (x, y) => {
-                          scrollViewRef.current?.scrollTo({ y: y - 100, animated: true });
-                        },
-                        () => console.log('Failed to measure layout')
-                      );
-                    }, 100);
-                  }}
-                />
+                {toolsList.map((tool, index) => (
+                  <View key={index} style={styles.toolInputRow}>
+                    <TextInput
+                      style={[styles.toolInput, { backgroundColor: colors.card, color: colors.text }]}
+                      value={tool}
+                      onChangeText={(text) => updateTool(index, text)}
+                      placeholder="Tool name"
+                      placeholderTextColor={colors.textSecondary}
+                    />
+                    <Pressable
+                      onPress={() => removeTool(index)}
+                      style={styles.removeToolButton}
+                    >
+                      <IconSymbol name="minus.circle.fill" size={24} color="#FF3B30" />
+                    </Pressable>
+                  </View>
+                ))}
+                <Pressable onPress={addNewTool} style={styles.addToolButton}>
+                  <IconSymbol name="plus.circle.fill" size={20} color={colors.primary} />
+                  <Text style={[styles.addToolText, { color: colors.primary }]}>Add Tool</Text>
+                </Pressable>
               </>
             )}
           </View>
@@ -1286,15 +1295,35 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     lineHeight: 20,
   },
-  textArea: {
-    backgroundColor: colors.card,
+  toolInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  toolInput: {
+    flex: 1,
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
-    color: colors.text,
-    minHeight: 160,
     borderWidth: 1,
     borderColor: colors.background,
+  },
+  removeToolButton: {
+    padding: 4,
+  },
+  addToolButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  addToolText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
   label: {
     fontSize: 15,

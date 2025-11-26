@@ -139,7 +139,7 @@ Deno.serve(async (req: Request) => {
     // Use Gemini 3 Pro Preview model with low thinking level and high media resolution
     const modelName = 'gemini-3-pro-preview';
     console.log(`[${requestId}] 🎯 Getting model: ${modelName}`);
-    console.log(`[${requestId}] ⚙️ Configuration: thinking_level=low, media_resolution=high`);
+    console.log(`[${requestId}] ⚙️ Configuration: thinking_level=high, media_resolution=high`);
     const model = genAI.getGenerativeModel({ model: modelName });
     
     // Prepare the prompt based on whether this is a re-analysis
@@ -153,7 +153,7 @@ ${JSON.stringify(previousResponse, null, 2)}
 However, the user has provided this feedback:
 "${userFeedback}"
 
-Please re-analyze the image taking the user's feedback into account. Correct any mistakes, add any missed tools, or adjust tool names as requested. Return ONLY a JSON array of tool names, nothing else. Format: ["tool1", "tool2", "tool3"]. Be specific with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver") and make sure to capture every tool in the image based on the user's feedback.`;
+Please re-analyze the image taking the user's feedback into account. Correct any mistakes, add any missed tools, or adjust tool names as requested. Return ONLY a JSON array of tool names, nothing else. Format: ["tool1", "tool2", "tool3"]. Be as specific as possible with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver") and make sure to capture every tool in the image based on the user's feedback.`;
     } else {
       // Initial analysis
       promptText = 'Analyze this image and identify all tools and materials visible. Return ONLY a JSON array of tool names and materials, nothing else. Format: ["tool1", "tool2", "tool3"]. Be specific with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver") and make sure to capture every tool and material item in the image but do not include the table or items not associated with building tools.';

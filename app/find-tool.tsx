@@ -134,6 +134,89 @@ export default function FindToolScreen() {
     }
   }, [advancedSearchQuery, aiResponse, hasSearched]);
 
+  const isSimpleSearchQuery = (query: string): boolean => {
+    const trimmed = query.trim();
+    const words = trimmed.split(/\s+/).filter(word => word.length > 0);
+    return words.length === 1 || words.length === 2;
+  };
+
+  const simpleTextSearch = async (searchTerm: string): Promise<string | null> => {
+    try {
+      console.log('🔍 Simple text search for:', searchTerm);
+
+      // Get device ID
+      const deviceId = await getDeviceId();
+
+      // Fetch all inventory items for this device
+      const { data, error } = await supabase
+        .from('tool_inventory')
+        .select('id, tools, bin_name, bin_location')
+        .eq('device_id', deviceId);
+
+      if (error) {
+        console.error('❌ Error loading inventory:', error);
+        return null;
+      }
+
+      if (!data || data.length === 0) {
+        console.log('📦 No inventory items found');
+        return null;
+      }
+
+      // Search for the term in tool names (case-insensitive)
+      // For multi-word queries, all words must be present (AND logic)
+      const searchWords = searchTerm.toLowerCase().split(/\s+/).filter(word => word.length > 0);
+      const matchingItems: Array<{
+        id: string;
+        toolName: string;
+        binName: string;
+        binLocation: string;
+      }> = [];
+
+      data.forEach((item) => {
+        if (item.tools && Array.isArray(item.tools)) {
+          item.tools.forEach((tool: string) => {
+            const toolLower = tool.toLowerCase();
+            // Check if tool contains all search words
+            const matchesAllWords = searchWords.every(word => toolLower.includes(word));
+            
+            if (matchesAllWords) {
+              matchingItems.push({
+                id: item.id,
+                toolName: tool,
+                binName: item.bin_name || '',
+                binLocation: item.bin_location || '',
+              });
+            }
+          });
+        }
+      });
+
+      if (matchingItems.length === 0) {
+        console.log('❌ No matching tools found');
+        return null;
+      }
+
+      console.log(`✅ Found ${matchingItems.length} matching tools`);
+
+      // Format results to match expected format
+      let formattedResponse = 'SECTION 1 - Tools in Your Inventory:\n\n';
+      
+      matchingItems.forEach((item, index) => {
+        formattedResponse += `${index + 1}. ${item.toolName}\n`;
+        formattedResponse += `   - Bin ID: ${item.id}\n`;
+        formattedResponse += `   - Bin Name: ${item.binName}\n`;
+        formattedResponse += `   - Bin Location: ${item.binLocation}\n`;
+        formattedResponse += `   - Explanation: Found "${searchTerm}" in tool name\n\n`;
+      });
+
+      return formattedResponse;
+    } catch (error) {
+      console.error('❌ Error in simple text search:', error);
+      return null;
+    }
+  };
+
   const searchToolsAdvanced = async () => {
     if (!advancedSearchQuery.trim()) {
       return;
@@ -147,7 +230,29 @@ export default function FindToolScreen() {
     setToolImageUrls(new Map());
 
     try {
-      console.log('🤖 Advanced AI search for:', advancedSearchQuery);
+      const query = advancedSearchQuery.trim();
+      const isSimpleQuery = isSimpleSearchQuery(query);
+
+      console.log(`🔍 Search query: "${query}" (${isSimpleQuery ? '1-2 words' : 'multiple words'})`);
+
+      // If 1 or 2 words, try simple text search first
+      if (isSimpleQuery) {
+        console.log('🔍 Attempting simple text search first...');
+        const simpleSearchResult = await simpleTextSearch(query);
+        
+        if (simpleSearchResult) {
+          console.log('✅ Simple text search found results');
+          setAiResponse(simpleSearchResult);
+          setSearching(false);
+          return;
+        } else {
+          console.log('❌ Simple text search found no results, falling back to GPT search');
+          // Fall through to GPT search
+        }
+      }
+
+      // Proceed with GPT search (either because it's multiple words or simple search found nothing)
+      console.log('🤖 Advanced AI search for:', query);
 
       // Get device ID
       const deviceId = await getDeviceId();
@@ -156,7 +261,7 @@ export default function FindToolScreen() {
       // Call the Edge Function
       const { data, error } = await supabase.functions.invoke('advanced-tool-search', {
         body: {
-          searchQuery: advancedSearchQuery,
+          searchQuery: query,
           deviceId: deviceId,
         },
       });
@@ -1147,9 +1252,9 @@ export default function FindToolScreen() {
         style={[styles.container, { backgroundColor: colors.background }]}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View style={styles.innerContainer}>
-          {/* Search Section */}
-          <View style={styles.searchSection}>
+          <View style={styles.innerContainer}>
+            {/* Search Section */}
+            <View style={styles.searchSection}>
                 <View style={[styles.advancedSearchContainer, { backgroundColor: colors.card }]}>
                   <View style={styles.advancedSearchHeader}>
                     <IconSymbol name="sparkles" size={18} color={colors.primary} />
@@ -1260,7 +1365,7 @@ export default function FindToolScreen() {
 
               <View style={styles.bottomSpacer} />
             </ScrollView>
-        </View>
+          </View>
       </KeyboardAvoidingView>
 
       {/* Full Screen Image Zoom Modal */}
