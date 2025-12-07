@@ -4,6 +4,52 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
 };
+
+// Helper function to extract complete JSON object using balanced brace matching
+function extractCompleteJsonObject(text: string, startIndex: number): string {
+  let braceCount = 0;
+  let inString = false;
+  let escapeNext = false;
+  let jsonEnd = -1;
+  
+  for (let i = startIndex; i < text.length; i++) {
+    const char = text[i];
+    
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+    
+    if (char === '\\') {
+      escapeNext = true;
+      continue;
+    }
+    
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    
+    if (!inString) {
+      if (char === '{') {
+        braceCount++;
+      } else if (char === '}') {
+        braceCount--;
+        if (braceCount === 0) {
+          jsonEnd = i + 1;
+          break;
+        }
+      }
+    }
+  }
+  
+  if (jsonEnd === -1) {
+    // JSON is incomplete - return what we have
+    return text.substring(startIndex);
+  }
+  
+  return text.substring(startIndex, jsonEnd);
+}
 Deno.serve(async (req)=>{
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -185,7 +231,7 @@ Write your response in plain text without using asterisks (**) or any markdown f
           }
         ],
         temperature: 0.7,
-        max_tokens: 3000
+        max_tokens: 6000
       })
     });
     if (!openaiResponse.ok) {
@@ -212,13 +258,43 @@ Write your response in plain text without using asterisks (**) or any markdown f
     let parsedFromJson = false;
     const originalResponse = aiResponse; // Preserve original in case of errors
     
-    // Look for JSON in the response
-    const jsonMatch = aiResponse.match(/```json\s*(\{[\s\S]*?\})\s*```/i) || 
-                      aiResponse.match(/\{[\s\S]*?"inventory_tools"[\s\S]*?\}/);
+    // Look for JSON in the response - improved extraction to handle truncation
+    let jsonStr: string | null = null;
     
-    if (jsonMatch) {
+    // First try to find JSON in code blocks
+    const codeBlockStart = aiResponse.indexOf('```json');
+    if (codeBlockStart !== -1) {
+      const jsonStartInBlock = aiResponse.indexOf('{', codeBlockStart);
+      if (jsonStartInBlock !== -1) {
+        jsonStr = extractCompleteJsonObject(aiResponse, jsonStartInBlock);
+      }
+    } else {
+      // Find JSON object by locating the opening brace and using balanced matching
+      const jsonStart = aiResponse.indexOf('{"inventory_tools"');
+      if (jsonStart === -1) {
+        // Try alternative pattern
+        const altStart = aiResponse.indexOf('{\n  "inventory_tools"');
+        if (altStart !== -1) {
+          jsonStr = extractCompleteJsonObject(aiResponse, altStart);
+        }
+      } else {
+        jsonStr = extractCompleteJsonObject(aiResponse, jsonStart);
+      }
+    }
+    
+    if (jsonStr) {
       try {
-        const jsonStr = jsonMatch[1] || jsonMatch[0];
+        // Check if JSON appears complete (ends with closing braces)
+        const trimmedJson = jsonStr.trim();
+        const isLikelyComplete = trimmedJson.endsWith('}') && 
+                                 (trimmedJson.match(/\{/g) || []).length === (trimmedJson.match(/\}/g) || []).length;
+        
+        if (!isLikelyComplete) {
+          console.log('⚠️ JSON appears truncated, using extraction method');
+          // Don't parse yet, let the catch block handle extraction
+          throw new Error('JSON appears incomplete');
+        }
+        
         const jsonData = JSON.parse(jsonStr);
         
         if (jsonData && jsonData.inventory_tools && Array.isArray(jsonData.inventory_tools) && jsonData.inventory_tools.length > 0) {
@@ -331,8 +407,14 @@ Write your response in plain text without using asterisks (**) or any markdown f
           console.log(`✅ Parsed ${fixedTools.length} tools from JSON format`);
         }
       } catch (error) {
-        console.warn('⚠️ Failed to parse JSON, trying to extract incomplete JSON:', error);
-        console.warn('⚠️ Error details:', error instanceof Error ? error.message : String(error));
+        // JSON parsing failed - this is expected for truncated responses
+        // Silently fall through to incomplete JSON extraction
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        if (errorMsg.includes('incomplete') || errorMsg.includes('truncated')) {
+          console.log('📝 JSON appears incomplete, extracting partial data...');
+        } else {
+          console.log('📝 JSON parse failed, attempting extraction:', errorMsg.substring(0, 100));
+        }
         
         // Try to extract incomplete JSON if it was truncated
         try {
