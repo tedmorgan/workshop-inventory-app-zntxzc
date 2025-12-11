@@ -136,10 +136,10 @@ Deno.serve(async (req: Request) => {
     console.log(`[${requestId}] 🔧 Initializing Google Generative AI SDK...`);
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
     
-    // Use Gemini 3 Pro Preview model with low thinking level and high media resolution
+    // Use Gemini 3 Pro Preview model with low thinking level and ultra high media resolution
     const modelName = 'gemini-3-pro-preview';
     console.log(`[${requestId}] 🎯 Getting model: ${modelName}`);
-    console.log(`[${requestId}] ⚙️ Configuration: thinking_level=high, media_resolution=high`);
+    console.log(`[${requestId}] ⚙️ Configuration: thinking_level=low, media_resolution=ultra_high`);
     const model = genAI.getGenerativeModel({ model: modelName });
     
     // Prepare the prompt based on whether this is a re-analysis
@@ -201,7 +201,7 @@ Please re-analyze the image taking the user's feedback into account. Correct any
         {
           generationConfig: {
             thinking_level: 'low',
-            media_resolution: 'media_resolution_high',
+            media_resolution: 'media_resolution_ultra_high',
           },
         }
       );
