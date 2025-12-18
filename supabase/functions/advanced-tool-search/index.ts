@@ -237,7 +237,6 @@ Write your response in plain text without using asterisks (**) or any markdown f
             content: userPrompt
           }
         ],
-        temperature: 0.7,
         max_completion_tokens: 6000
       })
     });
