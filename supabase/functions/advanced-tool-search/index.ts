@@ -230,34 +230,41 @@ Write your response in plain text without using asterisks (**) or any markdown f
     // Create AbortController for timeout
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
+      console.log('⏰ Timeout triggered - aborting request');
       controller.abort();
     }, 60000); // 60 second timeout
     
     let openaiResponse;
     try {
-      // Call OpenAI API with timeout
-      openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+      console.log('📡 Starting fetch request to OpenAI API...');
+      console.log('🔑 API Key present:', !!openaiApiKey, 'Length:', openaiApiKey?.length || 0);
+      
+      // gpt-5-mini uses the responses API endpoint, not chat/completions
+      const modelName = 'gpt-5-mini';
+      console.log('🎯 Model:', modelName);
+      console.log('🔗 Using responses API endpoint');
+      
+      // Combine system and user prompts for the responses API
+      const combinedInput = `${systemPrompt}\n\n${userPrompt}`;
+      
+      // Call OpenAI Responses API with timeout
+      const fetchPromise = fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${openaiApiKey}`
         },
         body: JSON.stringify({
-          model: 'gpt-5-mini',
-          messages: [
-            {
-              role: 'system',
-              content: systemPrompt
-            },
-            {
-              role: 'user',
-              content: userPrompt
-            }
-          ],
+          model: modelName,
+          input: combinedInput,
           max_completion_tokens: 6000
         }),
         signal: controller.signal
       });
+      
+      console.log('⏳ Waiting for fetch response...');
+      openaiResponse = await fetchPromise;
+      console.log('✅ Fetch completed, status:', openaiResponse.status, openaiResponse.statusText);
       
       clearTimeout(timeoutId);
       
@@ -270,10 +277,15 @@ Write your response in plain text without using asterisks (**) or any markdown f
       clearTimeout(timeoutId);
       const apiEndTime = performance.now();
       const apiResponseTime = apiEndTime - apiStartTime;
-      console.error(`❌ Fetch error after ${apiResponseTime.toFixed(2)}ms:`, fetchError);
       
       const error = fetchError instanceof Error ? fetchError : new Error(String(fetchError));
-      if (error.name === 'AbortError') {
+      console.error(`❌ Fetch error after ${apiResponseTime.toFixed(2)}ms`);
+      console.error('❌ Error type:', error.constructor.name);
+      console.error('❌ Error name:', error.name);
+      console.error('❌ Error message:', error.message);
+      console.error('❌ Full error:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+      
+      if (error.name === 'AbortError' || error.message.includes('aborted')) {
         console.error('❌ Request timed out after 60 seconds');
         return new Response(JSON.stringify({
           error: 'Request timed out. The AI service took too long to respond. Please try again.'
@@ -287,7 +299,7 @@ Write your response in plain text without using asterisks (**) or any markdown f
       }
       
       return new Response(JSON.stringify({
-        error: `Network error: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}`
+        error: `Network error: ${error.message || 'Unknown error'}`
       }), {
         status: 500,
         headers: {
@@ -314,6 +326,7 @@ Write your response in plain text without using asterisks (**) or any markdown f
     let openaiData;
     try {
       openaiData = await openaiResponse.json();
+      console.log('📦 Response structure:', JSON.stringify(Object.keys(openaiData)));
     } catch (jsonError) {
       console.error('❌ Failed to parse OpenAI response:', jsonError);
       return new Response(JSON.stringify({
@@ -326,7 +339,10 @@ Write your response in plain text without using asterisks (**) or any markdown f
         }
       });
     }
-    let aiResponse = openaiData.choices[0]?.message?.content || 'No response from AI';
+    
+    // Responses API returns output_text, not choices[0].message.content
+    let aiResponse = openaiData.output_text || openaiData.choices?.[0]?.message?.content || 'No response from AI';
+    console.log('📝 Response length:', aiResponse.length, 'characters');
     
     // Remove asterisks from the response as a fallback
     aiResponse = aiResponse.replace(/\*\*/g, '');
