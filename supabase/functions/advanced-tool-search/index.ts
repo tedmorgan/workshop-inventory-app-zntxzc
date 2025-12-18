@@ -239,10 +239,9 @@ Write your response in plain text without using asterisks (**) or any markdown f
       console.log('📡 Starting fetch request to OpenAI API...');
       console.log('🔑 API Key present:', !!openaiApiKey, 'Length:', openaiApiKey?.length || 0);
       
-      // gpt-5-mini uses chat/completions but with specific parameter requirements:
-      // - NO temperature parameter (only default 1 is supported)
-      // - Use max_completion_tokens instead of max_tokens
-      const modelName = 'gpt-5-mini';
+      // Using gpt-4o-mini - fast, cost-effective, and works well for this use case
+      // Note: gpt-5-mini is a reasoning model that's too slow for large prompts
+      const modelName = 'gpt-4o-mini';
       console.log('🎯 Model:', modelName);
       console.log('🔗 Using chat/completions endpoint');
       
@@ -265,7 +264,8 @@ Write your response in plain text without using asterisks (**) or any markdown f
               content: userPrompt
             }
           ],
-          max_completion_tokens: 6000
+          temperature: 0.7,
+          max_tokens: 6000
         }),
         signal: controller.signal
       });
