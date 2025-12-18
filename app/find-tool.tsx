@@ -18,6 +18,7 @@ import {
   StatusBar,
   Linking,
   FlatList,
+  Alert,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Stack, useRouter, useFocusEffect, usePathname, useSegments } from 'expo-router';
@@ -32,6 +33,8 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Audio } from 'expo-av';
+import * as FileSystem from 'expo-file-system';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -57,6 +60,10 @@ export default function FindToolScreen() {
   const [expandedImageUrl, setExpandedImageUrl] = useState<string | null>(null);
   const [failedImageUrls, setFailedImageUrls] = useState<Set<string>>(new Set());
   const [toolImageUrls, setToolImageUrls] = useState<Map<string, string>>(new Map());
+  // Voice recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const recordingRef = useRef<Audio.Recording | null>(null);
   // Refs for scrolling to results
   const scrollViewRef = useRef<ScrollView>(null);
   const resultsContainerRef = useRef<View>(null);
@@ -283,6 +290,173 @@ export default function FindToolScreen() {
       setSearching(false);
     }
   };
+
+  // Voice recording functions
+  const startRecording = async () => {
+    try {
+      console.log('🎤 Requesting permissions...');
+      const { status } = await Audio.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permission Required',
+          'Please grant microphone permission to use voice search.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      console.log('🎤 Starting recording...');
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      recordingRef.current = recording;
+      setIsRecording(true);
+      console.log('✅ Recording started');
+    } catch (error) {
+      console.error('❌ Failed to start recording:', error);
+      Alert.alert('Error', 'Failed to start recording. Please try again.');
+    }
+  };
+
+  const stopRecording = async () => {
+    try {
+      console.log('🛑 Stopping recording...');
+      if (!recordingRef.current) {
+        return;
+      }
+
+      setIsRecording(false);
+      await recordingRef.current.stopAndUnloadAsync();
+      const uri = recordingRef.current.getURI();
+      recordingRef.current = null;
+
+      if (!uri) {
+        Alert.alert('Error', 'No recording found. Please try again.');
+        return;
+      }
+
+      console.log('📝 Recording saved to:', uri);
+      await transcribeAudio(uri);
+    } catch (error) {
+      console.error('❌ Failed to stop recording:', error);
+      Alert.alert('Error', 'Failed to stop recording. Please try again.');
+      setIsRecording(false);
+    }
+  };
+
+  const transcribeAudio = async (audioUri: string) => {
+    try {
+      setIsTranscribing(true);
+      console.log('📤 Transcribing audio...');
+
+      // Read audio file as base64
+      const base64Audio = await FileSystem.readAsStringAsync(audioUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      // Get MIME type based on file extension
+      const mimeType = audioUri.endsWith('.m4a') 
+        ? 'audio/m4a' 
+        : audioUri.endsWith('.mp3')
+        ? 'audio/mp3'
+        : 'audio/m4a'; // Default
+
+      // Call transcription Edge Function
+      const { data, error } = await supabase.functions.invoke('transcribe-audio', {
+        body: {
+          audioBase64: base64Audio,
+          mimeType: mimeType,
+        },
+      });
+
+      if (error) {
+        console.error('❌ Transcription error:', error);
+        Alert.alert('Error', 'Failed to transcribe audio. Please try again.');
+        return;
+      }
+
+      const transcribedText = data?.text || '';
+      console.log('✅ Transcription successful:', transcribedText);
+
+      if (transcribedText.trim()) {
+        // Set the transcribed text in the search input
+        setAdvancedSearchQuery(transcribedText.trim());
+        // Automatically trigger search with the transcribed text
+        const query = transcribedText.trim();
+        setSearching(true);
+        setHasSearched(true);
+        setAiResponse('');
+        setToolImageUrls(new Map());
+
+        try {
+          const isSimpleQuery = query.split(/\s+/).length <= 2;
+          console.log(`🔍 Search query: "${query}" (${isSimpleQuery ? '1-2 words' : 'multiple words'})`);
+
+          // If 1 or 2 words, try simple text search first
+          if (isSimpleQuery) {
+            console.log('🔍 Attempting simple text search first...');
+            const simpleSearchResult = await simpleTextSearch(query);
+            
+            if (simpleSearchResult) {
+              console.log('✅ Simple text search found results');
+              setAiResponse(simpleSearchResult);
+              setSearching(false);
+              return;
+            } else {
+              console.log('❌ Simple text search found no results, falling back to GPT search');
+            }
+          }
+
+          // Proceed with GPT search
+          console.log('🤖 Advanced AI search for:', query);
+          const deviceId = await getDeviceId();
+          console.log('📱 Device ID:', deviceId.substring(0, 8) + '...');
+
+          const { data: searchData, error: searchError } = await supabase.functions.invoke('advanced-tool-search', {
+            body: {
+              searchQuery: query,
+              deviceId: deviceId,
+            },
+          });
+
+          if (searchError) {
+            console.error('❌ Edge Function error:', searchError);
+            setAiResponse('Sorry, we encountered an error processing your request. Please try again.');
+            return;
+          }
+
+          console.log('✅✅✅ AI RESPONSE RECEIVED ✅✅✅');
+          setAiResponse(searchData.response || 'No response received from AI.');
+        } catch (error) {
+          console.error('❌ Error:', error);
+          setAiResponse('Sorry, we encountered an error processing your request. Please try again.');
+        } finally {
+          setSearching(false);
+        }
+      } else {
+        Alert.alert('No Speech Detected', 'Could not detect any speech. Please try again.');
+      }
+    } catch (error) {
+      console.error('❌ Transcription error:', error);
+      Alert.alert('Error', 'Failed to transcribe audio. Please try again.');
+    } finally {
+      setIsTranscribing(false);
+    }
+  };
+
+  // Cleanup recording on unmount
+  useEffect(() => {
+    return () => {
+      if (recordingRef.current) {
+        recordingRef.current.stopAndUnloadAsync();
+      }
+    };
+  }, []);
 
   const openViewInventory = () => {
     console.log('📤 Setting returnToSearch = true');
@@ -1262,17 +1436,34 @@ export default function FindToolScreen() {
                       What do you need?
                     </Text>
                   </View>
-                  <TextInput
-                    ref={searchInputRef}
-                    style={[styles.advancedSearchInput, { color: colors.text }]}
-                    placeholder="What would be good to use for removing drywall?"
-                    placeholderTextColor={colors.textSecondary}
-                    value={advancedSearchQuery}
-                    onChangeText={setAdvancedSearchQuery}
-                    multiline
-                    numberOfLines={3}
-                    textAlignVertical="top"
-                  />
+                  <View style={styles.searchInputRow}>
+                    <TextInput
+                      ref={searchInputRef}
+                      style={[styles.advancedSearchInput, { color: colors.text }]}
+                      placeholder="What would be good to use for removing drywall?"
+                      placeholderTextColor={colors.textSecondary}
+                      value={advancedSearchQuery}
+                      onChangeText={setAdvancedSearchQuery}
+                      multiline
+                      numberOfLines={3}
+                      textAlignVertical="top"
+                    />
+                    <Pressable
+                      style={[styles.microphoneButton, isRecording && styles.microphoneButtonRecording]}
+                      onPress={isRecording ? stopRecording : startRecording}
+                      disabled={isTranscribing}
+                    >
+                      {isTranscribing ? (
+                        <ActivityIndicator size="small" color={colors.primary} />
+                      ) : (
+                        <IconSymbol 
+                          name={isRecording ? "stop.circle.fill" : "mic.fill"} 
+                          size={20} 
+                          color={isRecording ? "#FF3B30" : colors.primary} 
+                        />
+                      )}
+                    </Pressable>
+                  </View>
                   {advancedSearchQuery.length > 0 && (
                     <Pressable 
                       style={styles.clearButton}
@@ -1486,11 +1677,26 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  searchInputRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
   advancedSearchInput: {
     fontSize: 16,
     minHeight: 80,
     maxHeight: 120,
-    paddingRight: 32,
+    flex: 1,
+    paddingRight: 8,
+  },
+  microphoneButton: {
+    padding: 8,
+    marginTop: 4,
+    borderRadius: 8,
+    backgroundColor: 'transparent',
+  },
+  microphoneButtonRecording: {
+    backgroundColor: 'rgba(255, 59, 48, 0.1)',
   },
   clearButton: {
     position: 'absolute',
