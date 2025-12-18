@@ -215,36 +215,87 @@ REMEMBER: Only use bin_ids from the "VALID BIN IDs" list above. Do not create ne
 
 Write your response in plain text without using asterisks (**) or any markdown formatting. Use numbered lists and bullet points for structure, but no asterisks. Include the "---" separator between the inventory section and the recommended tools section. List ALL matching tools from the inventory, not just a few.`;
     console.log('🤖 Calling OpenAI API...');
+    console.log('📋 Request payload size:', JSON.stringify({
+      model: 'gpt-5-mini',
+      messages: [
+        { role: 'system', content: systemPrompt.substring(0, 100) + '...' },
+        { role: 'user', content: userPrompt.substring(0, 100) + '...' }
+      ],
+      max_completion_tokens: 6000
+    }).length, 'bytes');
+    
     // Start timing the API call
     const apiStartTime = performance.now();
     
-    // Call OpenAI API
-    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${openaiApiKey}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-5-mini',
-        messages: [
-          {
-            role: 'system',
-            content: systemPrompt
-          },
-          {
-            role: 'user',
-            content: userPrompt
-          }
-        ],
-        max_completion_tokens: 6000
-      })
-    });
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, 60000); // 60 second timeout
     
-    // Calculate and log API response time
-    const apiEndTime = performance.now();
-    const apiResponseTime = apiEndTime - apiStartTime;
-    console.log(`⏱️ OpenAI API response time: ${apiResponseTime.toFixed(2)}ms`);
+    let openaiResponse;
+    try {
+      // Call OpenAI API with timeout
+      openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${openaiApiKey}`
+        },
+        body: JSON.stringify({
+          model: 'gpt-5-mini',
+          messages: [
+            {
+              role: 'system',
+              content: systemPrompt
+            },
+            {
+              role: 'user',
+              content: userPrompt
+            }
+          ],
+          max_completion_tokens: 6000
+        }),
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      // Calculate and log API response time
+      const apiEndTime = performance.now();
+      const apiResponseTime = apiEndTime - apiStartTime;
+      console.log(`⏱️ OpenAI API response time: ${apiResponseTime.toFixed(2)}ms`);
+      
+    } catch (fetchError: unknown) {
+      clearTimeout(timeoutId);
+      const apiEndTime = performance.now();
+      const apiResponseTime = apiEndTime - apiStartTime;
+      console.error(`❌ Fetch error after ${apiResponseTime.toFixed(2)}ms:`, fetchError);
+      
+      const error = fetchError instanceof Error ? fetchError : new Error(String(fetchError));
+      if (error.name === 'AbortError') {
+        console.error('❌ Request timed out after 60 seconds');
+        return new Response(JSON.stringify({
+          error: 'Request timed out. The AI service took too long to respond. Please try again.'
+        }), {
+          status: 504,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json'
+          }
+        });
+      }
+      
+      return new Response(JSON.stringify({
+        error: `Network error: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}`
+      }), {
+        status: 500,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json'
+        }
+      });
+    }
     
     if (!openaiResponse.ok) {
       const errorData = await openaiResponse.text();
@@ -259,7 +310,22 @@ Write your response in plain text without using asterisks (**) or any markdown f
         }
       });
     }
-    const openaiData = await openaiResponse.json();
+    
+    let openaiData;
+    try {
+      openaiData = await openaiResponse.json();
+    } catch (jsonError) {
+      console.error('❌ Failed to parse OpenAI response:', jsonError);
+      return new Response(JSON.stringify({
+        error: 'Failed to parse AI response. Please try again.'
+      }), {
+        status: 500,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json'
+        }
+      });
+    }
     let aiResponse = openaiData.choices[0]?.message?.content || 'No response from AI';
     
     // Remove asterisks from the response as a fallback
