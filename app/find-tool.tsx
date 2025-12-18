@@ -34,7 +34,11 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Audio } from 'expo-av';
-import * as FileSystem from 'expo-file-system';
+// Conditionally import FileSystem only for native platforms
+let FileSystem: any = null;
+if (Platform.OS !== 'web') {
+  FileSystem = require('expo-file-system/legacy');
+}
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -353,6 +357,11 @@ export default function FindToolScreen() {
     try {
       setIsTranscribing(true);
       console.log('📤 Transcribing audio...');
+
+      if (!FileSystem) {
+        Alert.alert('Error', 'File system not available on this platform.');
+        return;
+      }
 
       // Read audio file as base64
       const base64Audio = await FileSystem.readAsStringAsync(audioUri, {
@@ -1429,41 +1438,25 @@ export default function FindToolScreen() {
           <View style={styles.innerContainer}>
             {/* Search Section */}
             <View style={styles.searchSection}>
-                <View style={[styles.advancedSearchContainer, { backgroundColor: colors.card }]}>
-                  <View style={styles.advancedSearchHeader}>
-                    <IconSymbol name="sparkles" size={18} color={colors.primary} />
-                    <Text style={[styles.advancedSearchLabel, { color: colors.text }]}>
-                      What do you need?
-                    </Text>
-                  </View>
-                  <View style={styles.searchInputRow}>
-                    <TextInput
-                      ref={searchInputRef}
-                      style={[styles.advancedSearchInput, { color: colors.text }]}
-                      placeholder="What would be good to use for removing drywall?"
-                      placeholderTextColor={colors.textSecondary}
-                      value={advancedSearchQuery}
-                      onChangeText={setAdvancedSearchQuery}
-                      multiline
-                      numberOfLines={3}
-                      textAlignVertical="top"
-                    />
-                    <Pressable
-                      style={[styles.microphoneButton, isRecording && styles.microphoneButtonRecording]}
-                      onPress={isRecording ? stopRecording : startRecording}
-                      disabled={isTranscribing}
-                    >
-                      {isTranscribing ? (
-                        <ActivityIndicator size="small" color={colors.primary} />
-                      ) : (
-                        <IconSymbol 
-                          name={isRecording ? "stop.circle.fill" : "mic.fill"} 
-                          size={20} 
-                          color={isRecording ? "#FF3B30" : colors.primary} 
-                        />
-                      )}
-                    </Pressable>
-                  </View>
+              <View style={[styles.advancedSearchContainer, { backgroundColor: colors.card }]}>
+                <View style={styles.advancedSearchHeader}>
+                  <IconSymbol name="sparkles" size={18} color={colors.primary} />
+                  <Text style={[styles.advancedSearchLabel, { color: colors.text }]}>
+                    What do you need?
+                  </Text>
+                </View>
+                <View style={styles.searchInputWrapper}>
+                  <TextInput
+                    ref={searchInputRef}
+                    style={[styles.advancedSearchInput, { color: colors.text }]}
+                    placeholder="What would be good to use for removing drywall?"
+                    placeholderTextColor={colors.textSecondary}
+                    value={advancedSearchQuery}
+                    onChangeText={setAdvancedSearchQuery}
+                    multiline
+                    numberOfLines={3}
+                    textAlignVertical="top"
+                  />
                   {advancedSearchQuery.length > 0 && (
                     <Pressable 
                       style={styles.clearButton}
@@ -1473,17 +1466,39 @@ export default function FindToolScreen() {
                     </Pressable>
                   )}
                 </View>
-              <Pressable
-                style={[styles.searchButton, (!canSearch || searching) && styles.searchButtonDisabled]}
-                onPress={searchToolsAdvanced}
-                disabled={!canSearch || searching}
-              >
-                {searching ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.searchButtonText}>Search</Text>
-                )}
-              </Pressable>
+              </View>
+              
+              <View style={styles.searchActionsRow}>
+                <Pressable
+                  style={[styles.searchButton, (!canSearch || searching) && styles.searchButtonDisabled]}
+                  onPress={searchToolsAdvanced}
+                  disabled={!canSearch || searching}
+                >
+                  {searching ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <IconSymbol name="magnifyingglass" size={18} color="#FFFFFF" />
+                      <Text style={styles.searchButtonText}>Search</Text>
+                    </>
+                  )}
+                </Pressable>
+                <Pressable
+                  style={[styles.microphoneButtonLarge, isRecording && styles.microphoneButtonRecording]}
+                  onPress={isRecording ? stopRecording : startRecording}
+                  disabled={isTranscribing}
+                >
+                  {isTranscribing ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <IconSymbol 
+                      name={isRecording ? "stop.circle.fill" : "mic.fill"} 
+                      size={24} 
+                      color={isRecording ? "#FF3B30" : colors.primary} 
+                    />
+                  )}
+                </Pressable>
+              </View>
             </View>
 
             <ScrollView
@@ -1640,87 +1655,98 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   searchSection: {
-    flexDirection: 'row',
     paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 16,
+    paddingBottom: 12,
     gap: 12,
-  },
-  searchBar: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-    gap: 12,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
   },
   advancedSearchContainer: {
-    flex: 1,
-    borderRadius: 12,
-    padding: 14,
-    paddingRight: 16,
+    borderRadius: 16,
+    padding: 16,
     position: 'relative',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   advancedSearchHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
     marginBottom: 12,
-    paddingRight: 32,
   },
   advancedSearchLabel: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
   },
-  searchInputRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
+  searchInputWrapper: {
+    position: 'relative',
   },
   advancedSearchInput: {
     fontSize: 16,
     minHeight: 80,
     maxHeight: 120,
-    flex: 1,
-    paddingRight: 8,
-  },
-  microphoneButton: {
-    padding: 8,
-    marginTop: 4,
-    borderRadius: 8,
-    backgroundColor: 'transparent',
-  },
-  microphoneButtonRecording: {
-    backgroundColor: 'rgba(255, 59, 48, 0.1)',
+    paddingRight: 40,
+    lineHeight: 22,
   },
   clearButton: {
     position: 'absolute',
-    top: 16,
-    right: 16,
-    padding: 4,
+    top: 0,
+    right: 0,
+    padding: 8,
     zIndex: 10,
   },
+  searchActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingTop: 4,
+  },
   searchButton: {
+    flex: 1,
     backgroundColor: colors.primary,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 14,
+    flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    minWidth: 90,
+    gap: 8,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   searchButtonDisabled: {
-    opacity: 0.6,
+    opacity: 0.5,
+    shadowOpacity: 0.1,
   },
   searchButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '600',
+  },
+  microphoneButtonLarge: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.card,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2.5,
+    borderColor: colors.primary,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  microphoneButtonRecording: {
+    backgroundColor: 'rgba(255, 59, 48, 0.15)',
+    borderColor: '#FF3B30',
+    borderWidth: 3,
   },
   scrollContent: {
     padding: 16,
