@@ -239,16 +239,15 @@ Write your response in plain text without using asterisks (**) or any markdown f
       console.log('📡 Starting fetch request to OpenAI API...');
       console.log('🔑 API Key present:', !!openaiApiKey, 'Length:', openaiApiKey?.length || 0);
       
-      // gpt-5-mini uses the responses API endpoint, not chat/completions
+      // gpt-5-mini uses chat/completions but with specific parameter requirements:
+      // - NO temperature parameter (only default 1 is supported)
+      // - Use max_completion_tokens instead of max_tokens
       const modelName = 'gpt-5-mini';
       console.log('🎯 Model:', modelName);
-      console.log('🔗 Using responses API endpoint');
+      console.log('🔗 Using chat/completions endpoint');
       
-      // Combine system and user prompts for the responses API
-      const combinedInput = `${systemPrompt}\n\n${userPrompt}`;
-      
-      // Call OpenAI Responses API with timeout
-      const fetchPromise = fetch('https://api.openai.com/v1/responses', {
+      // Call OpenAI Chat Completions API with timeout
+      const fetchPromise = fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -256,7 +255,16 @@ Write your response in plain text without using asterisks (**) or any markdown f
         },
         body: JSON.stringify({
           model: modelName,
-          input: combinedInput,
+          messages: [
+            {
+              role: 'system',
+              content: systemPrompt
+            },
+            {
+              role: 'user',
+              content: userPrompt
+            }
+          ],
           max_completion_tokens: 6000
         }),
         signal: controller.signal
@@ -340,8 +348,8 @@ Write your response in plain text without using asterisks (**) or any markdown f
       });
     }
     
-    // Responses API returns output_text, not choices[0].message.content
-    let aiResponse = openaiData.output_text || openaiData.choices?.[0]?.message?.content || 'No response from AI';
+    // Chat completions API returns choices[0].message.content
+    let aiResponse = openaiData.choices?.[0]?.message?.content || 'No response from AI';
     console.log('📝 Response length:', aiResponse.length, 'characters');
     
     // Remove asterisks from the response as a fallback
