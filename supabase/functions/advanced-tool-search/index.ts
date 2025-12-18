@@ -57,6 +57,10 @@ Deno.serve(async (req)=>{
       headers: corsHeaders
     });
   }
+  
+  // Start timing the entire function execution
+  const functionStartTime = performance.now();
+  
   try {
     console.log('🔍 Advanced Tool Search - Starting');
     // Get the OpenAI API key from environment variables
@@ -211,6 +215,9 @@ REMEMBER: Only use bin_ids from the "VALID BIN IDs" list above. Do not create ne
 
 Write your response in plain text without using asterisks (**) or any markdown formatting. Use numbered lists and bullet points for structure, but no asterisks. Include the "---" separator between the inventory section and the recommended tools section. List ALL matching tools from the inventory, not just a few.`;
     console.log('🤖 Calling OpenAI API...');
+    // Start timing the API call
+    const apiStartTime = performance.now();
+    
     // Call OpenAI API
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -219,7 +226,7 @@ Write your response in plain text without using asterisks (**) or any markdown f
         'Authorization': `Bearer ${openaiApiKey}`
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'gpt-5-mini',
         messages: [
           {
             role: 'system',
@@ -234,6 +241,12 @@ Write your response in plain text without using asterisks (**) or any markdown f
         max_tokens: 6000
       })
     });
+    
+    // Calculate and log API response time
+    const apiEndTime = performance.now();
+    const apiResponseTime = apiEndTime - apiStartTime;
+    console.log(`⏱️ OpenAI API response time: ${apiResponseTime.toFixed(2)}ms`);
+    
     if (!openaiResponse.ok) {
       const errorData = await openaiResponse.text();
       console.error('❌ OpenAI API error:', errorData);
@@ -955,7 +968,12 @@ Write your response in plain text without using asterisks (**) or any markdown f
       aiResponse = finalResponse;
     } // End of text-based validation (if JSON parsing failed)
     
+    // Calculate and log total function execution time
+    const functionEndTime = performance.now();
+    const totalResponseTime = functionEndTime - functionStartTime;
+    console.log(`⏱️ Total function execution time: ${totalResponseTime.toFixed(2)}ms`);
     console.log('✅ AI response received and validated');
+    
     return new Response(JSON.stringify({
       response: aiResponse,
       inventoryCount: inventory?.length || 0
