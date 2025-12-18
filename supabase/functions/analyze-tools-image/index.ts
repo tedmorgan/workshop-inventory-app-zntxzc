@@ -136,8 +136,8 @@ Deno.serve(async (req: Request) => {
     console.log(`[${requestId}] 🔧 Initializing Google Generative AI SDK...`);
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
     
-    // Use Gemini 3 Pro Preview model with low thinking level and ultra high media resolution
-    const modelName = 'gemini-3-pro-preview';
+    // Use Gemini 3 Flash Preview model with low thinking level and ultra high media resolution
+    const modelName = 'gemini-3-flash-preview';
     console.log(`[${requestId}] 🎯 Getting model: ${modelName}`);
     console.log(`[${requestId}] ⚙️ Configuration: thinking_level=low, media_resolution=ultra_high`);
     const model = genAI.getGenerativeModel({ model: modelName });
