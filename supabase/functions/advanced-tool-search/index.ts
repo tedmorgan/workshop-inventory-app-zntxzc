@@ -360,6 +360,28 @@ Write your response in plain text without using asterisks (**) or any markdown f
     let parsedFromJson = false;
     const originalResponse = aiResponse; // Preserve original in case of errors
     
+    // ENHANCED: Create tool-to-bin mapping for accurate cross-validation
+    // Maps each tool name (lowercase) to its bin info
+    const toolToBinInfo = new Map<string, { binId: string; binName: string; binLocation: string }>();
+    const binIdToInfo = new Map<string, { binName: string; binLocation: string; tools: string[] }>();
+    
+    inventory?.forEach(item => {
+      if (!item || !item.id) return;
+      const binId = item.id.toLowerCase();
+      const binName = item.bin_name || '';
+      const binLocation = item.bin_location || '';
+      const tools = item.tools || [];
+      
+      binIdToInfo.set(binId, { binName, binLocation, tools });
+      
+      tools.forEach((toolName: string) => {
+        const normalizedToolName = toolName.toLowerCase().trim();
+        toolToBinInfo.set(normalizedToolName, { binId, binName, binLocation });
+      });
+    });
+    
+    console.log(`📦 Built tool-to-bin map with ${toolToBinInfo.size} tools across ${binIdToInfo.size} bins`);
+    
     // Look for JSON in the response - improved extraction to handle truncation
     let jsonStr: string | null = null;
     
@@ -402,81 +424,116 @@ Write your response in plain text without using asterisks (**) or any markdown f
         if (jsonData && jsonData.inventory_tools && Array.isArray(jsonData.inventory_tools) && jsonData.inventory_tools.length > 0) {
           console.log('📦 Found JSON format, parsing and validating...');
           
-          // Validate and fix bin IDs in JSON
+          // ENHANCED: Validate and fix bin IDs using tool-level cross-validation
           const fixedTools = jsonData.inventory_tools.map((tool: any) => {
             if (!tool || typeof tool !== 'object') {
               console.warn('⚠️ Invalid tool object in JSON:', tool);
               return null;
             }
             
+            const toolName = tool.tool_name ? String(tool.tool_name).toLowerCase().trim() : '';
             const originalBinId = tool.bin_id ? String(tool.bin_id).toLowerCase().trim() : null;
+            const statedBinName = tool.bin_name ? String(tool.bin_name).toLowerCase().trim() : '';
+            const statedBinLocation = tool.bin_location ? String(tool.bin_location).toLowerCase().trim() : '';
             
-            if (!originalBinId) {
-              // Try to find bin ID by name/location
-              const binName = tool.bin_name ? String(tool.bin_name).toLowerCase().trim() : '';
-              const binLocation = tool.bin_location ? String(tool.bin_location).toLowerCase().trim() : '';
-              
-              // Find matching bin
-              if (inventory && inventory.length > 0) {
-                for (const item of inventory) {
-                  if (!item || !item.id) continue;
-                  const itemName = item.bin_name ? String(item.bin_name).toLowerCase().trim() : '';
-                  const itemLocation = item.bin_location ? String(item.bin_location).toLowerCase().trim() : '';
-                  
-                  if ((!binName || itemName.includes(binName) || binName.includes(itemName)) &&
-                      (!binLocation || itemLocation.includes(binLocation) || binLocation.includes(itemLocation))) {
-                    tool.bin_id = item.id;
-                    console.log(`➕ Added missing bin ID for ${tool.tool_name || 'unknown'}: ${item.id}`);
-                    return tool;
-                  }
+            // STRATEGY 1: Use tool name to find the correct bin (most reliable)
+            // This works because we know which tools are in which bins from our inventory
+            if (toolName) {
+              // Try exact match first
+              if (toolToBinInfo.has(toolName)) {
+                const correctBin = toolToBinInfo.get(toolName)!;
+                if (!originalBinId || originalBinId !== correctBin.binId) {
+                  console.log(`🔧 Corrected bin ID for "${toolName}": ${originalBinId || 'missing'} -> ${correctBin.binId}`);
                 }
+                tool.bin_id = correctBin.binId;
+                // Also fix bin name/location if they don't match
+                if (statedBinName !== correctBin.binName.toLowerCase()) {
+                  tool.bin_name = correctBin.binName;
+                }
+                if (statedBinLocation !== correctBin.binLocation.toLowerCase()) {
+                  tool.bin_location = correctBin.binLocation;
+                }
+                return tool;
               }
-              return tool;
-            }
-            
-            // Validate bin ID
-            if (validBinIds.has(originalBinId)) {
-              return tool; // Valid, keep as is
-            }
-            
-            // Try fuzzy matching for typos
-            let bestMatch: { id: string; distance: number } | null = null;
-            for (const validId of Array.from(validBinIds) as string[]) {
-              let differences = 0;
-              for (let k = 0; k < Math.min(originalBinId.length, validId.length); k++) {
-                if (originalBinId[k] !== validId[k]) differences++;
-              }
-              differences += Math.abs(originalBinId.length - validId.length);
               
-              if (differences <= 2 && (!bestMatch || differences < bestMatch.distance)) {
-                bestMatch = { id: validId, distance: differences };
-              }
-            }
-            
-            if (bestMatch && bestMatch.distance <= 2) {
-              console.log(`🔧 Fixed invalid bin ID in JSON: ${originalBinId} -> ${bestMatch.id} (${bestMatch.distance} char difference)`);
-              tool.bin_id = bestMatch.id;
-            } else {
-              // Try to find by bin name/location
-              const binName = tool.bin_name ? String(tool.bin_name).toLowerCase().trim() : '';
-              const binLocation = tool.bin_location ? String(tool.bin_location).toLowerCase().trim() : '';
-              
-              if (inventory && inventory.length > 0) {
-                for (const item of inventory) {
-                  if (!item || !item.id) continue;
-                  const itemName = item.bin_name ? String(item.bin_name).toLowerCase().trim() : '';
-                  const itemLocation = item.bin_location ? String(item.bin_location).toLowerCase().trim() : '';
-                  
-                  if ((!binName || itemName.includes(binName) || binName.includes(itemName)) &&
-                      (!binLocation || itemLocation.includes(binLocation) || binLocation.includes(itemLocation))) {
-                    console.log(`🔧 Fixed invalid bin ID in JSON by name match: ${originalBinId} -> ${item.id}`);
-                    tool.bin_id = item.id;
-                    break;
-                  }
+              // Try partial tool name match (for variations like "Hammer" vs "Claw Hammer")
+              for (const [inventoryToolName, binInfo] of toolToBinInfo.entries()) {
+                if (inventoryToolName.includes(toolName) || toolName.includes(inventoryToolName)) {
+                  console.log(`🔧 Partial tool match for "${toolName}" -> "${inventoryToolName}": bin ${binInfo.binId}`);
+                  tool.bin_id = binInfo.binId;
+                  tool.bin_name = binInfo.binName;
+                  tool.bin_location = binInfo.binLocation;
+                  return tool;
                 }
               }
             }
             
+            // STRATEGY 2: If bin ID is valid and tool is in that bin, keep it
+            if (originalBinId && validBinIds.has(originalBinId)) {
+              const binInfo = binIdToInfo.get(originalBinId);
+              if (binInfo) {
+                // Verify the tool is actually in this bin
+                const toolsInBin = binInfo.tools.map((t: string) => t.toLowerCase().trim());
+                const toolNameLower = toolName.toLowerCase();
+                const toolInBin = toolsInBin.some((t: string) => 
+                  t.includes(toolNameLower) || toolNameLower.includes(t)
+                );
+                
+                if (toolInBin) {
+                  console.log(`✅ Verified tool "${toolName}" is in bin ${originalBinId}`);
+                  return tool;
+                } else {
+                  console.warn(`⚠️ Tool "${toolName}" claimed to be in bin ${originalBinId} but not found in bin's tool list`);
+                  // Don't use this bin ID - it might be wrong
+                }
+              }
+            }
+            
+            // STRATEGY 3: Find by EXACT bin name AND location match (stricter than before)
+            if (statedBinName && statedBinLocation) {
+              for (const item of inventory || []) {
+                if (!item || !item.id) continue;
+                const itemName = item.bin_name ? String(item.bin_name).toLowerCase().trim() : '';
+                const itemLocation = item.bin_location ? String(item.bin_location).toLowerCase().trim() : '';
+                
+                // Require EXACT match on both name and location
+                if (itemName === statedBinName && itemLocation === statedBinLocation) {
+                  console.log(`🔧 Exact name+location match for "${toolName}": ${item.id}`);
+                  tool.bin_id = item.id;
+                  return tool;
+                }
+              }
+            }
+            
+            // STRATEGY 4: Only use fuzzy UUID matching if single-character difference AND name matches
+            if (originalBinId) {
+              for (const validId of Array.from(validBinIds) as string[]) {
+                let differences = 0;
+                for (let k = 0; k < Math.min(originalBinId.length, validId.length); k++) {
+                  if (originalBinId[k] !== validId[k]) differences++;
+                }
+                differences += Math.abs(originalBinId.length - validId.length);
+                
+                // Only accept 1-character difference with name verification
+                if (differences === 1) {
+                  const candidateBin = binIdToInfo.get(validId);
+                  if (candidateBin) {
+                    const candidateName = candidateBin.binName.toLowerCase().trim();
+                    const candidateLocation = candidateBin.binLocation.toLowerCase().trim();
+                    
+                    // Verify name matches
+                    if (candidateName === statedBinName || 
+                        (candidateName && statedBinName && (candidateName.includes(statedBinName) || statedBinName.includes(candidateName)))) {
+                      console.log(`🔧 Typo fix (1 char) for "${toolName}": ${originalBinId} -> ${validId}`);
+                      tool.bin_id = validId;
+                      return tool;
+                    }
+                  }
+                }
+              }
+            }
+            
+            console.warn(`⚠️ Could not verify bin for tool "${toolName}" - keeping as-is with bin_id: ${originalBinId || 'MISSING'}`);
             return tool;
           }).filter((tool: any) => tool !== null); // Remove any null entries
           
@@ -599,92 +656,56 @@ Write your response in plain text without using asterisks (**) or any markdown f
             if (tools.length > 0) {
               console.log(`📦 Extracted ${tools.length} tools from incomplete JSON`);
               
-              // Validate and fix bin IDs (reuse validation logic)
+              // ENHANCED: Validate and fix bin IDs using tool-level cross-validation
               const fixedTools = tools.map((tool: any) => {
+                const toolName = tool.tool_name ? String(tool.tool_name).toLowerCase().trim() : '';
                 const originalBinId = tool.bin_id ? String(tool.bin_id).toLowerCase().trim() : null;
+                const statedBinName = tool.bin_name ? String(tool.bin_name).toLowerCase().trim() : '';
+                const statedBinLocation = tool.bin_location ? String(tool.bin_location).toLowerCase().trim() : '';
                 
-                if (!originalBinId) {
-                  // Try to find bin ID by name/location
-                  const binName = tool.bin_name ? String(tool.bin_name).toLowerCase().trim() : '';
-                  const binLocation = tool.bin_location ? String(tool.bin_location).toLowerCase().trim() : '';
-                  
-                  if (inventory && inventory.length > 0) {
-                    for (const item of inventory) {
-                      if (!item || !item.id) continue;
-                      const itemName = item.bin_name ? String(item.bin_name).toLowerCase().trim() : '';
-                      const itemLocation = item.bin_location ? String(item.bin_location).toLowerCase().trim() : '';
-                      
-                      if ((!binName || itemName.includes(binName) || binName.includes(itemName)) &&
-                          (!binLocation || itemLocation.includes(binLocation) || binLocation.includes(itemLocation))) {
-                        tool.bin_id = item.id;
-                        return tool;
-                      }
-                    }
-                  }
+                // STRATEGY 1: Use tool name to find the correct bin
+                if (toolName && toolToBinInfo.has(toolName)) {
+                  const correctBin = toolToBinInfo.get(toolName)!;
+                  tool.bin_id = correctBin.binId;
+                  tool.bin_name = correctBin.binName;
+                  tool.bin_location = correctBin.binLocation;
+                  console.log(`🔧 Corrected bin for "${toolName}" via tool lookup: ${correctBin.binId}`);
                   return tool;
                 }
                 
-                // Validate bin ID
-                if (validBinIds.has(originalBinId)) {
-                  return tool;
-                }
-                
-                // Try fuzzy matching
-                let bestMatch: { id: string; distance: number } | null = null;
-                for (const validId of Array.from(validBinIds) as string[]) {
-                  let differences = 0;
-                  for (let k = 0; k < Math.min(originalBinId.length, validId.length); k++) {
-                    if (originalBinId[k] !== validId[k]) differences++;
-                  }
-                  differences += Math.abs(originalBinId.length - validId.length);
-                  
-                  if (differences <= 2 && (!bestMatch || differences < bestMatch.distance)) {
-                    bestMatch = { id: validId, distance: differences };
-                  }
-                }
-                
-                if (bestMatch && bestMatch.distance <= 2) {
-                  if (bestMatch.distance === 1) {
-                    tool.bin_id = bestMatch.id;
-                    console.log(`🔧 Fixed truncated JSON bin ID: ${originalBinId} -> ${bestMatch.id}`);
-                  } else {
-                    // For 2-char differences, verify by name
-                    const binName = tool.bin_name ? String(tool.bin_name).toLowerCase().trim() : '';
-                    const binLocation = tool.bin_location ? String(tool.bin_location).toLowerCase().trim() : '';
-                    
-                    if (inventory && inventory.length > 0) {
-                      for (const item of inventory) {
-                        if (item.id.toLowerCase() === bestMatch.id) {
-                          const itemName = item.bin_name ? String(item.bin_name).toLowerCase().trim() : '';
-                          const itemLocation = item.bin_location ? String(item.bin_location).toLowerCase().trim() : '';
-                          
-                          if ((!binName || itemName.includes(binName) || binName.includes(itemName)) &&
-                              (!binLocation || itemLocation.includes(binLocation) || binLocation.includes(itemLocation))) {
-                            tool.bin_id = bestMatch.id;
-                            console.log(`🔧 Fixed truncated JSON bin ID: ${originalBinId} -> ${bestMatch.id}`);
-                            break;
-                          }
-                        }
-                      }
+                // Try partial tool name match
+                if (toolName) {
+                  for (const [inventoryToolName, binInfo] of toolToBinInfo.entries()) {
+                    if (inventoryToolName.includes(toolName) || toolName.includes(inventoryToolName)) {
+                      tool.bin_id = binInfo.binId;
+                      tool.bin_name = binInfo.binName;
+                      tool.bin_location = binInfo.binLocation;
+                      console.log(`🔧 Partial tool match for "${toolName}": ${binInfo.binId}`);
+                      return tool;
                     }
                   }
-                } else {
-                  // Try name-based lookup
-                  const binName = tool.bin_name ? String(tool.bin_name).toLowerCase().trim() : '';
-                  const binLocation = tool.bin_location ? String(tool.bin_location).toLowerCase().trim() : '';
-                  
-                  if (inventory && inventory.length > 0) {
-                    for (const item of inventory) {
-                      if (!item || !item.id) continue;
-                      const itemName = item.bin_name ? String(item.bin_name).toLowerCase().trim() : '';
-                      const itemLocation = item.bin_location ? String(item.bin_location).toLowerCase().trim() : '';
-                      
-                      if ((!binName || itemName.includes(binName) || binName.includes(itemName)) &&
-                          (!binLocation || itemLocation.includes(binLocation) || binLocation.includes(itemLocation))) {
-                        tool.bin_id = item.id;
-                        console.log(`🔧 Fixed truncated JSON bin ID by name: ${originalBinId} -> ${item.id}`);
-                        break;
-                      }
+                }
+                
+                // STRATEGY 2: Validate bin ID and verify tool is in bin
+                if (originalBinId && validBinIds.has(originalBinId)) {
+                  const binInfo = binIdToInfo.get(originalBinId);
+                  if (binInfo) {
+                    const toolsInBin = binInfo.tools.map((t: string) => t.toLowerCase().trim());
+                    if (toolsInBin.some((t: string) => t.includes(toolName) || toolName.includes(t))) {
+                      return tool; // Verified
+                    }
+                  }
+                }
+                
+                // STRATEGY 3: Exact name+location match
+                if (statedBinName && statedBinLocation) {
+                  for (const item of inventory || []) {
+                    if (!item || !item.id) continue;
+                    const itemName = (item.bin_name || '').toLowerCase().trim();
+                    const itemLocation = (item.bin_location || '').toLowerCase().trim();
+                    if (itemName === statedBinName && itemLocation === statedBinLocation) {
+                      tool.bin_id = item.id;
+                      return tool;
                     }
                   }
                 }
@@ -771,9 +792,63 @@ Write your response in plain text without using asterisks (**) or any markdown f
         if (uuidMatch) {
           const binId = uuidMatch[1].toLowerCase();
           
-          // Check if bin ID is valid
-          if (validBinIds.has(binId)) {
-            fixedResponse += line + '\n';
+          // ENHANCED: First try tool-based lookup (most reliable)
+          let correctBinIdFromTool: string | null = null;
+          
+          // Look back to find the tool name for this bin
+          for (let j = Math.max(0, i - 10); j < i; j++) {
+            const toolMatch = lines[j].match(/^\s*(\d+)\.\s*(.+)$/);
+            if (toolMatch) {
+              const toolNameFromResponse = toolMatch[2].trim().toLowerCase();
+              // Try exact match
+              if (toolToBinInfo.has(toolNameFromResponse)) {
+                correctBinIdFromTool = toolToBinInfo.get(toolNameFromResponse)!.binId;
+                console.log(`🔧 Tool lookup for "${toolNameFromResponse}": ${correctBinIdFromTool}`);
+                break;
+              }
+              // Try partial match
+              for (const [inventoryToolName, binInfo] of toolToBinInfo.entries()) {
+                if (inventoryToolName.includes(toolNameFromResponse) || toolNameFromResponse.includes(inventoryToolName)) {
+                  correctBinIdFromTool = binInfo.binId;
+                  console.log(`🔧 Partial tool lookup for "${toolNameFromResponse}": ${correctBinIdFromTool}`);
+                  break;
+                }
+              }
+              if (correctBinIdFromTool) break;
+            }
+          }
+          
+          // If tool lookup found a bin, use it (most reliable)
+          if (correctBinIdFromTool) {
+            fixedResponse += line.replace(/Bin [Ii][Dd]:\s*.+/i, `Bin ID: ${correctBinIdFromTool}`) + '\n';
+            if (correctBinIdFromTool !== binId) {
+              console.log(`🔧 Corrected bin ID via tool lookup: ${binId} -> ${correctBinIdFromTool}`);
+              fixedBinIdCount++;
+            }
+          } else if (validBinIds.has(binId)) {
+            // Bin ID is valid but verify tool is in bin
+            const binInfo = binIdToInfo.get(binId);
+            let toolVerified = false;
+            if (binInfo) {
+              // Look back for tool name
+              for (let j = Math.max(0, i - 10); j < i; j++) {
+                const toolMatch = lines[j].match(/^\s*(\d+)\.\s*(.+)$/);
+                if (toolMatch) {
+                  const toolNameLower = toolMatch[2].trim().toLowerCase();
+                  const toolsInBin = binInfo.tools.map((t: string) => t.toLowerCase().trim());
+                  if (toolsInBin.some((t: string) => t.includes(toolNameLower) || toolNameLower.includes(t))) {
+                    toolVerified = true;
+                  }
+                  break;
+                }
+              }
+            }
+            if (toolVerified) {
+              fixedResponse += line + '\n';
+            } else {
+              console.warn(`⚠️ Bin ID ${binId} valid but tool not verified - keeping anyway`);
+              fixedResponse += line + '\n';
+            }
           } else {
             // Try multiple strategies to find correct bin ID
             let fixed = false;
