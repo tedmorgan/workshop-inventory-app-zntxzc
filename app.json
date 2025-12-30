@@ -10,11 +10,16 @@
     "splash": {
       "image": "./assets/images/Workshop-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#000000"
+      "backgroundColor": "#FFFFFF"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.anonymous.Natively",
+      "splash": {
+        "image": "./assets/images/Workshop-icon.png",
+        "resizeMode": "contain",
+        "backgroundColor": "#FFFFFF"
+      },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "CFBundleDisplayName": "Workshop AI",
@@ -25,7 +30,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/Workshop-icon.png",
-        "backgroundColor": "#000000"
+        "backgroundColor": "#FFFFFF"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.nagrom.inventory",
