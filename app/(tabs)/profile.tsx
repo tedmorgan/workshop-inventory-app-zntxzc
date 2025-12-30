@@ -167,10 +167,10 @@ export default function ProfileScreen() {
 
           {/* App Info */}
           <View style={styles.appInfo}>
-            <Text style={styles.appInfoText}>Workshop Tool Inventory</Text>
+            <Text style={styles.appInfoText}>Workshop AI</Text>
             <Text style={styles.appInfoVersion}>Version 1.0.0</Text>
             <Text style={styles.appInfoCopyright}>
-              Device-based inventory management
+              Personal tool inventory management
             </Text>
           </View>
         </ScrollView>

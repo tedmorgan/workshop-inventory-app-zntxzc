@@ -127,7 +127,7 @@ export default function HomeScreen() {
     <>
       <Stack.Screen
         options={{
-          title: "Workshop Inventory",
+          title: "Workshop AI",
           headerRight: renderHeaderRight,
         }}
       />
@@ -141,9 +141,9 @@ export default function HomeScreen() {
           end={{ x: 1, y: 1 }}
           style={styles.heroCard}
         >
-          <Text style={styles.heroTitle}>Workshop Tool Inventory</Text>
+          <Text style={styles.heroTitle}>Workshop AI</Text>
           <Text style={styles.heroSubtitle}>
-            Organize, track, and find your tools with AI-powered image recognition
+            Organize, track, and find your tools with AI-powered photo capture
           </Text>
         </LinearGradient>
 
@@ -212,7 +212,7 @@ export default function HomeScreen() {
             <Text style={[styles.infoTitle, { color: colors.text }]}>AI-Powered Recognition</Text>
           </View>
           <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-            This app uses Advanced AI models to automatically identify tools from photos. Simply take a picture of your tools, and the AI will create a detailed list for you.
+            This app uses Advanced AI models to automatically identify tools from photos. Simply take a picture of your tools, and our AI will create a detailed tool list for you.
           </Text>
         </View>
 
