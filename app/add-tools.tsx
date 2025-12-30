@@ -978,7 +978,7 @@ export default function AddToolsScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Introductory Modal - FIXED FOR iOS */}
+      {/* Introductory Modal */}
       <Modal
         visible={showIntroModal}
         transparent={true}
@@ -986,53 +986,56 @@ export default function AddToolsScreen() {
         onRequestClose={closeIntroModal}
         presentationStyle={Platform.OS === 'ios' ? 'overFullScreen' : undefined}
       >
-        <TouchableWithoutFeedback onPress={closeIntroModal}>
         <View style={styles.introModalOverlay}>
-            <TouchableWithoutFeedback>
-              <View style={styles.introModalContent}>
+          <Pressable 
+            style={StyleSheet.absoluteFill}
+            onPress={closeIntroModal}
+          />
+          <View style={styles.introModalContent}>
             <ScrollView
               ref={introModalScrollViewRef}
               style={styles.introModalScrollView}
               contentContainerStyle={styles.introModalScrollContent}
               showsVerticalScrollIndicator={true}
-                  bounces={true}
-                  scrollEnabled={true}
-                  nestedScrollEnabled={true}
+              bounces={true}
+              scrollEnabled={true}
+              nestedScrollEnabled={true}
+              keyboardShouldPersistTaps="handled"
             >
-              <View style={styles.introModalHeader}>
-                <IconSymbol name="info.circle.fill" color={colors.primary} size={32} />
-                <Text style={[styles.introModalTitle, { color: colors.text }]}>
-                  Welcome to Workshop!
+              <Pressable onPress={(e) => e.stopPropagation()}>
+                <View style={styles.introModalHeader}>
+                  <IconSymbol name="info.circle.fill" color={colors.primary} size={32} />
+                  <Text style={[styles.introModalTitle, { color: colors.text }]}>
+                    Welcome to Workshop!
+                  </Text>
+                </View>
+
+                <Text style={[styles.introModalText, { color: colors.text }]}>
+                  Workshop can help you keep track of where your tools are located. For each bin, remove all the tools & materials and place on a table spaced out like in the image. Take a photo and Workshop AI will identify each item. You can then edit and add to your Tool Inventory.
                 </Text>
-              </View>
 
-              <Text style={[styles.introModalText, { color: colors.text }]}>
-                Workshop can help you keep track of where your tools are located. For each bin, remove all the tools & materials and place on a table spaced out like in the image. Take a photo and Workshop AI will identify each item. You can then edit and add to your Tool Inventory.
-              </Text>
+                <View style={styles.introImageContainer}>
+                  <Image
+                    source={require('@/assets/images/59a6d842-e6a8-4050-b2cd-0a1df289bf14.jpeg')}
+                    style={styles.introImage}
+                    resizeMode="contain"
+                  />
+                  <Text style={[styles.introImageCaption, { color: colors.textSecondary }]}>
+                    Example: Tools laid out on a table for AI identification
+                  </Text>
+                </View>
 
-              <View style={styles.introImageContainer}>
-                <Image
-                  source={require('@/assets/images/59a6d842-e6a8-4050-b2cd-0a1df289bf14.jpeg')}
-                  style={styles.introImage}
-                  resizeMode="contain"
-                />
-                <Text style={[styles.introImageCaption, { color: colors.textSecondary }]}>
-                  Example: Tools laid out on a table for AI identification
-                </Text>
-              </View>
-
-              <Pressable
-                style={styles.introModalButton}
-                onPress={closeIntroModal}
-              >
-                <Text style={styles.introModalButtonText}>Got it!</Text>
-                <IconSymbol name="arrow.right" color="#FFFFFF" size={20} />
+                <Pressable
+                  style={styles.introModalButton}
+                  onPress={closeIntroModal}
+                >
+                  <Text style={styles.introModalButtonText}>Got it!</Text>
+                  <IconSymbol name="arrow.right" color="#FFFFFF" size={20} />
+                </Pressable>
               </Pressable>
             </ScrollView>
           </View>
-            </TouchableWithoutFeedback>
         </View>
-        </TouchableWithoutFeedback>
       </Modal>
 
       {/* Re-analyze Modal */}
@@ -1396,10 +1399,9 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   introModalContent: {
-    width: '100%',
+    width: '90%',
     maxWidth: 500,
-    height: '85%',
-    maxHeight: '85%',
+    maxHeight: '90%',
     borderRadius: 24,
     overflow: 'hidden',
     backgroundColor: colors.card,
@@ -1420,7 +1422,8 @@ const styles = StyleSheet.create({
   },
   introModalScrollContent: {
     padding: 24,
-    paddingBottom: 32,
+    paddingBottom: 40,
+    flexGrow: 1,
   },
   introModalHeader: {
     alignItems: 'center',
@@ -1460,10 +1463,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 16,
+    paddingHorizontal: 24,
     borderRadius: 12,
     gap: 8,
-    marginTop: 8,
-    marginBottom: 16, // Extra bottom margin for scrolling
+    marginTop: 24,
+    marginBottom: 8,
+    minHeight: 56,
   },
   introModalButtonText: {
     color: '#FFFFFF',
