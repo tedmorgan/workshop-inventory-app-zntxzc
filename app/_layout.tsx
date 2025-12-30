@@ -34,7 +34,20 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (loaded) {
-      SplashScreen.hideAsync();
+      // Add minimum display time for splash screen (2 seconds)
+      const minDisplayTime = 2000; // 2 seconds
+      const startTime = Date.now();
+      
+      const hideSplash = () => {
+        const elapsed = Date.now() - startTime;
+        const remaining = Math.max(0, minDisplayTime - elapsed);
+        
+        setTimeout(() => {
+          SplashScreen.hideAsync();
+        }, remaining);
+      };
+      
+      hideSplash();
     }
   }, [loaded]);
 
