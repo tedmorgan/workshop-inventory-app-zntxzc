@@ -1002,16 +1002,15 @@ export default function AddToolsScreen() {
               nestedScrollEnabled={true}
               keyboardShouldPersistTaps="handled"
             >
-              <Pressable onPress={(e) => e.stopPropagation()}>
                 <View style={styles.introModalHeader}>
                   <IconSymbol name="info.circle.fill" color={colors.primary} size={32} />
                   <Text style={[styles.introModalTitle, { color: colors.text }]}>
-                    Welcome to Workshop!
+                    Welcome to Workshop AI!
                   </Text>
                 </View>
 
                 <Text style={[styles.introModalText, { color: colors.text }]}>
-                  Workshop can help you keep track of where your tools are located. For each bin, remove all the tools & materials and place on a table spaced out like in the image. Take a photo and Workshop AI will identify each item. You can then edit and add to your Tool Inventory.
+                  Workshop AI can help you keep track of where your tools are located. For each bin, remove all the tools & materials and place on a table spaced out like in the image below. Take a photo and Workshop AI will identify each item. You can then edit and add the bin to your Tool Inventory.
                 </Text>
 
                 <View style={styles.introImageContainer}>
@@ -1032,8 +1031,7 @@ export default function AddToolsScreen() {
                   <Text style={styles.introModalButtonText}>Got it!</Text>
                   <IconSymbol name="arrow.right" color="#FFFFFF" size={20} />
                 </Pressable>
-              </Pressable>
-            </ScrollView>
+              </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1401,10 +1399,12 @@ const styles = StyleSheet.create({
   introModalContent: {
     width: '90%',
     maxWidth: 500,
-    maxHeight: '90%',
+    height: '85%',
+    maxHeight: 700,
     borderRadius: 24,
     overflow: 'hidden',
     backgroundColor: colors.card,
+    zIndex: 1000,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
