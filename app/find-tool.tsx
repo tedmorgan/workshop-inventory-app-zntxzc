@@ -544,8 +544,26 @@ export default function FindToolScreen() {
     }
   };
 
+  const addAffiliateCode = (url: string): string => {
+    try {
+      const affiliateCode = 'workshopai-20';
+      const urlObj = new URL(url);
+      
+      // Add or replace the tag parameter
+      urlObj.searchParams.set('tag', affiliateCode);
+      
+      return urlObj.toString();
+    } catch (error) {
+      // If URL parsing fails, try to append manually
+      console.warn('Failed to parse URL, attempting manual append:', error);
+      const separator = url.includes('?') ? '&' : '?';
+      return `${url}${separator}tag=workshopai-20`;
+    }
+  };
+
   const openAmazonLink = (url: string) => {
-    Linking.openURL(url).catch(err => {
+    const affiliateUrl = addAffiliateCode(url);
+    Linking.openURL(affiliateUrl).catch(err => {
       console.error('Failed to open Amazon link:', err);
     });
   };
