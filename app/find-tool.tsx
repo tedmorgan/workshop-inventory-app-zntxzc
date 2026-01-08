@@ -24,7 +24,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Stack, useRouter, useFocusEffect, usePathname, useSegments } from 'expo-router';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
-import { supabase } from '@integrations/supabase/client';
+import { getSupabaseClient } from '@integrations/supabase/client';
 import { getDeviceId } from '@/utils/deviceId';
 import { useNavigation as useNavContext } from '@/contexts/NavigationContext';
 import Animated, {
@@ -155,10 +155,11 @@ export default function FindToolScreen() {
     try {
       console.log('🔍 Simple text search for:', searchTerm);
 
-      // Get device ID
+      // Get secure Supabase client with device ID header
+      const supabase = await getSupabaseClient();
       const deviceId = await getDeviceId();
 
-      // Fetch all inventory items for this device
+      // Fetch all inventory items for this device (RLS will verify via header)
       const { data, error } = await supabase
         .from('tool_inventory')
         .select('id, tools, bin_name, bin_location')
@@ -265,7 +266,8 @@ export default function FindToolScreen() {
       // Proceed with GPT search (either because it's multiple words or simple search found nothing)
       console.log('🤖 Advanced AI search for:', query);
 
-      // Get device ID
+      // Get secure Supabase client with device ID header
+      const supabase = await getSupabaseClient();
       const deviceId = await getDeviceId();
       console.log('📱 Device ID:', deviceId.substring(0, 8) + '...');
 
@@ -376,6 +378,7 @@ export default function FindToolScreen() {
         : 'audio/m4a'; // Default
 
       // Call transcription Edge Function
+      const supabase = await getSupabaseClient();
       const { data, error } = await supabase.functions.invoke('transcribe-audio', {
         body: {
           audioBase64: base64Audio,
@@ -423,10 +426,11 @@ export default function FindToolScreen() {
 
           // Proceed with GPT search
           console.log('🤖 Advanced AI search for:', query);
+          const supabaseClient = await getSupabaseClient();
           const deviceId = await getDeviceId();
           console.log('📱 Device ID:', deviceId.substring(0, 8) + '...');
 
-          const { data: searchData, error: searchError } = await supabase.functions.invoke('advanced-tool-search', {
+          const { data: searchData, error: searchError } = await supabaseClient.functions.invoke('advanced-tool-search', {
             body: {
               searchQuery: query,
               deviceId: deviceId,
@@ -486,6 +490,7 @@ export default function FindToolScreen() {
       console.warn('⚠️ Invalid or missing bin ID:', binId, '- attempting lookup by name/location');
       // Fallback: try to find bin by name and location
       try {
+        const supabase = await getSupabaseClient();
         const deviceId = await getDeviceId();
         const { data, error } = await supabase
           .from('tool_inventory')
@@ -576,6 +581,7 @@ export default function FindToolScreen() {
 
     try {
       console.log('🖼️ Fetching image for:', toolName);
+      const supabase = await getSupabaseClient();
       const { data, error } = await supabase.functions.invoke('search-tool-image', {
         body: { toolName: toolName },
       });

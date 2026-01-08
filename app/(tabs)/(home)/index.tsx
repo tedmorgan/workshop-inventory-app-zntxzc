@@ -5,7 +5,7 @@ import { colors } from "@/styles/commonStyles";
 import { Stack, useRouter } from "expo-router";
 import * as Clipboard from 'expo-clipboard';
 import { IconSymbol } from "@/components/IconSymbol";
-import { supabase } from "@integrations/supabase/client";
+import { getSupabaseClient } from "@integrations/supabase/client";
 import { LinearGradient } from "expo-linear-gradient";
 import { 
   ScrollView, 
@@ -54,11 +54,12 @@ export default function HomeScreen() {
       setDownloading(true);
       console.log('📥 Starting inventory download');
 
-      // Get device ID
+      // Get secure Supabase client with device ID header
+      const supabase = await getSupabaseClient();
       const deviceId = await getDeviceId();
       console.log('📱 Device ID:', deviceId.substring(0, 8) + '...');
 
-      // Query with device_id filter
+      // Query with device_id filter (RLS will verify via header)
       const { data: inventory, error } = await supabase
         .from('tool_inventory')
         .select('*')

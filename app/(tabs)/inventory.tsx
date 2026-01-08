@@ -25,7 +25,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { supabase } from "@integrations/supabase/client";
+import { getSupabaseClient } from "@integrations/supabase/client";
 import { Stack, useRouter, useFocusEffect, useLocalSearchParams, usePathname } from "expo-router";
 import { getDeviceId } from "@/utils/deviceId";
 import { useNavigation } from "@/contexts/NavigationContext";
@@ -224,11 +224,12 @@ export default function InventoryScreen() {
       console.log('📦 Loading inventory');
       setLoading(true);
 
-      // Get device ID
+      // Get secure Supabase client with device ID header
+      const supabase = await getSupabaseClient();
       const deviceId = await getDeviceId();
       console.log('📱 Device ID:', deviceId.substring(0, 8) + '...');
 
-      // Query with device_id filter
+      // Query with device_id filter (RLS will also verify via header)
       const { data, error } = await supabase
         .from('tool_inventory')
         .select('*')
@@ -311,6 +312,7 @@ export default function InventoryScreen() {
     setSaving(true);
 
     try {
+      const supabase = await getSupabaseClient();
       const { error } = await supabase
         .from('tool_inventory')
         .update({
@@ -350,6 +352,7 @@ export default function InventoryScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
+              const supabase = await getSupabaseClient();
               const { error } = await supabase
                 .from('tool_inventory')
                 .delete()

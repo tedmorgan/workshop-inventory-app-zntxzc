@@ -20,7 +20,7 @@ import { Stack, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
-import { supabase } from '@integrations/supabase/client';
+import { getSupabaseClient } from '@integrations/supabase/client';
 import { decode } from 'base64-arraybuffer';
 import { getDeviceId } from '@/utils/deviceId';
 
@@ -88,11 +88,12 @@ export default function AddToolsScreen() {
       console.log('🔍 Loading existing bin names and locations');
       setLoadingExistingData(true);
 
-      // Get device ID
+      // Get secure Supabase client with device ID header
+      const supabase = await getSupabaseClient();
       const deviceId = await getDeviceId();
       console.log('📱 Device ID:', deviceId.substring(0, 8) + '...');
 
-      // Fetch all inventory items for this device
+      // Fetch all inventory items for this device (RLS will verify via header)
       const { data, error } = await supabase
         .from('tool_inventory')
         .select('bin_name, bin_location')
@@ -135,11 +136,12 @@ export default function AddToolsScreen() {
     try {
       console.log('🔍 Checking if inventory is empty');
 
-      // Get device ID
+      // Get secure Supabase client with device ID header
+      const supabase = await getSupabaseClient();
       const deviceId = await getDeviceId();
       console.log('📱 Device ID:', deviceId.substring(0, 8) + '...');
 
-      // Check if inventory is empty for this device
+      // Check if inventory is empty for this device (RLS will verify via header)
       const { data, error } = await supabase
         .from('tool_inventory')
         .select('id')
@@ -395,6 +397,7 @@ export default function AddToolsScreen() {
 
       try {
         console.log('🔑 Calling Edge Function with anon key');
+        const supabase = await getSupabaseClient();
         const { data, error } = await supabase.functions.invoke('analyze-tools-image', {
           body: requestBody,
         });
@@ -567,6 +570,9 @@ export default function AddToolsScreen() {
     try {
       console.log('☁️ Starting image upload to Supabase');
       
+      // Get secure Supabase client
+      const supabase = await getSupabaseClient();
+      
       let base64: string;
       
       if (Platform.OS === 'web') {
@@ -669,7 +675,8 @@ export default function AddToolsScreen() {
     console.log('💾 Starting save process');
     
     try {
-      // Get device ID
+      // Get secure Supabase client with device ID header
+      const supabase = await getSupabaseClient();
       const deviceId = await getDeviceId();
       console.log('📱 Device ID obtained:', deviceId.substring(0, 8) + '...');
 
@@ -688,7 +695,7 @@ export default function AddToolsScreen() {
 
       console.log(`📝 Prepared ${tools.length} tools`);
 
-      // Step 3: Insert into database with device_id
+      // Step 3: Insert into database with device_id (RLS will verify via header)
       console.log('💾 Step 2: Inserting into database');
       const insertData = {
         image_url: imageUrl,
