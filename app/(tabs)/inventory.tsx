@@ -25,7 +25,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getSupabaseClient } from "@integrations/supabase/client";
+import { getSupabaseClient } from "@/app/integrations/supabase/client";
 import { Stack, useRouter, useFocusEffect, useLocalSearchParams, usePathname } from "expo-router";
 import { getDeviceId } from "@/utils/deviceId";
 import { useNavigation } from "@/contexts/NavigationContext";
@@ -66,46 +66,49 @@ export default function InventoryScreen() {
   const [saving, setSaving] = useState(false);
   const [expandedImageUrl, setExpandedImageUrl] = useState<string | null>(null);
   const [currentFilterBinId, setCurrentFilterBinId] = useState<string | null>(null);
-  const filterBinReadRef = React.useRef(false);
+  // Track if we've processed the initial navigation for this focus session
+  const hasProcessedNavigationRef = React.useRef(false);
   const params = useLocalSearchParams();
   const router = useRouter();
   const navContext = useNavigation();
   const pathname = usePathname();
   
-  // Check navigation context when screen gains focus
+  // Process navigation context ONLY when screen gains focus (no dependencies)
+  // This ensures the callback only runs on actual focus, not on context changes
   useFocusEffect(
     useCallback(() => {
       console.log('📋 Inventory screen focused');
-      console.log('📋 Inventory screen focused');
-      console.log('📋 Navigation context:', {
+      
+      // Read the current context value at focus time
+      const filterBinId = navContext.filterBinId;
+      
+      console.log('📋 Navigation context at focus:', {
         returnToSearch: navContext.returnToSearch,
-        filterBinId: navContext.filterBinId,
+        filterBinId: filterBinId,
         editBinId: navContext.editBinId,
         currentFilterBinId: currentFilterBinId,
-        filterBinReadRef: filterBinReadRef.current
+        hasProcessed: hasProcessedNavigationRef.current
       });
       
-      // Read filterBinId when screen gains focus (in case screen was already mounted)
-      // Only read if we haven't read it yet and it exists
-      if (navContext.filterBinId && !filterBinReadRef.current) {
-        console.log('🔍 Reading filterBinId on focus:', navContext.filterBinId);
-        setCurrentFilterBinId(navContext.filterBinId);
-        filterBinReadRef.current = true;
-        // Don't clear it here - let the useEffect handle it
-      } else if (!navContext.filterBinId && currentFilterBinId && !filterBinReadRef.current) {
-        // If context is null but we have a local filter, keep using it (might be applying)
-        console.log('🔍 Context filterBinId is null but keeping local filter:', currentFilterBinId);
-        filterBinReadRef.current = true;
+      // Process the filter from context
+      if (filterBinId) {
+        // User navigated with a specific bin filter - apply it
+        console.log('🔍 Applying filter from navigation:', filterBinId);
+        setCurrentFilterBinId(filterBinId);
+      } else {
+        // User navigated without a filter (e.g., "View Full Inventory")
+        console.log('🔍 No filter in navigation - showing all inventory');
+        setCurrentFilterBinId(null);
       }
       
-      // Reset the ref when we lose focus (so we can read a new filter next time)
-      // But only if we don't have an active filter
+      hasProcessedNavigationRef.current = true;
+      
+      // Reset when screen loses focus
       return () => {
-        if (!currentFilterBinId) {
-          filterBinReadRef.current = false;
-        }
+        console.log('📋 Inventory screen losing focus');
+        hasProcessedNavigationRef.current = false;
       };
-    }, [navContext.returnToSearch, navContext.filterBinId, navContext.editBinId, currentFilterBinId])
+    }, []) // Empty deps - only run on actual focus/blur
   );
 
   // Debug returnToSearch state changes
@@ -134,24 +137,20 @@ export default function InventoryScreen() {
     }
   }, [navContext.editBinId, inventory]);
 
-  // Read filterBinId from context and store it locally (one-time read)
+  // Handle filter updates while screen is visible (e.g., if context changes without navigation)
+  // This only applies a NEW filter, never clears (clearing only happens on navigation via useFocusEffect)
   useEffect(() => {
-    if (navContext.filterBinId) {
-      if (!filterBinReadRef.current) {
-        console.log('🔍 Received filterBinId from context in useEffect:', navContext.filterBinId);
-        setCurrentFilterBinId(navContext.filterBinId);
-        filterBinReadRef.current = true;
-        console.log('🔍 Stored filterBinId in state:', navContext.filterBinId);
-      } else if (currentFilterBinId !== navContext.filterBinId) {
-        // If we already read one but context has a different one, update it
-        console.log('🔍 Updating filterBinId from context:', navContext.filterBinId, 'old:', currentFilterBinId);
-        setCurrentFilterBinId(navContext.filterBinId);
-      }
-      // Don't clear it yet - wait until filter is successfully applied
-    } else if (navContext.filterBinId === null && currentFilterBinId && filterBinReadRef.current) {
-      // If context was cleared but we still have a filter, keep it (might be applying)
-      console.log('🔍 Context filterBinId cleared but keeping local filter:', currentFilterBinId);
+    // Only update if we have a NEW filter that's different from current
+    // AND we've already processed the initial navigation
+    if (hasProcessedNavigationRef.current && 
+        navContext.filterBinId && 
+        navContext.filterBinId !== currentFilterBinId) {
+      console.log('🔍 FilterBinId changed while on screen:', navContext.filterBinId);
+      setCurrentFilterBinId(navContext.filterBinId);
     }
+    // Note: We intentionally DON'T clear when filterBinId becomes null here
+    // because that happens after successful filter application (setTimeout in filter effect)
+    // Clearing is only done in useFocusEffect when user navigates TO the screen with null
   }, [navContext.filterBinId, currentFilterBinId]);
 
   // Apply the filter when inventory loads or filter changes
@@ -555,7 +554,7 @@ export default function InventoryScreen() {
                   // Clear state before navigating back
                   navContext.setReturnToSearch(false);
                   setCurrentFilterBinId(null);
-                  filterBinReadRef.current = false;
+                  hasProcessedNavigationRef.current = false;
                   router.back();
                   console.log('🔙 [INVENTORY] Back command sent');
                 } catch (error) {
