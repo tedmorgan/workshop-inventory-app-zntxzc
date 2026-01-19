@@ -66,6 +66,9 @@ export default function InventoryScreen() {
   const [saving, setSaving] = useState(false);
   const [expandedImageUrl, setExpandedImageUrl] = useState<string | null>(null);
   const [currentFilterBinId, setCurrentFilterBinId] = useState<string | null>(null);
+  const [locationsModalVisible, setLocationsModalVisible] = useState(false);
+  const [binsModalVisible, setBinsModalVisible] = useState(false);
+  const [selectedLocationFilter, setSelectedLocationFilter] = useState<string | null>(null);
   // Track if we've processed the initial navigation for this focus session
   const hasProcessedNavigationRef = React.useRef(false);
   const params = useLocalSearchParams();
@@ -256,6 +259,58 @@ export default function InventoryScreen() {
     setRefreshing(true);
     loadInventory();
   };
+
+  // Compute unique locations from inventory
+  const uniqueLocations = React.useMemo(() => {
+    const locationMap = new Map<string, number>();
+    inventory.forEach(item => {
+      const location = item.bin_location || 'Unspecified';
+      locationMap.set(location, (locationMap.get(location) || 0) + 1);
+    });
+    return Array.from(locationMap.entries()).map(([name, binCount]) => ({
+      name,
+      binCount,
+    })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [inventory]);
+
+  const totalLocations = uniqueLocations.length;
+
+  // Handle location selection from locations modal
+  const handleLocationSelect = (locationName: string) => {
+    setLocationsModalVisible(false);
+    // Clear bin filter when selecting a location to avoid conflicts
+    setCurrentFilterBinId(null);
+    setSelectedLocationFilter(locationName);
+  };
+
+  // Handle bin selection from bins modal
+  const handleBinSelect = (binId: string) => {
+    setBinsModalVisible(false);
+    // Clear location filter when selecting a specific bin to avoid conflicts
+    setSelectedLocationFilter(null);
+    setCurrentFilterBinId(binId);
+  };
+
+  // Clear all filters
+  const clearLocationFilter = () => {
+    setSelectedLocationFilter(null);
+  };
+
+  const clearAllFilters = () => {
+    setSelectedLocationFilter(null);
+    setCurrentFilterBinId(null);
+  };
+
+  // Get display inventory based on filters
+  const displayInventory = React.useMemo(() => {
+    let result = filteredInventory;
+    if (selectedLocationFilter) {
+      result = result.filter(item => 
+        (item.bin_location || 'Unspecified') === selectedLocationFilter
+      );
+    }
+    return result;
+  }, [filteredInventory, selectedLocationFilter]);
 
   const openEditModal = (item: ToolInventoryItem) => {
     setEditingItem(item);
@@ -598,11 +653,22 @@ export default function InventoryScreen() {
           ) : (
             <>
               <View style={styles.statsContainer}>
-                <View style={[styles.statCard, { backgroundColor: colors.card }]}>
+                <Pressable 
+                  style={[styles.statCard, styles.statCardTappable, { backgroundColor: colors.card }]}
+                  onPress={() => setLocationsModalVisible(true)}
+                >
+                  <IconSymbol name="location.fill" size={24} color="#34C759" />
+                  <Text style={[styles.statNumber, { color: colors.text }]}>{totalLocations}</Text>
+                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Locations</Text>
+                </Pressable>
+                <Pressable 
+                  style={[styles.statCard, styles.statCardTappable, { backgroundColor: colors.card }]}
+                  onPress={() => setBinsModalVisible(true)}
+                >
                   <IconSymbol name="tray.fill" size={24} color={colors.primary} />
                   <Text style={[styles.statNumber, { color: colors.text }]}>{inventory.length}</Text>
                   <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Bins</Text>
-                </View>
+                </Pressable>
                 <View style={[styles.statCard, { backgroundColor: colors.card }]}>
                   <IconSymbol name="wrench.fill" size={24} color={colors.accent} />
                   <Text style={[styles.statNumber, { color: colors.text }]}>
@@ -612,7 +678,31 @@ export default function InventoryScreen() {
                 </View>
               </View>
 
-              {filteredInventory.map((item) => (
+              {/* Active Filter Indicator */}
+              {selectedLocationFilter && (
+                <View style={[styles.filterIndicator, { backgroundColor: colors.card }]}>
+                  <IconSymbol name="location.fill" size={16} color="#34C759" />
+                  <Text style={[styles.filterText, { color: colors.text }]}>
+                    Showing bins in: {selectedLocationFilter}
+                  </Text>
+                  <Pressable onPress={clearAllFilters} style={styles.clearFilterButton}>
+                    <IconSymbol name="xmark.circle.fill" size={20} color={colors.textSecondary} />
+                  </Pressable>
+                </View>
+              )}
+              {currentFilterBinId && !selectedLocationFilter && (
+                <View style={[styles.filterIndicator, { backgroundColor: colors.card }]}>
+                  <IconSymbol name="tray.fill" size={16} color={colors.primary} />
+                  <Text style={[styles.filterText, { color: colors.text }]}>
+                    Showing single bin: {inventory.find(i => i.id === currentFilterBinId)?.bin_name || 'Selected bin'}
+                  </Text>
+                  <Pressable onPress={clearAllFilters} style={styles.clearFilterButton}>
+                    <IconSymbol name="xmark.circle.fill" size={20} color={colors.textSecondary} />
+                  </Pressable>
+                </View>
+              )}
+
+              {displayInventory.map((item) => (
                 <View key={item.id} style={[styles.card, { backgroundColor: colors.card }]}>
                   <Pressable onPress={() => expandImage(item.image_url)}>
                     <Image source={{ uri: item.image_url }} style={styles.cardImage} />
@@ -806,6 +896,122 @@ export default function InventoryScreen() {
             </GestureDetector>
           </View>
         </GestureHandlerRootView>
+      </Modal>
+
+      {/* Locations List Modal */}
+      <Modal
+        visible={locationsModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setLocationsModalVisible(false)}
+      >
+        <View style={styles.listModalOverlay}>
+          <View style={[styles.listModalContent, { backgroundColor: colors.card }]}>
+            <View style={styles.listModalHeader}>
+              <Text style={[styles.listModalTitle, { color: colors.text }]}>Locations</Text>
+              <Pressable onPress={() => setLocationsModalVisible(false)} style={styles.modalCloseButton}>
+                <IconSymbol name="xmark.circle.fill" size={28} color={colors.textSecondary} />
+              </Pressable>
+            </View>
+            <ScrollView style={styles.listModalScroll} showsVerticalScrollIndicator={false}>
+              {uniqueLocations.length === 0 ? (
+                <View style={styles.emptyListContainer}>
+                  <IconSymbol name="location.slash" size={48} color={colors.textSecondary} />
+                  <Text style={[styles.emptyListText, { color: colors.textSecondary }]}>
+                    No locations found
+                  </Text>
+                </View>
+              ) : (
+                uniqueLocations.map((location, index) => (
+                  <Pressable
+                    key={location.name}
+                    style={[
+                      styles.listItem,
+                      { backgroundColor: colors.background },
+                      index === uniqueLocations.length - 1 && styles.listItemLast
+                    ]}
+                    onPress={() => handleLocationSelect(location.name)}
+                  >
+                    <View style={styles.listItemLeft}>
+                      <IconSymbol name="location.fill" size={24} color="#34C759" />
+                      <Text style={[styles.listItemTitle, { color: colors.text }]}>
+                        {location.name}
+                      </Text>
+                    </View>
+                    <View style={styles.listItemRight}>
+                      <Text style={[styles.listItemCount, { color: colors.textSecondary }]}>
+                        {location.binCount} {location.binCount === 1 ? 'bin' : 'bins'}
+                      </Text>
+                      <IconSymbol name="chevron.right" size={16} color={colors.textSecondary} />
+                    </View>
+                  </Pressable>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Bins List Modal */}
+      <Modal
+        visible={binsModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setBinsModalVisible(false)}
+      >
+        <View style={styles.listModalOverlay}>
+          <View style={[styles.listModalContent, { backgroundColor: colors.card }]}>
+            <View style={styles.listModalHeader}>
+              <Text style={[styles.listModalTitle, { color: colors.text }]}>All Bins</Text>
+              <Pressable onPress={() => setBinsModalVisible(false)} style={styles.modalCloseButton}>
+                <IconSymbol name="xmark.circle.fill" size={28} color={colors.textSecondary} />
+              </Pressable>
+            </View>
+            <ScrollView style={styles.listModalScroll} showsVerticalScrollIndicator={false}>
+              {inventory.length === 0 ? (
+                <View style={styles.emptyListContainer}>
+                  <IconSymbol name="tray" size={48} color={colors.textSecondary} />
+                  <Text style={[styles.emptyListText, { color: colors.textSecondary }]}>
+                    No bins found
+                  </Text>
+                </View>
+              ) : (
+                inventory.map((item, index) => (
+                  <Pressable
+                    key={item.id}
+                    style={[
+                      styles.listItem,
+                      { backgroundColor: colors.background },
+                      index === inventory.length - 1 && styles.listItemLast
+                    ]}
+                    onPress={() => handleBinSelect(item.id)}
+                  >
+                    <View style={styles.listItemLeft}>
+                      <Image source={{ uri: item.image_url }} style={styles.listItemImage} />
+                      <View style={styles.listItemInfo}>
+                        <Text style={[styles.listItemTitle, { color: colors.text }]}>
+                          {item.bin_name}
+                        </Text>
+                        <View style={styles.listItemSubtitle}>
+                          <IconSymbol name="location.fill" size={12} color={colors.textSecondary} />
+                          <Text style={[styles.listItemLocation, { color: colors.textSecondary }]}>
+                            {item.bin_location || 'Unspecified'}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                    <View style={styles.listItemRight}>
+                      <Text style={[styles.listItemCount, { color: colors.textSecondary }]}>
+                        {item.tools.length} {item.tools.length === 1 ? 'tool' : 'tools'}
+                      </Text>
+                      <IconSymbol name="chevron.right" size={16} color={colors.textSecondary} />
+                    </View>
+                  </Pressable>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </View>
       </Modal>
     </>
   );
@@ -1122,5 +1328,115 @@ const styles = StyleSheet.create({
   fullScreenImage: {
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
+  },
+  // Tappable stat card styles
+  statCardTappable: {
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)',
+  },
+  // Filter indicator styles
+  filterIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 16,
+    gap: 8,
+  },
+  filterText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  clearFilterButton: {
+    padding: 4,
+  },
+  // List modal styles
+  listModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  listModalContent: {
+    width: '100%',
+    maxHeight: '80%',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 24,
+  },
+  listModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.1)',
+  },
+  listModalTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  listModalScroll: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  listItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  listItemLast: {
+    marginBottom: 16,
+  },
+  listItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  listItemRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  listItemTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  listItemCount: {
+    fontSize: 14,
+  },
+  listItemImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    backgroundColor: colors.background,
+  },
+  listItemInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  listItemSubtitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  listItemLocation: {
+    fontSize: 13,
+  },
+  emptyListContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 48,
+    gap: 16,
+  },
+  emptyListText: {
+    fontSize: 16,
+    textAlign: 'center',
   },
 });
