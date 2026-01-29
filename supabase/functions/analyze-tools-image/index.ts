@@ -160,19 +160,18 @@ ${JSON.stringify(previousResponse, null, 2)}
 However, the user has provided this feedback:
 "${userFeedback}"
 
-Please re-analyze the image taking the user's feedback into account. Use code execution to zoom in on specific areas, annotate the image with bounding boxes or labels to track your analysis, and carefully inspect fine-grained details that may have been missed. 
+Please re-analyze the image taking the user's feedback into account. Use code execution internally to zoom in on specific areas, annotate the image with bounding boxes or labels to track your analysis, and carefully inspect fine-grained details that may have been missed. 
 
-You can:
-- Use Python code to crop and zoom into specific regions of the image
-- Draw annotations (bounding boxes, labels) to visually track which tools you've identified
-- Perform visual calculations or measurements if needed
+IMPORTANT: Use code execution internally for analysis, but DO NOT include any code blocks, Python code, or explanations in your response. Return ONLY a valid JSON array of tool names.
 
-Correct any mistakes, add any missed tools, or adjust tool names as requested. Return ONLY a JSON array of tool names, nothing else. Format: ["tool1", "tool2", "tool3"]. Be as specific as possible with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver") and make sure to capture every tool in the image based on the user's feedback.`;
+Correct any mistakes, add any missed tools, or adjust tool names as requested. Return ONLY a JSON array of tool names, nothing else. Format: ["tool1", "tool2", "tool3"]. Be as specific as possible with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver") and make sure to capture every tool in the image based on the user's feedback.
+
+Your response must be ONLY the JSON array, no code blocks, no explanations, no markdown formatting.`;
     } else {
       // Initial analysis - encourage agentic vision behaviors
       promptText = `Analyze this image and identify all tools and materials visible. 
 
-You have access to code execution capabilities. Use Python code to:
+You have access to code execution capabilities. Use Python code INTERNALLY to:
 - Zoom in on small or distant tools to inspect fine-grained details (brand names, sizes, specific features)
 - Annotate the image with bounding boxes and labels to visually track which tools you've identified
 - Crop specific regions to focus on individual tools for better identification
@@ -184,7 +183,11 @@ Be thorough and systematic. Inspect the entire image carefully, paying special a
 - Similar-looking tools that need careful differentiation
 - Tools that might be grouped together or overlapping
 
-Return ONLY a JSON array of tool names and materials, nothing else. Format: ["tool1", "tool2", "tool3"]. Be specific with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver") and make sure to capture every tool and material item in the image but do not include the table or items not associated with building tools.`;
+IMPORTANT: Use code execution internally for analysis, but DO NOT include any code blocks, Python code, or explanations in your response. Return ONLY a valid JSON array of tool names.
+
+Return ONLY a JSON array of tool names and materials, nothing else. Format: ["tool1", "tool2", "tool3"]. Be specific with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver") and make sure to capture every tool and material item in the image but do not include the table or items not associated with building tools.
+
+Your response must be ONLY the JSON array, no code blocks, no explanations, no markdown formatting.`;
     }
     
     console.log(`\n[${requestId}] ${'═'.repeat(80)}`);
@@ -356,37 +359,66 @@ Return ONLY a JSON array of tool names and materials, nothing else. Format: ["to
     console.log(`[${requestId}] ${textResponse}`);
 
     // Parse the JSON array from the response
+    // First, remove code blocks that might interfere with parsing
+    let cleanedResponse = textResponse;
+    
+    // Remove code blocks (```PYTHON ... ```, ```python ... ```, etc.)
+    cleanedResponse = cleanedResponse.replace(/```[\w]*\n[\s\S]*?```/g, '');
+    console.log(`[${requestId}] 🧹 Removed code blocks, cleaned length: ${cleanedResponse.length} chars`);
+
     let tools: string[] = [];
     try {
-      // Try to extract JSON array from the response
-      const jsonMatch = textResponse.match(/\[.*\]/s);
-      if (jsonMatch) {
-        tools = JSON.parse(jsonMatch[0]);
-        console.log(`[${requestId}] ✅ Successfully parsed JSON array: ${JSON.stringify(tools)}`);
+      // Try to find all JSON arrays in the response
+      const jsonArrayMatches = cleanedResponse.match(/\[[\s\S]*?\]/g);
+      
+      if (jsonArrayMatches && jsonArrayMatches.length > 0) {
+        // Try each JSON array, starting from the last one (most likely to be the final answer)
+        let parsedSuccessfully = false;
+        for (let i = jsonArrayMatches.length - 1; i >= 0; i--) {
+          try {
+            const parsed = JSON.parse(jsonArrayMatches[i]);
+            // Validate it's an array of strings
+            if (Array.isArray(parsed) && parsed.every((item: any) => typeof item === 'string')) {
+              tools = parsed;
+              parsedSuccessfully = true;
+              console.log(`[${requestId}] ✅ Successfully parsed JSON array (match ${i + 1}/${jsonArrayMatches.length}): ${JSON.stringify(tools)}`);
+              break;
+            }
+          } catch (e) {
+            // Try next match
+            continue;
+          }
+        }
+        
+        if (!parsedSuccessfully) {
+          console.log(`[${requestId}] ⚠️ Found JSON arrays but none were valid string arrays, trying fallback`);
+          throw new Error('No valid JSON array found');
+        }
       } else {
         console.log(`[${requestId}] ⚠️ No JSON array found in response, using fallback parsing`);
-        // Fallback: split by newlines and clean up
-        tools = textResponse
-          .split('\n')
-          .map((line: string) => line.trim())
-          .filter((line: string) => line.length > 0 && !line.startsWith('[') && !line.startsWith(']'))
-          .map((line: string) =>
-            line
-              .replace(/^[\d\-\*\.\)\]]+\s*/, '')
-              .replace(/^["']|["']$/g, '')
-              .trim()
-          )
-          .filter((line: string) => line.length > 0);
-        console.log(`[${requestId}] ✅ Fallback parsed tools: ${JSON.stringify(tools)}`);
+        throw new Error('No JSON array found');
       }
     } catch (parseError) {
       console.error(`[${requestId}] ❌ Error parsing tools: ${parseError}`);
-      // Last resort: split by common delimiters
-      tools = textResponse
-        .split(/[\n,]/)
-        .map((item: string) => item.trim())
-        .filter((item: string) => item.length > 0);
-      console.log(`[${requestId}] ✅ Last resort parsed tools: ${JSON.stringify(tools)}`);
+      // Fallback: look for quoted strings that look like tool names
+      // Extract strings that are quoted and appear to be tool names
+      const quotedStrings = cleanedResponse.match(/"([^"]+)"/g) || [];
+      tools = quotedStrings
+        .map((str: string) => str.replace(/^"|"$/g, ''))
+        .filter((str: string) => {
+          // Filter out common code-related strings
+          const lowerStr = str.toLowerCase();
+          return !lowerStr.includes('import') && 
+                 !lowerStr.includes('pil.') && 
+                 !lowerStr.includes('image') &&
+                 !lowerStr.includes('crop') &&
+                 !lowerStr.includes('box_2d') &&
+                 !lowerStr.includes('label') &&
+                 !lowerStr.includes('width') &&
+                 !lowerStr.includes('height') &&
+                 str.length > 2; // Reasonable tool name length
+        });
+      console.log(`[${requestId}] ✅ Fallback parsed tools: ${JSON.stringify(tools)}`);
     }
 
     console.log(`[${requestId}] 🎉 Successfully extracted ${tools.length} tools`);
