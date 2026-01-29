@@ -1,6 +1,6 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { GoogleGenerativeAI } from "npm:@google/generative-ai@^0.21.0";
+import { GoogleGenerativeAI } from "npm:@google/generative-ai@^0.24.0";
 
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
 
@@ -136,27 +136,55 @@ Deno.serve(async (req: Request) => {
     console.log(`[${requestId}] 🔧 Initializing Google Generative AI SDK...`);
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
     
-    // Use Gemini 3 Flash Preview model with low thinking level and ultra high media resolution
+    // Use Gemini 3 Flash Preview model with Agentic Vision code execution enabled
     const modelName = 'gemini-3-flash-preview';
     console.log(`[${requestId}] 🎯 Getting model: ${modelName}`);
-    console.log(`[${requestId}] ⚙️ Configuration: thinking_level=low, media_resolution=ultra_high`);
-    const model = genAI.getGenerativeModel({ model: modelName });
+    console.log(`[${requestId}] ⚙️ Configuration: thinking_level=low, media_resolution=ultra_high, code_execution=enabled`);
+    const model = genAI.getGenerativeModel({ 
+      model: modelName,
+      tools: [
+        {
+          codeExecution: {},
+        },
+      ],
+    });
     
     // Prepare the prompt based on whether this is a re-analysis
     let promptText: string;
     
     if (isReanalysis) {
-      // Re-analysis with context
+      // Re-analysis with context - encourage agentic inspection
       promptText = `You previously analyzed this image and identified these tools:
 ${JSON.stringify(previousResponse, null, 2)}
 
 However, the user has provided this feedback:
 "${userFeedback}"
 
-Please re-analyze the image taking the user's feedback into account. Correct any mistakes, add any missed tools, or adjust tool names as requested. Return ONLY a JSON array of tool names, nothing else. Format: ["tool1", "tool2", "tool3"]. Be as specific as possible with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver") and make sure to capture every tool in the image based on the user's feedback.`;
+Please re-analyze the image taking the user's feedback into account. Use code execution to zoom in on specific areas, annotate the image with bounding boxes or labels to track your analysis, and carefully inspect fine-grained details that may have been missed. 
+
+You can:
+- Use Python code to crop and zoom into specific regions of the image
+- Draw annotations (bounding boxes, labels) to visually track which tools you've identified
+- Perform visual calculations or measurements if needed
+
+Correct any mistakes, add any missed tools, or adjust tool names as requested. Return ONLY a JSON array of tool names, nothing else. Format: ["tool1", "tool2", "tool3"]. Be as specific as possible with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver") and make sure to capture every tool in the image based on the user's feedback.`;
     } else {
-      // Initial analysis
-      promptText = 'Analyze this image and identify all tools and materials visible. Return ONLY a JSON array of tool names and materials, nothing else. Format: ["tool1", "tool2", "tool3"]. Be specific with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver") and make sure to capture every tool and material item in the image but do not include the table or items not associated with building tools.';
+      // Initial analysis - encourage agentic vision behaviors
+      promptText = `Analyze this image and identify all tools and materials visible. 
+
+You have access to code execution capabilities. Use Python code to:
+- Zoom in on small or distant tools to inspect fine-grained details (brand names, sizes, specific features)
+- Annotate the image with bounding boxes and labels to visually track which tools you've identified
+- Crop specific regions to focus on individual tools for better identification
+- Count items systematically to ensure nothing is missed
+
+Be thorough and systematic. Inspect the entire image carefully, paying special attention to:
+- Small tools that might be partially obscured
+- Tools with text or labels that require zooming to read
+- Similar-looking tools that need careful differentiation
+- Tools that might be grouped together or overlapping
+
+Return ONLY a JSON array of tool names and materials, nothing else. Format: ["tool1", "tool2", "tool3"]. Be specific with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver") and make sure to capture every tool and material item in the image but do not include the table or items not associated with building tools.`;
     }
     
     console.log(`\n[${requestId}] ${'═'.repeat(80)}`);
@@ -275,8 +303,36 @@ Please re-analyze the image taking the user's feedback into account. Correct any
     console.log(`[${requestId}] Response time: ${duration}ms`);
     console.log(`[${requestId}] ${'─'.repeat(80)}`);
 
-    // Extract the text response
+    // Check for code execution usage (Agentic Vision)
     const response = result.response;
+    const candidates = result.response.candidates || [];
+    let codeExecutionUsed = false;
+    let codeExecutionCount = 0;
+    if (candidates.length > 0) {
+      const contentParts = candidates[0].content?.parts || [];
+      // Check for both executableCode (code that was generated) and codeExecutionResult (execution output)
+      const codeExecutionParts = contentParts.filter((part: any) => 
+        part.codeExecutionResult || part.executableCode
+      );
+      codeExecutionUsed = codeExecutionParts.length > 0;
+      codeExecutionCount = codeExecutionParts.length;
+      
+      if (codeExecutionUsed) {
+        console.log(`[${requestId}] 🤖 Agentic Vision: Code execution was used (${codeExecutionCount} execution(s))`);
+        codeExecutionParts.forEach((part: any, index: number) => {
+          if (part.executableCode) {
+            console.log(`[${requestId}]   Code ${index + 1}: ${part.executableCode.code?.substring(0, 100) || 'N/A'}...`);
+          }
+          if (part.codeExecutionResult) {
+            console.log(`[${requestId}]   Result ${index + 1}: ${part.codeExecutionResult.output ? 'Output received' : 'No output'}`);
+          }
+        });
+      } else {
+        console.log(`[${requestId}] 📸 Standard vision analysis (no code execution needed)`);
+      }
+    }
+
+    // Extract the text response
     const textResponse = response.text();
 
     if (!textResponse) {
@@ -336,6 +392,7 @@ Please re-analyze the image taking the user's feedback into account. Correct any
     console.log(`[${requestId}] 🎉 Successfully extracted ${tools.length} tools`);
     console.log(`[${requestId}] Tools: ${JSON.stringify(tools)}`);
 
+
     const responsePayload = {
       success: true,
       tools,
@@ -349,6 +406,11 @@ Please re-analyze the image taking the user's feedback into account. Correct any
         hadPreviousResponse: !!previousResponse,
         hadUserFeedback: !!userFeedback,
         processingTimeMs: duration,
+        agenticVision: {
+          enabled: true,
+          codeExecutionUsed: codeExecutionUsed,
+          codeExecutionCount: codeExecutionCount,
+        },
       },
     };
 
