@@ -73,7 +73,14 @@ Deno.serve(async (req: Request) => {
     console.log(`[${requestId}] ✅ Body parsed successfully`);
     console.log(`[${requestId}] Body keys: ${Object.keys(body).join(', ')}`);
     
-    const { imageBase64, previousResponse, userFeedback } = body;
+    const { imageBase64, previousResponse, userFeedback, apiVersion } = body;
+    
+    // API Versioning for backward compatibility
+    // apiVersion 1 (default): Legacy mode - no code execution, simpler prompts
+    // apiVersion 2: Agentic Vision - code execution enabled for improved accuracy
+    const clientApiVersion = typeof apiVersion === 'number' ? apiVersion : 1;
+    const useAgenticVision = clientApiVersion >= 2;
+    console.log(`[${requestId}] 📱 Client API Version: ${clientApiVersion} (Agentic Vision: ${useAgenticVision ? 'ENABLED' : 'DISABLED'})`);
 
     if (!imageBase64) {
       console.error(`[${requestId}] ❌ Missing imageBase64 field`);
@@ -136,25 +143,35 @@ Deno.serve(async (req: Request) => {
     console.log(`[${requestId}] 🔧 Initializing Google Generative AI SDK...`);
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
     
-    // Use Gemini 3 Flash Preview model with Agentic Vision code execution enabled
+    // Use Gemini 3 Flash Preview model
+    // For API v2+: Enable Agentic Vision code execution for improved accuracy
+    // For API v1 (legacy): No code execution for simpler, predictable responses
     const modelName = 'gemini-3-flash-preview';
     console.log(`[${requestId}] 🎯 Getting model: ${modelName}`);
-    console.log(`[${requestId}] ⚙️ Configuration: thinking_level=low, media_resolution=ultra_high, code_execution=enabled`);
-    const model = genAI.getGenerativeModel({ 
-      model: modelName,
-      tools: [
-        {
-          codeExecution: {},
-        },
-      ],
-    });
     
-    // Prepare the prompt based on whether this is a re-analysis
+    let model;
+    if (useAgenticVision) {
+      console.log(`[${requestId}] ⚙️ Configuration: thinking_level=low, media_resolution=ultra_high, code_execution=ENABLED`);
+      model = genAI.getGenerativeModel({ 
+        model: modelName,
+        tools: [
+          {
+            codeExecution: {},
+          },
+        ],
+      });
+    } else {
+      console.log(`[${requestId}] ⚙️ Configuration: thinking_level=low, media_resolution=ultra_high, code_execution=DISABLED (legacy mode)`);
+      model = genAI.getGenerativeModel({ model: modelName });
+    }
+    
+    // Prepare the prompt based on API version and whether this is a re-analysis
     let promptText: string;
     
     if (isReanalysis) {
-      // Re-analysis with context - encourage agentic inspection
-      promptText = `You previously analyzed this image and identified these tools:
+      if (useAgenticVision) {
+        // API v2+: Re-analysis with Agentic Vision
+        promptText = `You previously analyzed this image and identified these tools:
 ${JSON.stringify(previousResponse, null, 2)}
 
 However, the user has provided this feedback:
@@ -167,9 +184,20 @@ IMPORTANT: Use code execution internally for analysis, but DO NOT include any co
 Correct any mistakes, add any missed tools, or adjust tool names as requested. Return ONLY a JSON array of tool names, nothing else. Format: ["tool1", "tool2", "tool3"]. Be as specific as possible with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver") and make sure to capture every tool in the image based on the user's feedback.
 
 Your response must be ONLY the JSON array, no code blocks, no explanations, no markdown formatting.`;
+      } else {
+        // API v1 (legacy): Re-analysis without code execution
+        promptText = `You previously analyzed this image and identified these tools:
+${JSON.stringify(previousResponse, null, 2)}
+
+However, the user has provided this feedback:
+"${userFeedback}"
+
+Please re-analyze the image taking the user's feedback into account. Correct any mistakes, add any missed tools, or adjust tool names as requested. Return ONLY a JSON array of tool names, nothing else. Format: ["tool1", "tool2", "tool3"]. Be as specific as possible with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver") and make sure to capture every tool in the image based on the user's feedback.`;
+      }
     } else {
-      // Initial analysis - encourage agentic vision behaviors
-      promptText = `Analyze this image and identify all tools and materials visible. 
+      if (useAgenticVision) {
+        // API v2+: Initial analysis with Agentic Vision
+        promptText = `Analyze this image and identify all tools and materials visible. 
 
 You have access to code execution capabilities. Use Python code INTERNALLY to:
 - Zoom in on small or distant tools to inspect fine-grained details (brand names, sizes, specific features)
@@ -188,6 +216,10 @@ IMPORTANT: Use code execution internally for analysis, but DO NOT include any co
 Return ONLY a JSON array of tool names and materials, nothing else. Format: ["tool1", "tool2", "tool3"]. Be specific with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver") and make sure to capture every tool and material item in the image but do not include the table or items not associated with building tools.
 
 Your response must be ONLY the JSON array, no code blocks, no explanations, no markdown formatting.`;
+      } else {
+        // API v1 (legacy): Initial analysis without code execution
+        promptText = 'Analyze this image and identify all tools and materials visible. Return ONLY a JSON array of tool names and materials, nothing else. Format: ["tool1", "tool2", "tool3"]. Be specific with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver") and make sure to capture every tool and material item in the image but do not include the table or items not associated with building tools.';
+      }
     }
     
     console.log(`\n[${requestId}] ${'═'.repeat(80)}`);
@@ -432,6 +464,7 @@ Your response must be ONLY the JSON array, no code blocks, no explanations, no m
       isReanalysis: isReanalysis,
       metadata: {
         requestId,
+        apiVersion: clientApiVersion,
         toolCount: tools.length,
         imageSizeMB: sizeInMB.toFixed(2),
         model: modelName,
@@ -439,9 +472,9 @@ Your response must be ONLY the JSON array, no code blocks, no explanations, no m
         hadUserFeedback: !!userFeedback,
         processingTimeMs: duration,
         agenticVision: {
-          enabled: true,
-          codeExecutionUsed: codeExecutionUsed,
-          codeExecutionCount: codeExecutionCount,
+          enabled: useAgenticVision,
+          codeExecutionUsed: useAgenticVision ? codeExecutionUsed : false,
+          codeExecutionCount: useAgenticVision ? codeExecutionCount : 0,
         },
       },
     };

@@ -376,12 +376,15 @@ export default function AddToolsScreen() {
       console.log(`📊 Image size: ${sizeInMB.toFixed(2)}MB`);
       console.log('🌐 Calling Edge Function');
 
+      // API Version 2 enables Agentic Vision for improved tool detection accuracy
       const requestBody: {
         imageBase64: string;
+        apiVersion: number;
         previousResponse?: string[];
         userFeedback?: string;
       } = {
         imageBase64: base64,
+        apiVersion: 2, // Enable Agentic Vision code execution
       };
 
       if (userFeedback && previousTools && previousTools.length > 0) {
