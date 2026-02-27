@@ -216,7 +216,7 @@ REMEMBER: Only use bin_ids from the "VALID BIN IDs" list above. Do not create ne
 Write your response in plain text without using asterisks (**) or any markdown formatting. Use numbered lists and bullet points for structure, but no asterisks. Include the "---" separator between the inventory section and the recommended tools section. List ALL matching tools from the inventory, not just a few.`;
     console.log('🤖 Calling OpenAI API...');
     console.log('📋 Request payload size:', JSON.stringify({
-      model: 'gpt-4o-mini',
+      model: 'gpt-5-mini',
       messages: [
         { role: 'system', content: systemPrompt.substring(0, 100) + '...' },
         { role: 'user', content: userPrompt.substring(0, 100) + '...' }
@@ -239,8 +239,8 @@ Write your response in plain text without using asterisks (**) or any markdown f
       console.log('📡 Starting fetch request to OpenAI API...');
       console.log('🔑 API Key present:', !!openaiApiKey, 'Length:', openaiApiKey?.length || 0);
       
-      // Using gpt-4o-mini - proven reliable, cost-effective. (gpt-5-mini may require different API tier)
-      const modelName = 'gpt-4o-mini';
+      // Using gpt-5-mini - faster output (~118 tok/s). Uses max_completion_tokens (not max_tokens).
+      const modelName = 'gpt-5-mini';
       console.log('🎯 Model:', modelName);
       console.log('🔗 Using chat/completions endpoint');
       
@@ -264,7 +264,9 @@ Write your response in plain text without using asterisks (**) or any markdown f
             }
           ],
           temperature: 0.7,
-          max_tokens: 6000
+          ...(modelName === 'gpt-5-mini'
+            ? { max_completion_tokens: 6000 }  // gpt-5-mini requires this param name
+            : { max_tokens: 6000 })            // gpt-4o-mini uses max_tokens
         }),
         signal: controller.signal
       });

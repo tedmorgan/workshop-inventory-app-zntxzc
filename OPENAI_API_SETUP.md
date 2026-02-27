@@ -50,7 +50,7 @@ supabase secrets set OPENAI_API_KEY=sk-your-actual-api-key-here
 
 - **Security**: Never commit your API key to version control
 - **Cost**: OpenAI API calls are charged per token. The Advanced Search uses GPT-4o-mini which is cost-effective
-- **Model**: The function uses `gpt-4o-mini` (cost-effective, reliable)
+- **Model**: The function uses `gpt-5-mini` (faster output, uses max_completion_tokens)
 - **Rate Limits**: Be aware of OpenAI's rate limits on your account
 
 ## Troubleshooting
