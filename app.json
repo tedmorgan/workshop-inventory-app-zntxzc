@@ -2,7 +2,7 @@
   "expo": {
     "name": "Workshop AI",
     "slug": "Workshop-nventory",
-    "version": "1.0.1",
+    "version": "1.1",
     "orientation": "portrait",
     "icon": "./assets/images/Workshop-icon.png",
     "userInterfaceStyle": "automatic",
@@ -15,7 +15,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.anonymous.Natively",
-      "buildNumber": "1",
+      "buildNumber": "2",
       "splash": {
         "image": "./assets/images/Workshop-splash.png",
         "resizeMode": "contain",
@@ -35,7 +35,7 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.nagrom.inventory",
-      "versionCode": 2,
+      "versionCode": 3,
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
