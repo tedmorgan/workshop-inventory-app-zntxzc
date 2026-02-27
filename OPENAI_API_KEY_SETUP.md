@@ -73,7 +73,7 @@ supabase secrets set OPENAI_API_KEY=sk-your-actual-api-key-here
 5. **App displays** the AI-generated response to the user
 
 ## Model Information
-- **Model Used**: `gpt-5-mini`
+- **Model Used**: `gpt-4o-mini`
 - **Why this model**: Cost-effective, fast, and powerful enough for tool recommendations
 - **Cost**: Approximately $0.15 per 1M input tokens, $0.60 per 1M output tokens
 - **Typical query cost**: Less than $0.01 per search

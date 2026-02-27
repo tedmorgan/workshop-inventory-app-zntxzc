@@ -158,7 +158,7 @@ If something doesn't work:
 
 ## 🔄 Want to Upgrade?
 
-Currently using: `gpt-5-mini` (faster output tokens)
+Currently using: `gpt-4o-mini` (fast & cost-effective)
 
 Want better responses? Can upgrade to `gpt-4o`:
 - More intelligent
