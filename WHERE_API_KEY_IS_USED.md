@@ -34,7 +34,7 @@ const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions',
     'Authorization': `Bearer ${openaiApiKey}`  // ← API key used here
   },
   body: JSON.stringify({
-    model: 'gpt-5-mini',
+    model: 'gpt-4o-mini',
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt }
@@ -95,7 +95,7 @@ const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions',
     'Authorization': `Bearer ${openaiApiKey}`  // ← API key used here
   },
   body: JSON.stringify({
-    model: 'gpt-5-mini',
+    model: 'gpt-4o-mini',
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt }
@@ -160,7 +160,7 @@ if (data.choices && data.choices.length > 0) {
 │                                                             │
 │  Receives:                                                  │
 │  - Authorization: Bearer sk-...                            │
-│  - Model: gpt-5-mini                                       │
+│  - Model: gpt-4o-mini                                       │
 │  - Messages: [system prompt, user prompt with inventory]   │
 │                                                             │
 │  Returns:                                                   │
@@ -181,7 +181,7 @@ if (data.choices && data.choices.length > 0) {
 ### Request Body:
 ```json
 {
-  "model": "gpt-5-mini",
+  "model": "gpt-4o-mini",
   "messages": [
     {
       "role": "system",

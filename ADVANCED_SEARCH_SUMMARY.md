@@ -26,7 +26,7 @@ Your Advanced Search feature is **fully implemented and ready to use**! Here's w
   - Returns AI-generated recommendations
 
 ### 3. AI Model
-- **Current Model**: `gpt-5-mini`
+- **Current Model**: `gpt-4o-mini`
 - **Why**: Cost-effective, fast, and powerful
 - **Alternative**: Can upgrade to `gpt-4o` for even better responses
 
@@ -34,10 +34,10 @@ Your Advanced Search feature is **fully implemented and ready to use**! Here's w
 
 **Note**: GPT-5 doesn't exist yet. The latest models from OpenAI are:
 - `gpt-4o` - Most capable model (released 2024)
-- `gpt-5-mini` - Faster output, better quality (currently used)
+- `gpt-4o-mini` - Cost-effective version (currently used)
 - `gpt-4-turbo` - Previous generation
 
-Your implementation uses `gpt-5-mini`, which offers faster output (~2x tokens/sec vs gpt-4o-mini) and better quality. For maximum power, consider `gpt-5` or `gpt-5.2`.
+Your implementation uses `gpt-4o-mini`, which is the latest cost-effective model. For maximum power, consider `gpt-4o` or `gpt-5`.
 
 ## 🔑 What You Need to Do
 
@@ -144,7 +144,7 @@ that would address their question.
 
 ## 💰 Cost Estimate
 
-Using `gpt-5-mini`:
+Using `gpt-4o-mini`:
 - **Input**: ~$0.15 per 1M tokens
 - **Output**: ~$0.60 per 1M tokens
 - **Typical search**: 500-1000 tokens total
@@ -155,14 +155,14 @@ Very affordable for personal use!
 
 ## 🔄 Want to Upgrade to GPT-4o?
 
-If you want more powerful responses, the Edge Function can be updated to use `gpt-5` or `gpt-5.2` instead of `gpt-5-mini`.
+If you want more powerful responses, the Edge Function can be updated to use `gpt-4o` instead of `gpt-4o-mini`.
 
 **Trade-offs:**
-- `gpt-5-mini`: Faster output (~118 tok/s), better quality than gpt-4o-mini
+- `gpt-4o-mini`: Faster, cheaper, good quality
 - `gpt-4o`: Slower, ~10x more expensive, best quality
 
 **Cost comparison:**
-- `gpt-5-mini`: ~$0.0005–0.001 per search (varies with prompt size)
+- `gpt-4o-mini`: ~$0.001 per search
 - `gpt-4o`: ~$0.01 per search
 
 Let me know if you want to upgrade!
