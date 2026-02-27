@@ -239,9 +239,8 @@ Write your response in plain text without using asterisks (**) or any markdown f
       console.log('📡 Starting fetch request to OpenAI API...');
       console.log('🔑 API Key present:', !!openaiApiKey, 'Length:', openaiApiKey?.length || 0);
       
-      // Using gpt-4o-mini - fast, cost-effective, and works well for this use case
-      // Note: gpt-5-mini is a reasoning model that's too slow for large prompts
-      const modelName = 'gpt-4o-mini';
+      // Using gpt-5-mini - faster output (~118 tok/s vs ~54 for gpt-4o-mini), better quality
+      const modelName = 'gpt-5-mini';
       console.log('🎯 Model:', modelName);
       console.log('🔗 Using chat/completions endpoint');
       
