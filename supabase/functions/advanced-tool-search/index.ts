@@ -216,7 +216,7 @@ REMEMBER: Only use bin_ids from the "VALID BIN IDs" list above. Do not create ne
 Write your response in plain text without using asterisks (**) or any markdown formatting. Use numbered lists and bullet points for structure, but no asterisks. Include the "---" separator between the inventory section and the recommended tools section. List ALL matching tools from the inventory, not just a few.`;
     console.log('🤖 Calling OpenAI API...');
     console.log('📋 Request payload size:', JSON.stringify({
-      model: 'gpt-4.1-nano',
+      model: 'gpt-4o-mini',
       messages: [
         { role: 'system', content: systemPrompt.substring(0, 100) + '...' },
         { role: 'user', content: userPrompt.substring(0, 100) + '...' }
@@ -239,7 +239,7 @@ Write your response in plain text without using asterisks (**) or any markdown f
       console.log('📡 Starting fetch request to OpenAI API...');
       console.log('🔑 API Key present:', !!openaiApiKey, 'Length:', openaiApiKey?.length || 0);
       
-      const modelName = 'gpt-4.1-nano';
+      const modelName = 'gpt-4o-mini';
       console.log('🎯 Model:', modelName);
       console.log('🔗 Using chat/completions endpoint');
       
