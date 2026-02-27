@@ -263,10 +263,9 @@ Write your response in plain text without using asterisks (**) or any markdown f
               content: userPrompt
             }
           ],
-          temperature: 0.7,
           ...(modelName === 'gpt-5-mini'
             ? { max_completion_tokens: 6000 }  // gpt-5-mini requires this param name
-            : { max_tokens: 6000 })            // gpt-4o-mini uses max_tokens
+            : { max_tokens: 6000, temperature: 0.7 })  // gpt-4o-mini supports temperature
         }),
         signal: controller.signal
       });

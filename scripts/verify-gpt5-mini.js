@@ -18,8 +18,7 @@ async function test() {
       { role: 'system', content: 'You are helpful.' },
       { role: 'user', content: 'Reply with just: OK' }
     ],
-    temperature: 0.7,
-    max_completion_tokens: 6000  // Required for gpt-5-mini (not max_tokens)
+    max_completion_tokens: 6000  // gpt-5-mini: no temperature param, no max_tokens
   };
 
   try {
