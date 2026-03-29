@@ -23,6 +23,13 @@ import { colors } from '@/styles/commonStyles';
 import { getSupabaseClient } from '@integrations/supabase/client';
 import { decode } from 'base64-arraybuffer';
 import { getDeviceId } from '@/utils/deviceId';
+import {
+  trackItemsScanned,
+  trackSuccessfulIdentification,
+  trackError,
+  checkAndPromptReview,
+  checkHighROITrigger,
+} from '@/utils/reviewPrompt';
 
 // Conditionally import FileSystem only for native platforms
 let FileSystem: any = null;
@@ -468,6 +475,12 @@ export default function AddToolsScreen() {
           console.log('💾 Stored tools in previousResponse state');
           
           setToolsList(data.tools);
+
+          trackItemsScanned(data.tools.length);
+          trackSuccessfulIdentification(data.tools.length);
+          if (data.tools.length >= 5) {
+            checkHighROITrigger('batch_identify');
+          }
           
           const analysisType = data.isReanalysis ? 'Re-analysis' : 'Analysis';
           Alert.alert(
@@ -493,8 +506,8 @@ export default function AddToolsScreen() {
     } catch (error) {
       console.error(`❌ Analysis error:`, error);
       console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
+      trackError();
       
-      // Improved user-friendly error message for all other errors
       Alert.alert(
         'Analysis Issue',
         'We had trouble analyzing your image. Press re-analyze to try again, or you can enter tools manually.',
@@ -725,10 +738,17 @@ export default function AddToolsScreen() {
       Alert.alert(
         '✅ Success!',
         'Tools added to your personal inventory!',
-        [{ text: 'OK', onPress: () => router.back() }]
+        [{
+          text: 'OK',
+          onPress: () => {
+            router.back();
+            checkAndPromptReview();
+          },
+        }]
       );
     } catch (error) {
       console.error(`❌ Save failed: ${error}`);
+      trackError();
       
       let errorMessage = 'Failed to save inventory. ';
       if (error instanceof Error) {

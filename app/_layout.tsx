@@ -17,6 +17,7 @@ import { StatusBar } from "expo-status-bar";
 import { Button } from "@/components/button";
 import { WidgetProvider } from "@/contexts/WidgetContext";
 import { NavigationProvider } from "@/contexts/NavigationContext";
+import { trackSession } from "@/utils/reviewPrompt";
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -34,8 +35,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (loaded) {
-      // Add minimum display time for splash screen (2 seconds)
-      const minDisplayTime = 2000; // 2 seconds
+      const minDisplayTime = 2000;
       const startTime = Date.now();
       
       const hideSplash = () => {
@@ -48,6 +48,7 @@ export default function RootLayout() {
       };
       
       hideSplash();
+      trackSession();
     }
   }, [loaded]);
 

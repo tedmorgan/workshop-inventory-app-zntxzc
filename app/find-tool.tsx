@@ -27,10 +27,12 @@ import { colors } from '@/styles/commonStyles';
 import { getSupabaseClient } from '@integrations/supabase/client';
 import { getDeviceId } from '@/utils/deviceId';
 import { useNavigation as useNavContext } from '@/contexts/NavigationContext';
+import { checkHighROITrigger, trackError } from '@/utils/reviewPrompt';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
+  runOnJS,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Audio } from 'expo-av';
@@ -241,6 +243,8 @@ export default function FindToolScreen() {
     setFailedImageUrls(new Set());
     setToolImageUrls(new Map());
 
+    const searchStartTime = Date.now();
+
     try {
       const query = advancedSearchQuery.trim();
       const isSimpleQuery = isSimpleSearchQuery(query);
@@ -256,6 +260,10 @@ export default function FindToolScreen() {
           console.log('✅ Simple text search found results');
           setAiResponse(simpleSearchResult);
           setSearching(false);
+          const elapsedSeconds = (Date.now() - searchStartTime) / 1000;
+          if (elapsedSeconds < 10) {
+            checkHighROITrigger('fast_search');
+          }
           return;
         } else {
           console.log('❌ Simple text search found no results, falling back to GPT search');
@@ -292,6 +300,7 @@ export default function FindToolScreen() {
     } catch (error) {
       console.error('❌ Error:', error);
       setAiResponse('Sorry, we encountered an error processing your request. Please try again.');
+      trackError();
     } finally {
       setSearching(false);
     }
@@ -1348,6 +1357,7 @@ export default function FindToolScreen() {
 
   // Pan gesture for dragging the zoomed image
   const panGesture = Gesture.Pan()
+    .minDistance(10)
     .onUpdate((event) => {
       // Only allow panning when zoomed in
       if (savedScale.value > 1) {
@@ -1429,9 +1439,25 @@ export default function FindToolScreen() {
       }
     });
 
-  // Combine all gestures
+  // Single tap to close when not zoomed
+  const singleTapGesture = Gesture.Tap()
+    .numberOfTaps(1)
+    .onEnd(() => {
+      if (scale.value <= 1.1) {
+        runOnJS(closeExpandedImage)();
+      }
+    });
+
+  // Close button tap — separate gesture so it uses the native gesture system
+  const closeButtonGesture = Gesture.Tap()
+    .onEnd(() => {
+      runOnJS(closeExpandedImage)();
+    });
+
+  // Combine all gestures — double tap takes priority over single tap
   const composedGesture = Gesture.Simultaneous(
-    Gesture.Race(doubleTapGesture, pinchGesture),
+    Gesture.Exclusive(doubleTapGesture, singleTapGesture),
+    pinchGesture,
     panGesture
   );
 
@@ -1609,23 +1635,8 @@ export default function FindToolScreen() {
         <GestureHandlerRootView style={styles.fullScreenContainer}>
           <View style={styles.fullScreenOverlay}>
             <StatusBar hidden />
-            
-            {/* Close Button */}
-            <Pressable
-              onPress={closeExpandedImage}
-              style={styles.closeButton}
-            >
-              <View style={styles.closeButtonBackground}>
-                <IconSymbol name="xmark" size={24} color="#FFFFFF" />
-              </View>
-            </Pressable>
 
-            {/* Zoom Instructions */}
-            <View style={styles.zoomInstructions}>
-              <Text style={styles.zoomInstructionsText}>Pinch to zoom • Drag to pan • Double tap</Text>
-            </View>
-
-            {/* Zoomable and Pannable Image */}
+            {/* Zoomable image — fills screen */}
             <GestureDetector gesture={composedGesture}>
               <Animated.View style={[styles.imageContainer, animatedStyle]}>
                 {expandedImageUrl && (
@@ -1637,6 +1648,21 @@ export default function FindToolScreen() {
                 )}
               </Animated.View>
             </GestureDetector>
+
+            {/* Close button — uses its own GestureDetector so it participates
+                in the native gesture system and can't be blocked */}
+            <GestureDetector gesture={closeButtonGesture}>
+              <View style={styles.closeButton}>
+                <View style={styles.closeButtonBackground}>
+                  <IconSymbol name="xmark" size={28} color="#FFFFFF" />
+                </View>
+              </View>
+            </GestureDetector>
+
+            {/* Instructions at bottom */}
+            <View style={styles.zoomInstructions} pointerEvents="none">
+              <Text style={styles.zoomInstructionsText}>Pinch to zoom  •  Double tap to zoom  •  Tap to close</Text>
+            </View>
           </View>
         </GestureHandlerRootView>
       </Modal>
@@ -2089,23 +2115,25 @@ const styles = StyleSheet.create({
     top: Platform.OS === 'ios' ? 60 : 40,
     right: 20,
     zIndex: 10,
+    padding: 4,
   },
   closeButtonBackground: {
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    borderRadius: 20,
-    width: 40,
-    height: 40,
+    backgroundColor: 'rgba(60, 60, 60, 0.9)',
+    borderRadius: 24,
+    width: 48,
+    height: 48,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
   },
   zoomInstructions: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 60 : 40,
-    left: 20,
-    zIndex: 10,
+    bottom: Platform.OS === 'ios' ? 50 : 30,
+    alignSelf: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
     borderRadius: 20,
   },
   zoomInstructionsText: {

@@ -68,6 +68,8 @@ export default function InventoryScreen() {
   const [currentFilterBinId, setCurrentFilterBinId] = useState<string | null>(null);
   const [locationsModalVisible, setLocationsModalVisible] = useState(false);
   const [binsModalVisible, setBinsModalVisible] = useState(false);
+  const [binsInLocationModalVisible, setBinsInLocationModalVisible] = useState(false);
+  const [binsInLocationName, setBinsInLocationName] = useState<string | null>(null);
   const [selectedLocationFilter, setSelectedLocationFilter] = useState<string | null>(null);
   // Track if we've processed the initial navigation for this focus session
   const hasProcessedNavigationRef = React.useRef(false);
@@ -275,12 +277,27 @@ export default function InventoryScreen() {
 
   const totalLocations = uniqueLocations.length;
 
-  // Handle location selection from locations modal
+  // Bins within a selected location, sorted alphabetically
+  const binsForSelectedLocation = React.useMemo(() => {
+    if (!binsInLocationName) return [];
+    return inventory
+      .filter(item => (item.bin_location || 'Unspecified') === binsInLocationName)
+      .sort((a, b) => a.bin_name.localeCompare(b.bin_name));
+  }, [inventory, binsInLocationName]);
+
+  // Handle location selection — show bins in that location
   const handleLocationSelect = (locationName: string) => {
     setLocationsModalVisible(false);
-    // Clear bin filter when selecting a location to avoid conflicts
-    setCurrentFilterBinId(null);
-    setSelectedLocationFilter(locationName);
+    setBinsInLocationName(locationName);
+    setBinsInLocationModalVisible(true);
+  };
+
+  // Handle bin selection from the bins-in-location modal
+  const handleBinFromLocationSelect = (binId: string) => {
+    setBinsInLocationModalVisible(false);
+    setBinsInLocationName(null);
+    setSelectedLocationFilter(null);
+    setCurrentFilterBinId(binId);
   };
 
   // Handle bin selection from bins modal
@@ -458,6 +475,7 @@ export default function InventoryScreen() {
 
   // Pan gesture for dragging the zoomed image
   const panGesture = Gesture.Pan()
+    .minDistance(10)
     .onUpdate((event) => {
       // Only allow panning when zoomed in
       if (savedScale.value > 1) {
@@ -539,9 +557,25 @@ export default function InventoryScreen() {
       }
     });
 
-  // Combine all gestures
+  // Single tap to close when not zoomed
+  const singleTapGesture = Gesture.Tap()
+    .numberOfTaps(1)
+    .onEnd(() => {
+      if (scale.value <= 1.1) {
+        runOnJS(closeExpandedImage)();
+      }
+    });
+
+  // Close button tap — separate gesture so it uses the native gesture system
+  const closeButtonGesture = Gesture.Tap()
+    .onEnd(() => {
+      runOnJS(closeExpandedImage)();
+    });
+
+  // Combine all gestures — double tap takes priority over single tap
   const composedGesture = Gesture.Simultaneous(
-    Gesture.Race(doubleTapGesture, pinchGesture),
+    Gesture.Exclusive(doubleTapGesture, singleTapGesture),
+    pinchGesture,
     panGesture
   );
 
@@ -866,23 +900,8 @@ export default function InventoryScreen() {
         <GestureHandlerRootView style={styles.fullScreenContainer}>
           <View style={styles.fullScreenOverlay}>
             <StatusBar hidden />
-            
-            {/* Close Button */}
-            <Pressable
-              onPress={closeExpandedImage}
-              style={styles.closeButton}
-            >
-              <View style={styles.closeButtonBackground}>
-                <IconSymbol name="xmark" size={24} color="#FFFFFF" />
-              </View>
-            </Pressable>
 
-            {/* Zoom Instructions */}
-            <View style={styles.zoomInstructions}>
-              <Text style={styles.zoomInstructionsText}>Pinch to zoom • Drag to pan • Double tap</Text>
-            </View>
-
-            {/* Zoomable and Pannable Image */}
+            {/* Zoomable image — fills screen */}
             <GestureDetector gesture={composedGesture}>
               <Animated.View style={[styles.imageContainer, animatedStyle]}>
                 {expandedImageUrl && (
@@ -894,6 +913,21 @@ export default function InventoryScreen() {
                 )}
               </Animated.View>
             </GestureDetector>
+
+            {/* Close button — uses its own GestureDetector so it participates
+                in the native gesture system and can't be blocked */}
+            <GestureDetector gesture={closeButtonGesture}>
+              <View style={styles.closeButton}>
+                <View style={styles.closeButtonBackground}>
+                  <IconSymbol name="xmark" size={28} color="#FFFFFF" />
+                </View>
+              </View>
+            </GestureDetector>
+
+            {/* Instructions at bottom */}
+            <View style={styles.zoomInstructions} pointerEvents="none">
+              <Text style={styles.zoomInstructionsText}>Pinch to zoom  •  Double tap to zoom  •  Tap to close</Text>
+            </View>
           </View>
         </GestureHandlerRootView>
       </Modal>
@@ -952,7 +986,7 @@ export default function InventoryScreen() {
         </View>
       </Modal>
 
-      {/* Bins List Modal */}
+      {/* Bins List Modal (All Bins, sorted alphabetically) */}
       <Modal
         visible={binsModalVisible}
         transparent={true}
@@ -976,7 +1010,9 @@ export default function InventoryScreen() {
                   </Text>
                 </View>
               ) : (
-                inventory.map((item, index) => (
+                [...inventory]
+                  .sort((a, b) => a.bin_name.localeCompare(b.bin_name))
+                  .map((item, index) => (
                   <Pressable
                     key={item.id}
                     style={[
@@ -1004,6 +1040,76 @@ export default function InventoryScreen() {
                       <Text style={[styles.listItemCount, { color: colors.textSecondary }]}>
                         {item.tools.length} {item.tools.length === 1 ? 'tool' : 'tools'}
                       </Text>
+                      <IconSymbol name="chevron.right" size={16} color={colors.textSecondary} />
+                    </View>
+                  </Pressable>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Bins in Location Modal — intermediate hierarchy level */}
+      <Modal
+        visible={binsInLocationModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setBinsInLocationModalVisible(false)}
+      >
+        <View style={styles.listModalOverlay}>
+          <View style={[styles.listModalContent, { backgroundColor: colors.card }]}>
+            <View style={styles.listModalHeader}>
+              <View style={styles.listModalHeaderLeft}>
+                <Pressable
+                  onPress={() => {
+                    setBinsInLocationModalVisible(false);
+                    setBinsInLocationName(null);
+                    setLocationsModalVisible(true);
+                  }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <IconSymbol name="chevron.left" size={22} color={colors.primary} />
+                </Pressable>
+                <Text style={[styles.listModalTitle, { color: colors.text }]}>
+                  {binsInLocationName || 'Bins'}
+                </Text>
+              </View>
+              <Pressable onPress={() => setBinsInLocationModalVisible(false)} style={styles.modalCloseButton}>
+                <IconSymbol name="xmark.circle.fill" size={28} color={colors.textSecondary} />
+              </Pressable>
+            </View>
+            <ScrollView style={styles.listModalScroll} showsVerticalScrollIndicator={false}>
+              {binsForSelectedLocation.length === 0 ? (
+                <View style={styles.emptyListContainer}>
+                  <IconSymbol name="tray" size={48} color={colors.textSecondary} />
+                  <Text style={[styles.emptyListText, { color: colors.textSecondary }]}>
+                    No bins in this location
+                  </Text>
+                </View>
+              ) : (
+                binsForSelectedLocation.map((item, index) => (
+                  <Pressable
+                    key={item.id}
+                    style={[
+                      styles.listItem,
+                      { backgroundColor: colors.background },
+                      index === binsForSelectedLocation.length - 1 && styles.listItemLast
+                    ]}
+                    onPress={() => handleBinFromLocationSelect(item.id)}
+                  >
+                    <View style={styles.listItemLeft}>
+                      <Image source={{ uri: item.image_url }} style={styles.listItemImage} />
+                      <View style={styles.listItemInfo}>
+                        <Text style={[styles.listItemTitle, { color: colors.text }]}>
+                          {item.bin_name}
+                        </Text>
+                        <Text style={[styles.listItemToolCount, { color: colors.textSecondary }]}>
+                          {item.tools.length} {item.tools.length === 1 ? 'tool' : 'tools'}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.listItemRight}>
                       <IconSymbol name="chevron.right" size={16} color={colors.textSecondary} />
                     </View>
                   </Pressable>
@@ -1295,23 +1401,25 @@ const styles = StyleSheet.create({
     top: Platform.OS === 'ios' ? 60 : 40,
     right: 20,
     zIndex: 10,
+    padding: 4,
   },
   closeButtonBackground: {
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    borderRadius: 20,
-    width: 40,
-    height: 40,
+    backgroundColor: 'rgba(60, 60, 60, 0.9)',
+    borderRadius: 24,
+    width: 48,
+    height: 48,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
   },
   zoomInstructions: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 60 : 40,
-    left: 20,
-    zIndex: 10,
+    bottom: Platform.OS === 'ios' ? 50 : 30,
+    alignSelf: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
     borderRadius: 20,
   },
   zoomInstructionsText: {
@@ -1374,6 +1482,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0,0,0,0.1)',
   },
+  listModalHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
   listModalTitle: {
     fontSize: 22,
     fontWeight: '700',
@@ -1427,6 +1541,9 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   listItemLocation: {
+    fontSize: 13,
+  },
+  listItemToolCount: {
     fontSize: 13,
   },
   emptyListContainer: {
