@@ -13,6 +13,7 @@
       "backgroundColor": "#FFFFFF"
     },
     "ios": {
+      "appStoreUrl": "https://apps.apple.com/app/id6755446543",
       "supportsTablet": true,
       "bundleIdentifier": "com.anonymous.Natively",
       "buildNumber": "2",

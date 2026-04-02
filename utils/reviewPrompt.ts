@@ -1,8 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Alert, Platform } from 'react-native';
+import { Alert, Linking } from 'react-native';
 import * as StoreReview from 'expo-store-review';
 
 const STORAGE_KEY = '@review_metrics';
+const FEEDBACK_EMAIL = 'hal@nagrom.com';
+const FEEDBACK_MAILTO = `mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent('Workshop AI feedback')}`;
 
 interface ReviewMetrics {
   totalSessions: number;
@@ -117,8 +119,18 @@ async function promptWithSentimentFilter(): Promise<void> {
             await saveMetrics(metrics);
             Alert.alert(
               'We Want to Improve',
-              'Sorry to hear that. We\'d love to know how we can do better. Please send us feedback at toolsinventory@feedback.com',
-              [{ text: 'OK' }]
+              `Sorry to hear that. We'd love to know how we can do better. Tap Email to send a message to ${FEEDBACK_EMAIL}.`,
+              [
+                { text: 'OK', style: 'cancel' },
+                {
+                  text: 'Email us',
+                  onPress: () => {
+                    Linking.openURL(FEEDBACK_MAILTO).catch((err) => {
+                      console.error(`[${new Date().toISOString()}] reviewPrompt: mailto failed`, err);
+                    });
+                  },
+                },
+              ]
             );
             resolve();
           },
@@ -130,10 +142,17 @@ async function promptWithSentimentFilter(): Promise<void> {
             metrics.lastPromptDate = new Date().toISOString();
             await saveMetrics(metrics);
             try {
-              if (await StoreReview.isAvailableAsync()) {
+              // In-app star rating sheet (SKStoreReviewController). Apple may suppress it if shown
+              // recently or on TestFlight — see hasAction / storeUrl fallback below.
+              if (await StoreReview.hasAction()) {
                 await StoreReview.requestReview();
               } else {
-                console.log(`[${new Date().toISOString()}] reviewPrompt: StoreReview not available on this platform`);
+                const store = StoreReview.storeUrl();
+                if (store) {
+                  await Linking.openURL(store);
+                } else {
+                  console.log(`[${new Date().toISOString()}] reviewPrompt: No in-app review and no storeUrl — set ios.appStoreUrl in app.json`);
+                }
               }
             } catch (e) {
               console.error(`[${new Date().toISOString()}] reviewPrompt: StoreReview error`, e);
