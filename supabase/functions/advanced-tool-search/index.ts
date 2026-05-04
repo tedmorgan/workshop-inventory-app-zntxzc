@@ -372,7 +372,9 @@ Write your response in plain text without using asterisks (**) or any markdown f
       
       binIdToInfo.set(binId, { binName, binLocation, tools });
       
-      tools.forEach((toolName: string) => {
+      tools.forEach((tool: any) => {
+        // Handle both string and object tool formats (checked-out tools are objects)
+        const toolName = typeof tool === 'string' ? tool : (tool.name || JSON.stringify(tool));
         const normalizedToolName = toolName.toLowerCase().trim();
         toolToBinInfo.set(normalizedToolName, { binId, binName, binLocation });
       });
