@@ -25,6 +25,9 @@ yarn-error.*
 
 .env*.local
 
+# Contains cron secret — do not commit
+supabase/cron_daily_digest.sql
+
 *.tsbuildinfo
 
 .natively/

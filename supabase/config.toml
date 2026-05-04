@@ -3,3 +3,6 @@ project_id = "bnyyfypaudhisookytoq"
 
 [functions.analyze-tools-image]
 verify_jwt = false
+
+[functions.daily-inventory-digest]
+verify_jwt = false

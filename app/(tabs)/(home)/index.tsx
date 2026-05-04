@@ -190,19 +190,14 @@ export default function HomeScreen() {
 
           <Pressable
             style={[styles.actionCard, { backgroundColor: colors.card }]}
-            onPress={downloadInventory}
-            disabled={downloading}
+            onPress={() => router.push('/checked-out-tools')}
           >
             <View style={[styles.iconCircle, { backgroundColor: `${colors.primary}20` }]}>
-              {downloading ? (
-                <ActivityIndicator size="small" color={colors.primary} />
-              ) : (
-                <IconSymbol name="square.and.arrow.down" size={32} color={colors.primary} />
-              )}
+              <IconSymbol name="arrow.up.arrow.down.circle.fill" size={32} color={colors.primary} />
             </View>
-            <Text style={[styles.actionTitle, { color: colors.text }]}>Export</Text>
+            <Text style={[styles.actionTitle, { color: colors.text }]}>Checked Out Tools</Text>
             <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>
-              Download your inventory as text
+              View and return borrowed tools
             </Text>
           </Pressable>
         </View>

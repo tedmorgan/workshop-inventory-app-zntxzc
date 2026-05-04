@@ -44,6 +44,9 @@ if (Platform.OS !== 'web') {
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
+const CHECKED_OUT_LOCATION = "__CHECKED_OUT__";
+const CHECKED_OUT_BIN_NAME = "Checked Out Tools";
+
 type ToolInventoryItem = {
   id: string;
   image_url: string;
@@ -85,6 +88,9 @@ export default function FindToolScreen() {
   const savedTranslateY = useSharedValue(0);
   const originX = useSharedValue(0);
   const originY = useSharedValue(0);
+  // Check-out state
+  const [checkOutModalVisible, setCheckOutModalVisible] = useState(false);
+  const [checkOutItem, setCheckOutItem] = useState<ToolInventoryItem | null>(null);
 
   // Save search state to AsyncStorage
   const saveSearchState = async () => {
@@ -189,15 +195,18 @@ export default function FindToolScreen() {
 
       data.forEach((item) => {
         if (item.tools && Array.isArray(item.tools)) {
-          item.tools.forEach((tool: string) => {
-            const toolLower = tool.toLowerCase();
+          item.tools.forEach((tool: any) => {
+            // Handle both string and object tool formats
+            const toolName = typeof tool === 'string' ? tool : (tool.name || JSON.stringify(tool));
+            const toolLower = toolName.toLowerCase();
+            
             // Check if tool contains all search words
             const matchesAllWords = searchWords.every(word => toolLower.includes(word));
             
             if (matchesAllWords) {
               matchingItems.push({
                 id: item.id,
-                toolName: tool,
+                toolName: toolName,
                 binName: item.bin_name || '',
                 binLocation: item.bin_location || '',
               });
@@ -555,6 +564,184 @@ export default function FindToolScreen() {
         navContext.setEditBinId(null);
         router.push('/inventory-search');
       }
+    }
+  };
+
+  const openCheckOutModalForBin = async (binId: string | null, binName: string, binLocation?: string) => {
+    try {
+      console.log('📤 Loading bin for check-out:', binId, binName, binLocation);
+      
+      // First, try to get bin by ID if available
+      const supabase = await getSupabaseClient();
+      const deviceId = await getDeviceId();
+      
+      let binData: ToolInventoryItem | null = null;
+
+      if (binId && binId.match(/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i)) {
+        const { data, error } = await supabase
+          .from('tool_inventory')
+          .select('*')
+          .eq('id', binId)
+          .eq('device_id', deviceId)
+          .single();
+
+        if (!error && data) {
+          binData = data;
+        }
+      }
+
+      // Fallback: search by name and location
+      if (!binData) {
+        const { data, error } = await supabase
+          .from('tool_inventory')
+          .select('*')
+          .eq('device_id', deviceId);
+
+        if (!error && data) {
+          binData = data.find(item => {
+            const itemBinName = item.bin_name?.trim().toLowerCase() || '';
+            const searchBinName = binName.trim().toLowerCase();
+            const nameMatch = itemBinName === searchBinName || 
+                            itemBinName.includes(searchBinName) || 
+                            searchBinName.includes(itemBinName);
+            const locationMatch = !binLocation ||
+              item.bin_location?.trim().toLowerCase() === binLocation.trim().toLowerCase() ||
+              item.bin_location?.trim().toLowerCase().includes(binLocation.trim().toLowerCase()) ||
+              binLocation.trim().toLowerCase().includes(item.bin_location?.trim().toLowerCase() || '');
+            return nameMatch && (locationMatch || !binLocation);
+          }) || null;
+        }
+      }
+
+      if (binData) {
+        setCheckOutItem(binData);
+        setCheckOutModalVisible(true);
+      } else {
+        Alert.alert('Error', 'Could not find the bin to check out from');
+      }
+    } catch (error) {
+      console.error('❌ Error loading bin for check-out:', error);
+      Alert.alert('Error', 'Failed to load bin details');
+    }
+  };
+
+  const closeCheckOutModal = () => {
+    setCheckOutModalVisible(false);
+    setCheckOutItem(null);
+  };
+
+  const handleCheckOut = async (toolIndex: number) => {
+    if (!checkOutItem) return;
+
+    try {
+      console.log(`📤 Checking out tool at index ${toolIndex}`);
+      const toolToCheckOut = checkOutItem.tools[toolIndex];
+      
+      // Parse tool if it has quantity
+      let toolName = toolToCheckOut;
+      let quantity = 1;
+      if (typeof toolToCheckOut === 'object' && 'name' in toolToCheckOut) {
+        toolName = (toolToCheckOut as any).name;
+        quantity = (toolToCheckOut as any).quantity || 1;
+      }
+
+      const supabase = await getSupabaseClient();
+      const deviceId = await getDeviceId();
+
+      // Remove tool from source bin
+      const updatedTools = checkOutItem.tools.filter((_, i) => i !== toolIndex);
+
+      if (updatedTools.length === 0) {
+        // If bin is now empty, delete it
+        const { error: deleteError } = await supabase
+          .from('tool_inventory')
+          .delete()
+          .eq('id', checkOutItem.id);
+
+        if (deleteError) {
+          console.error('❌ Error deleting empty bin:', deleteError);
+          Alert.alert('Error', 'Failed to check out tool');
+          return;
+        }
+      } else {
+        // Update the bin
+        const { error: updateError } = await supabase
+          .from('tool_inventory')
+          .update({ tools: updatedTools })
+          .eq('id', checkOutItem.id);
+
+        if (updateError) {
+          console.error('❌ Error updating bin:', updateError);
+          Alert.alert('Error', 'Failed to check out tool');
+          return;
+        }
+      }
+
+      // Find or create checked-out bin
+      const { data: checkedOutBin, error: fetchError } = await supabase
+        .from('tool_inventory')
+        .select('*')
+        .eq('device_id', deviceId)
+        .eq('bin_location', CHECKED_OUT_LOCATION)
+        .eq('bin_name', CHECKED_OUT_BIN_NAME)
+        .single();
+
+      const checkedOutTool = {
+        name: toolName,
+        quantity: quantity,
+        original_location: checkOutItem.bin_location,
+        original_bin: checkOutItem.bin_name,
+        checked_out_date: new Date().toISOString(),
+      };
+
+      if (fetchError && fetchError.code !== 'PGRST116') {
+        console.error('❌ Error fetching checked-out bin:', fetchError);
+        Alert.alert('Error', 'Failed to check out tool');
+        return;
+      }
+
+      if (checkedOutBin) {
+        // Add to existing checked-out bin
+        const currentTools = Array.isArray(checkedOutBin.tools) ? checkedOutBin.tools : [];
+        const { error: updateCheckedOutError } = await supabase
+          .from('tool_inventory')
+          .update({ tools: [...currentTools, checkedOutTool] })
+          .eq('id', checkedOutBin.id);
+
+        if (updateCheckedOutError) {
+          console.error('❌ Error updating checked-out bin:', updateCheckedOutError);
+          Alert.alert('Error', 'Failed to check out tool');
+          return;
+        }
+      } else {
+        // Create new checked-out bin
+        const { error: createError } = await supabase
+          .from('tool_inventory')
+          .insert({
+            device_id: deviceId,
+            bin_name: CHECKED_OUT_BIN_NAME,
+            bin_location: CHECKED_OUT_LOCATION,
+            tools: [checkedOutTool],
+            image_url: checkOutItem.image_url,
+          });
+
+        if (createError) {
+          console.error('❌ Error creating checked-out bin:', createError);
+          Alert.alert('Error', 'Failed to check out tool');
+          return;
+        }
+      }
+
+      Alert.alert('Success', `"${toolName}" has been checked out`);
+      closeCheckOutModal();
+      console.log('✅ Tool checked out successfully');
+      
+      // Clear search results to force refresh
+      setAiResponse('');
+      setHasSearched(false);
+    } catch (error) {
+      console.error('❌ Error in handleCheckOut:', error);
+      Alert.alert('Error', 'Failed to check out tool');
     }
   };
 
@@ -974,19 +1161,44 @@ export default function FindToolScreen() {
               </View>
             </View>
             
-            <Pressable
-              style={({ pressed }) => [
-                styles.viewBinButton,
-                pressed && styles.viewBinButtonPressed
-              ]}
-              onPress={() => {
-                console.log('🔗 View bin pressed:', tool.binName, 'location:', tool.binLocation, 'binId:', tool.binId);
-                openInventoryForBin(tool.binId, tool.binName, tool.binLocation);
-              }}
-            >
-              <Text style={styles.viewBinButtonText}>View Bin</Text>
-              <IconSymbol name="arrow.right" size={16} color="#FFFFFF" />
-            </Pressable>
+            <View style={styles.toolCardActions}>
+              {tool.binLocation !== CHECKED_OUT_LOCATION && (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.checkOutButton,
+                    pressed && styles.checkOutButtonPressed
+                  ]}
+                  onPress={() => {
+                    console.log('📤 Check out pressed:', tool.binName, 'location:', tool.binLocation, 'binId:', tool.binId);
+                    openCheckOutModalForBin(tool.binId, tool.binName, tool.binLocation);
+                  }}
+                >
+                  <IconSymbol name="arrow.up.circle.fill" size={16} color="#FFFFFF" />
+                  <Text style={styles.checkOutButtonText}>Check Out</Text>
+                </Pressable>
+              )}
+              
+              <Pressable
+                style={({ pressed }) => [
+                  tool.binLocation === CHECKED_OUT_LOCATION ? styles.viewBinButtonFull : styles.viewBinButton,
+                  pressed && styles.viewBinButtonPressed
+                ]}
+                onPress={() => {
+                  if (tool.binLocation === CHECKED_OUT_LOCATION) {
+                    console.log('🔗 Navigating to checked-out tools');
+                    router.push('/checked-out-tools');
+                  } else {
+                    console.log('🔗 View bin pressed:', tool.binName, 'location:', tool.binLocation, 'binId:', tool.binId);
+                    openInventoryForBin(tool.binId, tool.binName, tool.binLocation);
+                  }
+                }}
+              >
+                <Text style={styles.viewBinButtonText}>
+                  {tool.binLocation === CHECKED_OUT_LOCATION ? 'View Checked Out Tools' : 'View Bin'}
+                </Text>
+                <IconSymbol name="arrow.right" size={16} color="#FFFFFF" />
+              </Pressable>
+            </View>
           </View>
         ))}
       </>
@@ -1624,6 +1836,70 @@ export default function FindToolScreen() {
           </View>
       </KeyboardAvoidingView>
 
+      {/* Check Out Modal */}
+      <Modal
+        visible={checkOutModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={closeCheckOutModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Check Out Tool</Text>
+              <Pressable onPress={closeCheckOutModal} style={styles.modalCloseButton}>
+                <IconSymbol name="xmark.circle.fill" size={28} color={colors.textSecondary} />
+              </Pressable>
+            </View>
+
+            {checkOutItem && (
+              <>
+                <View style={[styles.checkOutBinInfo, { backgroundColor: colors.background }]}>
+                  <Text style={[styles.checkOutBinName, { color: colors.text }]}>
+                    {checkOutItem.bin_name}
+                  </Text>
+                  <Text style={[styles.checkOutBinLocation, { color: colors.textSecondary }]}>
+                    {checkOutItem.bin_location}
+                  </Text>
+                </View>
+
+                <Text style={[styles.checkOutInstructions, { color: colors.textSecondary }]}>
+                  Select a tool to check out:
+                </Text>
+
+                <ScrollView style={styles.checkOutToolsList}>
+                  {checkOutItem.tools.map((tool, index) => {
+                    const toolName = typeof tool === 'string' ? tool : (tool as any).name || tool;
+                    const toolQuantity = typeof tool === 'object' && 'quantity' in tool ? (tool as any).quantity : null;
+                    
+                    return (
+                      <Pressable
+                        key={index}
+                        style={[styles.checkOutToolItem, { backgroundColor: colors.background }]}
+                        onPress={() => handleCheckOut(index)}
+                      >
+                        <View style={styles.checkOutToolInfo}>
+                          <IconSymbol name="wrench.fill" size={18} color={colors.primary} />
+                          <Text style={[styles.checkOutToolName, { color: colors.text }]}>
+                            {toolName}
+                          </Text>
+                          {toolQuantity && toolQuantity > 1 && (
+                            <Text style={[styles.checkOutToolQuantity, { color: colors.textSecondary }]}>
+                              × {toolQuantity}
+                            </Text>
+                          )}
+                        </View>
+                        <IconSymbol name="arrow.right" size={18} color={colors.textSecondary} />
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+
       {/* Full Screen Image Zoom Modal */}
       <Modal
         visible={expandedImageUrl !== null}
@@ -1939,14 +2215,25 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   viewBinButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
     backgroundColor: colors.primary,
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  viewBinButtonFull: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
     alignSelf: 'stretch',
   },
   viewBinButtonPressed: {
@@ -1954,7 +2241,7 @@ const styles = StyleSheet.create({
   },
   viewBinButtonText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
   },
   recommendedToolsSection: {
@@ -2150,5 +2437,104 @@ const styles = StyleSheet.create({
   fullScreenImage: {
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
+  },
+  // Check-out modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    width: '100%',
+    maxHeight: '80%',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 24,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.1)',
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  modalCloseButton: {
+    padding: 4,
+  },
+  checkOutBinInfo: {
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    marginHorizontal: 24,
+  },
+  checkOutBinName: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  checkOutBinLocation: {
+    fontSize: 14,
+  },
+  checkOutInstructions: {
+    fontSize: 14,
+    marginHorizontal: 24,
+    marginBottom: 12,
+  },
+  checkOutToolsList: {
+    maxHeight: 400,
+    paddingHorizontal: 24,
+  },
+  checkOutToolItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  checkOutToolInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  checkOutToolName: {
+    fontSize: 16,
+    flex: 1,
+  },
+  checkOutToolQuantity: {
+    fontSize: 14,
+  },
+  // Tool card actions
+  toolCardActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+  },
+  checkOutButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#34C759',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+  },
+  checkOutButtonPressed: {
+    opacity: 0.7,
+  },
+  checkOutButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
   },
 });
