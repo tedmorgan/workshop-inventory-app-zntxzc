@@ -212,16 +212,6 @@ export default function HomeScreen() {
           </Text>
         </View>
 
-        <View style={[styles.infoCard, { backgroundColor: colors.card }]}>
-          <View style={styles.infoHeader}>
-            <IconSymbol name="lock.fill" size={24} color={colors.primary} />
-            <Text style={[styles.infoTitle, { color: colors.text }]}>Your Data, Your Device</Text>
-          </View>
-          <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-            All your inventory data is stored securely and linked to your device. Your personal workshop inventory stays private and accessible only to you.
-          </Text>
-        </View>
-
         <View style={styles.bottomSpacer} />
       </ScrollView>
     </>
