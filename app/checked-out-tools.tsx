@@ -127,18 +127,69 @@ export default function CheckedOutToolsScreen() {
       const supabase = await getSupabaseClient();
       const deviceId = await getDeviceId();
 
-      // Find the original bin
-      const { data: originalBinData, error: fetchError } = await supabase
+      // Fetch all bins for this device and match flexibly.
+      // The old exact-match + .single() lookup failed when the bin name/location
+      // had different casing/whitespace, when duplicate bins existed, or when
+      // the original bin was deleted after being emptied at check-out.
+      const { data: allBins, error: fetchError } = await supabase
         .from('tool_inventory')
         .select('*')
-        .eq('device_id', deviceId)
-        .eq('bin_location', tool.original_location)
-        .eq('bin_name', tool.original_bin)
-        .single();
+        .eq('device_id', deviceId);
 
-      if (fetchError || !originalBinData) {
-        Alert.alert('Error', 'Could not find the original bin. It may have been deleted.');
+      if (fetchError) {
+        console.error(`[${new Date().toISOString()}] ❌ Error fetching bins for check-in:`, fetchError);
+        Alert.alert('Error', 'Failed to load inventory. Please try again.');
         return;
+      }
+
+      const normalize = (s: string | null | undefined) => (s || '').trim().toLowerCase();
+      const regularBins = (allBins || []).filter(
+        (b) => b.bin_location !== CHECKED_OUT_LOCATION
+      );
+
+      console.log(
+        `[${new Date().toISOString()}] 📥 Check-in lookup for "${tool.name}" → target bin "${tool.original_bin}" @ "${tool.original_location}". ` +
+        `Fetched ${allBins?.length ?? 0} rows, ${regularBins.length} regular bins.`
+      );
+
+      // Try exact match first, then case/whitespace-insensitive, then name-only
+      let originalBinData =
+        regularBins.find(
+          (b) => b.bin_name === tool.original_bin && b.bin_location === tool.original_location
+        ) ||
+        regularBins.find(
+          (b) =>
+            normalize(b.bin_name) === normalize(tool.original_bin) &&
+            normalize(b.bin_location) === normalize(tool.original_location)
+        ) ||
+        regularBins.find((b) => normalize(b.bin_name) === normalize(tool.original_bin));
+
+      console.log(
+        `[${new Date().toISOString()}] 📥 Match result: ${originalBinData ? `found bin id ${originalBinData.id}` : 'no match — will recreate'}`
+      );
+
+      if (!originalBinData) {
+        // Original bin no longer exists (it was deleted when its last tool was
+        // checked out) — recreate it so the tool has a home to return to.
+        console.log(`[${new Date().toISOString()}] 📦 Original bin not found — recreating "${tool.original_bin}" at "${tool.original_location}"`);
+        const { data: recreatedBin, error: createError } = await supabase
+          .from('tool_inventory')
+          .insert({
+            device_id: deviceId,
+            bin_name: tool.original_bin,
+            bin_location: tool.original_location,
+            tools: [],
+            image_url: tool.image_url || '',
+          })
+          .select()
+          .single();
+
+        if (createError || !recreatedBin) {
+          console.error(`[${new Date().toISOString()}] ❌ Error recreating original bin:`, createError);
+          Alert.alert('Error', 'Could not find or recreate the original bin. Please try again.');
+          return;
+        }
+        originalBinData = recreatedBin;
       }
 
       // Add tool back to original bin
