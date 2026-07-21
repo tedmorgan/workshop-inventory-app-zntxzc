@@ -78,9 +78,15 @@ Deno.serve(async (req: Request) => {
     // API Versioning for backward compatibility
     // apiVersion 1 (default): Legacy mode - no code execution, simpler prompts
     // apiVersion 2: Agentic Vision - code execution enabled for improved accuracy
+    // NOTE: gemini-3.6-flash currently mishandles agentic code-execution for this
+    // task (returns Python crops + empty [] instead of tool names). Force vision-only.
     const clientApiVersion = typeof apiVersion === 'number' ? apiVersion : 1;
-    const useAgenticVision = clientApiVersion >= 2;
+    const modelName = 'gemini-3.6-flash';
+    const useAgenticVision = clientApiVersion >= 2 && !modelName.startsWith('gemini-3.6');
     console.log(`[${requestId}] 📱 Client API Version: ${clientApiVersion} (Agentic Vision: ${useAgenticVision ? 'ENABLED' : 'DISABLED'})`);
+    if (clientApiVersion >= 2 && !useAgenticVision) {
+      console.log(`[${requestId}] ℹ️ Agentic Vision requested but disabled for ${modelName} (vision-only mode)`);
+    }
 
     if (!imageBase64) {
       console.error(`[${requestId}] ❌ Missing imageBase64 field`);
@@ -146,7 +152,7 @@ Deno.serve(async (req: Request) => {
     // Use Gemini 3.6 Flash (GA) for photo tool identification
     // For API v2+: Enable Agentic Vision code execution for improved accuracy
     // For API v1 (legacy): No code execution for simpler, predictable responses
-    const modelName = 'gemini-3.6-flash';
+    // (modelName declared above so Agentic Vision can be gated per-model)
     console.log(`[${requestId}] 🎯 Getting model: ${modelName}`);
     
     let model;
@@ -263,7 +269,8 @@ Your response must be ONLY the JSON array, no code blocks, no explanations, no m
         ],
         {
           generationConfig: {
-            thinking_level: 'low',
+            // 3.6 Flash defaults to medium; low under-thinks on multi-tool photos
+            thinking_level: modelName.startsWith('gemini-3.6') ? 'medium' : 'low',
             media_resolution: 'media_resolution_ultra_high',
           },
         }
