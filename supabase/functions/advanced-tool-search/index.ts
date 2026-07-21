@@ -1,5 +1,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { GoogleGenerativeAI } from "npm:@google/generative-ai@^0.24.0";
+
+// Fast model for large-inventory search latency. Swap to gemini-3.6-flash if quality is preferred.
+const SEARCH_MODEL = 'gemini-3.5-flash-lite';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
@@ -63,12 +68,11 @@ Deno.serve(async (req)=>{
   
   try {
     console.log('🔍 Advanced Tool Search - Starting');
-    // Get the OpenAI API key from environment variables
-    const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
-    if (!openaiApiKey) {
-      console.error('❌ OPENAI_API_KEY not configured');
+    const geminiApiKey = Deno.env.get('GEMINI_API_KEY');
+    if (!geminiApiKey) {
+      console.error('❌ GEMINI_API_KEY not configured');
       return new Response(JSON.stringify({
-        error: 'OpenAI API key not configured. Please add your API key to the Supabase Edge Function secrets.'
+        error: 'Gemini API key not configured. Please add GEMINI_API_KEY to the Supabase Edge Function secrets.'
       }), {
         status: 500,
         headers: {
@@ -118,16 +122,19 @@ Deno.serve(async (req)=>{
     const binIds = inventory?.map(item => item.id) || [];
     console.log(`📋 Bin IDs in inventory (first 10):`, binIds.slice(0, 10));
     
-    // Format inventory for the AI prompt
-    // IMPORTANT: bin_id is the first field so GPT sees it prominently
+    // Format inventory for the AI prompt (compact JSON — no pretty-print)
+    // IMPORTANT: bin_id is the first field so the model sees it prominently
     const formattedInventory = inventory?.map((item, index)=>({
-        bin_id: item.id, // CRITICAL: This is the bin ID - must be included in response
+        bin_id: item.id,
         entry: index + 1,
         bin_name: item.bin_name,
         bin_location: item.bin_location,
-        tools: item.tools
+        // Normalize checked-out tool objects to names for the prompt
+        tools: (item.tools || []).map((t: any) =>
+          typeof t === 'string' ? t : (t?.name || JSON.stringify(t))
+        ),
       })) || [];
-    // Construct the prompt for OpenAI
+    // Construct the prompt for Gemini
     const systemPrompt = `You are a helpful workshop tool assistant. Your job is to help users find tools in their workshop inventory based on their needs, and also recommend tools they don't have.
 
 When a user asks a question:
@@ -181,8 +188,8 @@ Be conversational and helpful. If no suitable tools are found in inventory, stil
 CRITICAL FORMATTING RULE: You must write in plain text only. Never use asterisks (**) or any markdown formatting characters. Do not use ** for bold text. Write tool names, bin names, and bin locations in plain text without any asterisks. You can use numbered lists (1., 2., 3.) and bullet points (-) for structure, but absolutely no asterisks anywhere in your response.`;
     const userPrompt = `User Question: ${searchQuery}
 
-Tool Inventory (JSON format - each entry has a "bin_id" field that you MUST copy EXACTLY):
-${JSON.stringify(formattedInventory, null, 2)}
+Tool Inventory (JSON — each entry has a "bin_id" field that you MUST copy EXACTLY):
+${JSON.stringify(formattedInventory)}
 
 CRITICAL INSTRUCTIONS FOR BIN IDs:
 1. Look at the inventory data above - each entry has a "bin_id" field as the FIRST field
@@ -194,15 +201,11 @@ CRITICAL INSTRUCTIONS FOR BIN IDs:
 
 EXAMPLE:
 If you want to list "Hammer" and the inventory shows:
-  {
-    "bin_id": "b3b014b1-540e-4c65-93c4-11f03c4cd2c9",
-    "bin_name": "2nd Drawer",
-    "tools": ["Hammer", "Screwdriver"]
-  }
+  {"bin_id":"b3b014b1-540e-4c65-93c4-11f03c4cd2c9","bin_name":"2nd Drawer","tools":["Hammer","Screwdriver"]}
 Then write: "Bin ID: b3b014b1-540e-4c65-93c4-11f03c4cd2c9" (copy exactly, no changes)
 
 VALID BIN IDs (these are the ONLY valid bin_ids - use ONLY these - DO NOT create new ones):
-${binIds.map(id => `- ${id}`).join('\n')}
+${binIds.join(',')}
 
 IMPORTANT: The above list contains ALL valid bin_ids. You MUST use ONLY these bin_ids. If a tool is in a bin, find that bin's bin_id in this list and copy it exactly. Do not generate, invent, or create any new bin_ids.
 
@@ -214,78 +217,62 @@ Please help the user by:
 REMEMBER: Only use bin_ids from the "VALID BIN IDs" list above. Do not create new ones. Copy them exactly.
 
 Write your response in plain text without using asterisks (**) or any markdown formatting. Use numbered lists and bullet points for structure, but no asterisks. Include the "---" separator between the inventory section and the recommended tools section. List ALL matching tools from the inventory, not just a few.`;
-    console.log('🤖 Calling OpenAI API...');
-    console.log('📋 Request payload size:', JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: systemPrompt.substring(0, 100) + '...' },
-        { role: 'user', content: userPrompt.substring(0, 100) + '...' }
-      ],
-      max_tokens: 6000
-    }).length, 'bytes');
+    console.log('🤖 Calling Gemini API...');
+    console.log('🎯 Model:', SEARCH_MODEL);
+    console.log('📋 Inventory entries:', formattedInventory.length);
+    console.log('📋 Compact inventory JSON length:', JSON.stringify(formattedInventory).length, 'chars');
     
-    // Start timing the API call
     const apiStartTime = performance.now();
     
-    // Create AbortController for timeout
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
       console.log('⏰ Timeout triggered - aborting request');
       controller.abort();
-    }, 60000); // 60 second timeout
+    }, 60000);
     
-    let openaiResponse;
+    let aiResponse = '';
     try {
-      console.log('📡 Starting fetch request to OpenAI API...');
-      console.log('🔑 API Key present:', !!openaiApiKey, 'Length:', openaiApiKey?.length || 0);
-      
-      const modelName = 'gpt-4o-mini';
-      console.log('🎯 Model:', modelName);
-      console.log('🔗 Using chat/completions endpoint');
-      
-      // Call OpenAI Chat Completions API with timeout
-      const fetchPromise = fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${openaiApiKey}`
-        },
-        body: JSON.stringify({
-          model: modelName,
-          messages: [
-            {
-              role: 'system',
-              content: systemPrompt
-            },
-            {
-              role: 'user',
-              content: userPrompt
-            }
-          ],
-          temperature: 0.7,
-          max_tokens: 6000
-        }),
-        signal: controller.signal
+      console.log('📡 Starting Gemini generateContent...');
+      console.log('🔑 API Key present:', !!geminiApiKey, 'Length:', geminiApiKey?.length || 0);
+
+      const genAI = new GoogleGenerativeAI(geminiApiKey);
+      const model = genAI.getGenerativeModel({
+        model: SEARCH_MODEL,
+        systemInstruction: systemPrompt,
       });
-      
-      console.log('⏳ Waiting for fetch response...');
-      openaiResponse = await fetchPromise;
-      console.log('✅ Fetch completed, status:', openaiResponse.status, openaiResponse.statusText);
-      
+
+      const result = await Promise.race([
+        model.generateContent(userPrompt, {
+          generationConfig: {
+            temperature: 0.3,
+            maxOutputTokens: 6000,
+            thinking_level: 'minimal',
+          },
+        }),
+        new Promise<never>((_, reject) => {
+          controller.signal.addEventListener('abort', () => {
+            reject(new DOMException('The operation was aborted.', 'AbortError'));
+          });
+        }),
+      ]);
+
       clearTimeout(timeoutId);
-      
-      // Calculate and log API response time
+
       const apiEndTime = performance.now();
-      const apiResponseTime = apiEndTime - apiStartTime;
-      console.log(`⏱️ OpenAI API response time: ${apiResponseTime.toFixed(2)}ms`);
-      
+      console.log(`⏱️ Gemini API response time: ${(apiEndTime - apiStartTime).toFixed(2)}ms`);
+
+      aiResponse = typeof result.response?.text === 'function'
+        ? result.response.text()
+        : String(result.response?.text ?? '');
+      if (!aiResponse) {
+        aiResponse = 'No response from AI';
+      }
+      console.log('📝 Response length:', aiResponse.length, 'characters');
     } catch (fetchError: unknown) {
       clearTimeout(timeoutId);
       const apiEndTime = performance.now();
-      const apiResponseTime = apiEndTime - apiStartTime;
-      
       const error = fetchError instanceof Error ? fetchError : new Error(String(fetchError));
-      console.error(`❌ Fetch error after ${apiResponseTime.toFixed(2)}ms`);
+      console.error(`❌ Gemini error after ${(apiEndTime - apiStartTime).toFixed(2)}ms`);
       console.error('❌ Error type:', error.constructor.name);
       console.error('❌ Error name:', error.name);
       console.error('❌ Error message:', error.message);
@@ -305,7 +292,7 @@ Write your response in plain text without using asterisks (**) or any markdown f
       }
       
       return new Response(JSON.stringify({
-        error: `Network error: ${error.message || 'Unknown error'}`
+        error: `Gemini error: ${error.message || 'Unknown error'}`
       }), {
         status: 500,
         headers: {
@@ -314,41 +301,6 @@ Write your response in plain text without using asterisks (**) or any markdown f
         }
       });
     }
-    
-    if (!openaiResponse.ok) {
-      const errorData = await openaiResponse.text();
-      console.error('❌ OpenAI API error:', errorData);
-      return new Response(JSON.stringify({
-        error: 'Failed to get AI response. Please check your OpenAI API key and try again.'
-      }), {
-        status: 500,
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json'
-        }
-      });
-    }
-    
-    let openaiData;
-    try {
-      openaiData = await openaiResponse.json();
-      console.log('📦 Response structure:', JSON.stringify(Object.keys(openaiData)));
-    } catch (jsonError) {
-      console.error('❌ Failed to parse OpenAI response:', jsonError);
-      return new Response(JSON.stringify({
-        error: 'Failed to parse AI response. Please try again.'
-      }), {
-        status: 500,
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json'
-        }
-      });
-    }
-    
-    // Chat completions API returns choices[0].message.content
-    let aiResponse = openaiData.choices?.[0]?.message?.content || 'No response from AI';
-    console.log('📝 Response length:', aiResponse.length, 'characters');
     
     // Remove asterisks from the response as a fallback
     aiResponse = aiResponse.replace(/\*\*/g, '');
