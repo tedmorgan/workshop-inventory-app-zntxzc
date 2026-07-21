@@ -200,14 +200,14 @@ However, the user has provided this feedback:
 
 Please re-analyze the image taking the user's feedback into account. Correct any mistakes, add any missed tools, or adjust tool names as requested.
 
-CRITICAL ENUMERATION RULES:
-- List EVERY distinct physical tool or packaged item as its own array entry.
-- Do NOT collapse many similar tools into one category (never return just "Phillips screwdrivers" or "flathead screwdrivers" for a whole rack).
-- For screwdriver racks, list each screwdriver separately with distinguishing details (e.g. handle color/style, tip type, size if visible).
-- Scan systematically top-to-bottom and left-to-right so nothing on pegboards or racks is skipped.
+COUNTING RULES:
+- For groups of similar tools (e.g. screwdrivers on a rack), use a single entry with a count in parentheses, like "Phillips screwdrivers (8)" or "flathead screwdrivers (6)".
+- Count carefully — look at the full rack/pegboard and include every visible item of that type.
+- Keep clearly different tools as separate entries (e.g. respirator, spirit level, picture hanging kit).
 - Include packaged kits, fasteners, brushes, levels, respirators, wire, and other workshop materials.
+- Scan systematically top-to-bottom and left-to-right so nothing is skipped.
 
-Return ONLY a JSON array of tool names, nothing else. Format: ["tool1", "tool2", "tool3"]. Be as specific as possible with tool names. Do not include furniture, walls, outlets, or the work surface itself.`;
+Return ONLY a JSON array of tool names, nothing else. Format: ["tool1", "tool2 (3)", "tool3"]. Be as specific as possible with tool names. Do not include furniture, walls, outlets, or the work surface itself.`;
       }
     } else {
       if (useAgenticVision) {
@@ -226,31 +226,30 @@ Be thorough and systematic. Inspect the entire image carefully, paying special a
 - Similar-looking tools that need careful differentiation
 - Tools that might be grouped together or overlapping
 
-CRITICAL ENUMERATION RULES:
-- List EVERY distinct physical tool or packaged item as its own array entry.
-- Do NOT collapse many similar tools into one category (never return just "Phillips screwdrivers" for a whole rack).
-- For screwdriver racks, list each screwdriver separately with distinguishing details (handle color/style, tip type, size if visible).
-- Scan systematically top-to-bottom and left-to-right.
+COUNTING RULES:
+- For groups of similar tools (e.g. screwdrivers on a rack), use a single entry with a count in parentheses, like "Phillips screwdrivers (8)" or "flathead screwdrivers (6)".
+- Count carefully — look at the full rack/pegboard and include every visible item of that type.
+- Keep clearly different tools as separate entries.
 
 IMPORTANT: Use code execution internally for analysis, but DO NOT include any code blocks, Python code, or explanations in your response. Return ONLY a valid JSON array of tool names.
 
-Return ONLY a JSON array of tool names and materials, nothing else. Format: ["tool1", "tool2", "tool3"]. Be specific with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver") and make sure to capture every tool and material item in the image but do not include the table or items not associated with building tools.
+Return ONLY a JSON array of tool names and materials, nothing else. Format: ["tool1", "tool2 (3)", "tool3"]. Be specific with tool names (e.g., "Phillips screwdriver" instead of just "screwdriver") and make sure to capture every tool and material item in the image but do not include the table or items not associated with building tools.
 
 Your response must be ONLY the JSON array, no code blocks, no explanations, no markdown formatting.`;
       } else {
-        // Vision-only (used for gemini-3.6-flash): emphasize per-item enumeration
+        // Vision-only (used for gemini-3.6-flash): group similar tools with counts
         promptText = `Analyze this workshop/tool image and identify every tool and material visible.
 
-CRITICAL ENUMERATION RULES:
-- List EVERY distinct physical tool or packaged item as its own array entry.
-- Do NOT collapse many similar tools into one category. Never return only "flathead screwdrivers" or "Phillips screwdrivers" for an entire rack — list each screwdriver separately with distinguishing details (handle color/style, tip type, approximate size if visible).
+COUNTING RULES:
+- For groups of similar tools (especially screwdrivers, files, clamps, etc.), return ONE entry with a quantity in parentheses, e.g. "screwdrivers (12)", "Phillips screwdrivers (8)", "flathead screwdrivers (6)".
+- Count carefully across the whole image — racks and pegboards often have many of the same type.
+- If tip types are clearly different, split into separate counted groups (Phillips vs flathead). If tip type is unclear, use a single "screwdrivers (N)".
+- Keep unique/different items as separate single entries (respirator, spirit level, picture hanging kit, Velcro fasteners, wire spool, etc.).
 - Scan systematically: top row left-to-right, then middle, then bottom racks/pegboard hooks.
-- Include packaged kits (e.g. picture hanging kit, file set), fasteners, brushes, levels, respirators, wire spools, turnbuckles, pry bars, files, bits, Velcro, brackets, and other workshop materials.
-- Prefer listing more specific items over broad categories. If you see 15 screwdrivers, return about 15 screwdriver entries, not 2.
-- Be specific with names (e.g., "yellow-handle Phillips screwdriver" instead of "screwdriver").
-- Do NOT include furniture, walls, electrical outlets, notepads, or the work surface itself.
+- Include packaged kits, fasteners, brushes, levels, respirators, wire spools, turnbuckles, pry bars, files, bits, and other workshop materials.
+- Be specific with names. Do NOT include furniture, walls, electrical outlets, notepads, or the work surface itself.
 
-Return ONLY a JSON array of tool/material names, nothing else. Format: ["tool1", "tool2", "tool3"]. No markdown, no explanations.`;
+Return ONLY a JSON array of tool/material names, nothing else. Format: ["tool1", "tool2 (3)", "tool3"]. No markdown, no explanations.`;
       }
     }
     
