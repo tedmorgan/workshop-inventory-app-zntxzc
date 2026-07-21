@@ -143,10 +143,10 @@ Deno.serve(async (req: Request) => {
     console.log(`[${requestId}] 🔧 Initializing Google Generative AI SDK...`);
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
     
-    // Use Gemini 3 Flash Preview model
+    // Use Gemini 3.6 Flash (GA) for photo tool identification
     // For API v2+: Enable Agentic Vision code execution for improved accuracy
     // For API v1 (legacy): No code execution for simpler, predictable responses
-    const modelName = 'gemini-3-flash-preview';
+    const modelName = 'gemini-3.6-flash';
     console.log(`[${requestId}] 🎯 Getting model: ${modelName}`);
     
     let model;
