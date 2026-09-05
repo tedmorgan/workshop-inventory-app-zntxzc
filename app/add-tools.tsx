@@ -37,6 +37,12 @@ if (Platform.OS !== 'web') {
   FileSystem = require('expo-file-system/legacy');
 }
 
+// Reserved bin used internally for the "Checked Out Tools" feature. Users must
+// not create a normal bin with this name/location or it collides with the
+// checked-out list (which is looked up by this exact name + location).
+const CHECKED_OUT_LOCATION = "__CHECKED_OUT__";
+const CHECKED_OUT_BIN_NAME = "Checked Out Tools";
+
 export default function AddToolsScreen() {
   const router = useRouter();
   const [imageUri, setImageUri] = useState<string | null>(null);
@@ -100,11 +106,14 @@ export default function AddToolsScreen() {
       const deviceId = await getDeviceId();
       console.log('📱 Device ID:', deviceId.substring(0, 8) + '...');
 
-      // Fetch all inventory items for this device (RLS will verify via header)
+      // Fetch all inventory items for this device (RLS will verify via header).
+      // Exclude the reserved checked-out bin so it never appears as a
+      // selectable suggestion (picking it corrupts the checked-out list).
       const { data, error } = await supabase
         .from('tool_inventory')
         .select('bin_name, bin_location')
-        .eq('device_id', deviceId);
+        .eq('device_id', deviceId)
+        .neq('bin_location', CHECKED_OUT_LOCATION);
 
       if (error) {
         console.error('❌ Error loading existing bin data:', error);
@@ -682,6 +691,24 @@ export default function AddToolsScreen() {
 
     if (!binLocation.trim()) {
       Alert.alert('Missing Location', 'Please enter where the bin is located');
+      return;
+    }
+
+    // Guard against the reserved checked-out bin. Creating a normal bin with
+    // this name/location produces a duplicate that breaks the Checked Out
+    // Tools list.
+    const nameLc = binName.trim().toLowerCase();
+    const locLc = binLocation.trim().toLowerCase();
+    if (
+      nameLc === CHECKED_OUT_BIN_NAME.toLowerCase() ||
+      locLc === CHECKED_OUT_BIN_NAME.toLowerCase() ||
+      binLocation.trim() === CHECKED_OUT_LOCATION ||
+      binName.trim() === CHECKED_OUT_LOCATION
+    ) {
+      Alert.alert(
+        'Reserved Name',
+        '"Checked Out Tools" is reserved for tools you check out from a bin. Please choose a different bin name and location.'
+      );
       return;
     }
 

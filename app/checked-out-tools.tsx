@@ -60,28 +60,43 @@ export default function CheckedOutToolsScreen() {
       const supabase = await getSupabaseClient();
       const deviceId = await getDeviceId();
 
+      // NOTE: do NOT use .single() here. If more than one checked-out row ever
+      // exists (e.g. a corrupt duplicate), .single() throws and the whole list
+      // renders empty. Fetch all matching rows and use the oldest as canonical.
       const { data, error } = await supabase
         .from('tool_inventory')
         .select('*')
         .eq('device_id', deviceId)
         .eq('bin_location', CHECKED_OUT_LOCATION)
         .eq('bin_name', CHECKED_OUT_BIN_NAME)
-        .single();
+        .order('created_at', { ascending: true });
 
-      if (error && error.code !== 'PGRST116') {
+      if (error) {
         console.error('❌ Error loading checked out tools:', error);
         return;
       }
 
-      if (data) {
-        setBinId(data.id);
-        const tools = Array.isArray(data.tools) ? data.tools : [];
-        setCheckedOutTools(tools);
-        console.log(`✅ Loaded ${tools.length} checked out tools`);
-      } else {
+      const rows = Array.isArray(data) ? data : [];
+      if (rows.length === 0) {
+        setBinId(null);
         setCheckedOutTools([]);
         console.log('✅ No checked out tools found');
+        return;
       }
+
+      if (rows.length > 1) {
+        console.warn(`⚠️ Found ${rows.length} checked-out rows; using the oldest as canonical`);
+      }
+
+      const canonical = rows[0];
+      setBinId(canonical.id);
+      // Only keep valid checked-out tool objects (defensive against stray
+      // plain-string tools accidentally written into this bin).
+      const tools = (Array.isArray(canonical.tools) ? canonical.tools : []).filter(
+        (t: any) => t && typeof t === 'object' && 'name' in t
+      );
+      setCheckedOutTools(tools);
+      console.log(`✅ Loaded ${tools.length} checked out tools`);
     } catch (error) {
       console.error('❌ Error in loadCheckedOutTools:', error);
     } finally {
