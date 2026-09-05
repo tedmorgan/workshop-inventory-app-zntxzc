@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View, Pressable } from 'react-native';
 import { router } from 'expo-router';
 import { GlassView } from 'expo-glass-effect';
-import { useTheme } from '@react-navigation/native';
+import { useTheme } from 'expo-router/react-navigation';
 
 export default function FormSheetModal() {
   const theme = useTheme();

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from "react";
-import { useTheme } from "@react-navigation/native";
+import { useTheme } from "expo-router/react-navigation";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
 import { 
@@ -20,27 +20,23 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
   ActivityIndicator,
-  Dimensions,
-  StatusBar,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSupabaseClient } from "@/app/integrations/supabase/client";
 import { Stack, useRouter, useFocusEffect, useLocalSearchParams, usePathname } from "expo-router";
 import { getDeviceId } from "@/utils/deviceId";
+import {
+  groupBins,
+  distinctBinCount,
+  binCountByLocation,
+  toolLabel,
+  planRowUpdates,
+  type MergedBin,
+  type EditedTool,
+} from "@/utils/mergeBins";
 import { useNavigation } from "@/contexts/NavigationContext";
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withTiming,
-  withDecay,
-  runOnJS,
-} from 'react-native-reanimated';
-import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-
+import ImageGalleryModal from "@/components/ImageGalleryModal";
 const CHECKED_OUT_LOCATION = "__CHECKED_OUT__";
 const CHECKED_OUT_BIN_NAME = "Checked Out Tools";
 
@@ -62,12 +58,14 @@ export default function InventoryScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
-  const [editingItem, setEditingItem] = useState<ToolInventoryItem | null>(null);
-  const [editedTools, setEditedTools] = useState<string[]>([]);
+  const [editingBin, setEditingBin] = useState<MergedBin | null>(null);
+  const [editedTools, setEditedTools] = useState<EditedTool[]>([]);
   const [editedBinName, setEditedBinName] = useState('');
   const [editedBinLocation, setEditedBinLocation] = useState('');
   const [saving, setSaving] = useState(false);
-  const [expandedImageUrl, setExpandedImageUrl] = useState<string | null>(null);
+  const [galleryImages, setGalleryImages] = useState<string[]>([]);
+  const [galleryIndex, setGalleryIndex] = useState(0);
+  const [galleryVisible, setGalleryVisible] = useState(false);
   const [currentFilterBinId, setCurrentFilterBinId] = useState<string | null>(null);
   const [locationsModalVisible, setLocationsModalVisible] = useState(false);
   const [binsModalVisible, setBinsModalVisible] = useState(false);
@@ -75,7 +73,7 @@ export default function InventoryScreen() {
   const [binsInLocationName, setBinsInLocationName] = useState<string | null>(null);
   const [selectedLocationFilter, setSelectedLocationFilter] = useState<string | null>(null);
   const [checkOutModalVisible, setCheckOutModalVisible] = useState(false);
-  const [checkOutItem, setCheckOutItem] = useState<ToolInventoryItem | null>(null);
+  const [checkOutBin, setCheckOutBin] = useState<MergedBin | null>(null);
   // Track if we've processed the initial navigation for this focus session
   const hasProcessedNavigationRef = React.useRef(false);
   const params = useLocalSearchParams();
@@ -127,25 +125,21 @@ export default function InventoryScreen() {
   }, [navContext.returnToSearch]);
 
   // Zoom and pan state
-  const scale = useSharedValue(1);
-  const savedScale = useSharedValue(1);
-  const translateX = useSharedValue(0);
-  const translateY = useSharedValue(0);
-  const savedTranslateX = useSharedValue(0);
-  const savedTranslateY = useSharedValue(0);
-  const originX = useSharedValue(0);
-  const originY = useSharedValue(0);
+  // Merge rows that share a bin name + location into a single logical bin for
+  // display. Zero DB changes — the underlying rows are untouched; this only
+  // controls what the user sees. See utils/mergeBins.ts.
+  const mergedBins = React.useMemo(() => groupBins(inventory as any), [inventory]);
 
   useEffect(() => {
-    if (navContext.editBinId && inventory.length > 0) {
-      const itemToEdit = inventory.find(item => item.id === navContext.editBinId);
-      if (itemToEdit) {
-        openEditModal(itemToEdit);
+    if (navContext.editBinId && mergedBins.length > 0) {
+      const binToEdit = mergedBins.find(bin => bin.rowIds.includes(navContext.editBinId!));
+      if (binToEdit) {
+        openEditModal(binToEdit);
         // Clear it after opening so it doesn't reopen
         navContext.setEditBinId(null);
       }
     }
-  }, [navContext.editBinId, inventory]);
+  }, [navContext.editBinId, mergedBins]);
 
   // Handle filter updates while screen is visible (e.g., if context changes without navigation)
   // This only applies a NEW filter, never clears (clearing only happens on navigation via useFocusEffect)
@@ -272,28 +266,41 @@ export default function InventoryScreen() {
     loadInventory();
   };
 
-  // Compute unique locations from inventory
+  // Compute unique locations from inventory (count DISTINCT bins per location,
+  // not raw rows, so merged duplicates don't inflate the count).
   const uniqueLocations = React.useMemo(() => {
-    const locationMap = new Map<string, number>();
-    inventory.forEach(item => {
-      const location = item.bin_location || 'Unspecified';
-      locationMap.set(location, (locationMap.get(location) || 0) + 1);
-    });
-    return Array.from(locationMap.entries()).map(([name, binCount]) => ({
-      name,
-      binCount,
-    })).sort((a, b) => a.name.localeCompare(b.name));
+    const counts = binCountByLocation(inventory as any);
+    return Array.from(counts.entries())
+      .map(([name, binCount]) => ({ name, binCount }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [inventory]);
 
   const totalLocations = uniqueLocations.length;
 
-  // Bins within a selected location, sorted alphabetically
+  // Merged bins within a selected location, sorted alphabetically
   const binsForSelectedLocation = React.useMemo(() => {
     if (!binsInLocationName) return [];
-    return inventory
-      .filter(item => (item.bin_location || 'Unspecified') === binsInLocationName)
+    return mergedBins
+      .filter(bin => (bin.bin_location || 'Unspecified') === binsInLocationName)
       .sort((a, b) => a.bin_name.localeCompare(b.bin_name));
-  }, [inventory, binsInLocationName]);
+  }, [mergedBins, binsInLocationName]);
+
+  // Merged bins to render as cards, respecting active filters. A single-bin
+  // filter (from Find Tool) carries one row id; match the whole group that
+  // contains that row. If the id no longer matches anything, show all bins.
+  const displayMergedBins = React.useMemo(() => {
+    let groups = mergedBins;
+    if (currentFilterBinId) {
+      const match = groups.filter(bin => bin.rowIds.includes(currentFilterBinId));
+      if (match.length > 0) groups = match;
+    }
+    if (selectedLocationFilter) {
+      groups = groups.filter(
+        bin => (bin.bin_location || 'Unspecified') === selectedLocationFilter
+      );
+    }
+    return groups;
+  }, [mergedBins, currentFilterBinId, selectedLocationFilter]);
 
   // Handle location selection — show bins in that location
   const handleLocationSelect = (locationName: string) => {
@@ -328,35 +335,28 @@ export default function InventoryScreen() {
     setCurrentFilterBinId(null);
   };
 
-  // Get display inventory based on filters
-  const displayInventory = React.useMemo(() => {
-    let result = filteredInventory;
-    if (selectedLocationFilter) {
-      result = result.filter(item => 
-        (item.bin_location || 'Unspecified') === selectedLocationFilter
-      );
-    }
-    return result;
-  }, [filteredInventory, selectedLocationFilter]);
-
-  const openEditModal = (item: ToolInventoryItem) => {
-    setEditingItem(item);
-    setEditedTools([...item.tools]);
-    setEditedBinName(item.bin_name);
-    setEditedBinLocation(item.bin_location);
+  const openEditModal = (bin: MergedBin) => {
+    setEditingBin(bin);
+    // Flatten all tools across the merged bin, keeping each tool's source row
+    // so we can write edits back to the correct underlying row on save.
+    setEditedTools(bin.tools.map(t => ({ value: toolLabel(t.value), rowId: t.rowId })));
+    setEditedBinName(bin.bin_name);
+    setEditedBinLocation(bin.bin_location);
     setEditModalVisible(true);
   };
 
   const closeEditModal = () => {
     setEditModalVisible(false);
-    setEditingItem(null);
+    setEditingBin(null);
     setEditedTools([]);
     setEditedBinName('');
     setEditedBinLocation('');
   };
 
   const addNewTool = () => {
-    setEditedTools([...editedTools, '']);
+    // New tools have no source row yet; they get assigned to the bin's
+    // representative row on save.
+    setEditedTools([...editedTools, { value: '', rowId: null }]);
   };
 
   const removeTool = (index: number) => {
@@ -366,14 +366,14 @@ export default function InventoryScreen() {
 
   const updateTool = (index: number, newValue: string) => {
     const newTools = [...editedTools];
-    newTools[index] = newValue;
+    newTools[index] = { ...newTools[index], value: newValue };
     setEditedTools(newTools);
   };
 
   const saveChanges = async () => {
-    if (!editingItem) return;
+    if (!editingBin) return;
 
-    const filteredTools = editedTools.filter(tool => tool.trim().length > 0);
+    const filteredTools = editedTools.filter(tool => tool.value.trim().length > 0);
 
     if (filteredTools.length === 0) {
       Alert.alert('Error', 'Please add at least one tool');
@@ -394,20 +394,42 @@ export default function InventoryScreen() {
 
     try {
       const supabase = await getSupabaseClient();
-      const { error } = await supabase
-        .from('tool_inventory')
-        .update({
-          tools: filteredTools,
-          bin_name: editedBinName.trim(),
-          bin_location: editedBinLocation.trim(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', editingItem.id);
 
-      if (error) {
-        console.error('❌ Error updating:', error);
-        Alert.alert('Error', 'Failed to update inventory');
-        return;
+      // Distribute the edited tool list back to the underlying rows this bin
+      // was merged from. Rows left with no tools are deleted.
+      const plan = planRowUpdates(editingBin, editedTools);
+      const newName = editedBinName.trim();
+      const newLocation = editedBinLocation.trim();
+
+      for (const update of plan.updates) {
+        const { error } = await supabase
+          .from('tool_inventory')
+          .update({
+            tools: update.tools,
+            bin_name: newName,
+            bin_location: newLocation,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', update.id);
+
+        if (error) {
+          console.error('❌ Error updating row', update.id, error);
+          Alert.alert('Error', 'Failed to update inventory');
+          return;
+        }
+      }
+
+      if (plan.deletes.length > 0) {
+        const { error: deleteError } = await supabase
+          .from('tool_inventory')
+          .delete()
+          .in('id', plan.deletes);
+
+        if (deleteError) {
+          console.error('❌ Error removing emptied rows:', deleteError);
+          Alert.alert('Error', 'Failed to update inventory');
+          return;
+        }
       }
 
       console.log('✅ Updated successfully');
@@ -422,10 +444,11 @@ export default function InventoryScreen() {
     }
   };
 
-  const deleteItem = async (id: string) => {
+  const deleteBin = async (bin: MergedBin) => {
+    const toolWord = bin.toolCount === 1 ? 'tool' : 'tools';
     Alert.alert(
-      'Delete Item',
-      'Are you sure you want to delete this inventory item?',
+      'Delete Bin',
+      `Are you sure you want to delete "${bin.bin_name}" and all ${bin.toolCount} ${toolWord}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -434,14 +457,15 @@ export default function InventoryScreen() {
           onPress: async () => {
             try {
               const supabase = await getSupabaseClient();
+              // Remove every underlying row that was merged into this bin.
               const { error } = await supabase
                 .from('tool_inventory')
                 .delete()
-                .eq('id', id);
+                .in('id', bin.rowIds);
 
               if (error) {
                 console.error('❌ Error deleting:', error);
-                Alert.alert('Error', 'Failed to delete item');
+                Alert.alert('Error', 'Failed to delete bin');
                 return;
               }
 
@@ -449,7 +473,7 @@ export default function InventoryScreen() {
               loadInventory();
             } catch (error) {
               console.error('❌ Error:', error);
-              Alert.alert('Error', 'Failed to delete item');
+              Alert.alert('Error', 'Failed to delete bin');
             }
           },
         },
@@ -457,27 +481,37 @@ export default function InventoryScreen() {
     );
   };
 
-  const openCheckOutModal = (item: ToolInventoryItem) => {
-    setCheckOutItem(item);
+  const openCheckOutModal = (bin: MergedBin) => {
+    setCheckOutBin(bin);
     setCheckOutModalVisible(true);
   };
 
   const closeCheckOutModal = () => {
     setCheckOutModalVisible(false);
-    setCheckOutItem(null);
+    setCheckOutBin(null);
   };
 
-  const handleCheckOut = async (toolIndex: number) => {
-    if (!checkOutItem) return;
+  const handleCheckOut = async (mergedToolIndex: number) => {
+    if (!checkOutBin) return;
 
     try {
-      console.log(`📤 Checking out tool at index ${toolIndex}`);
-      const toolToCheckOut = checkOutItem.tools[toolIndex];
-      
+      console.log(`📤 Checking out tool at merged index ${mergedToolIndex}`);
+      const mergedTool = checkOutBin.tools[mergedToolIndex];
+      if (!mergedTool) return;
+
+      // Locate the exact underlying row + position this tool came from.
+      const sourceRow = checkOutBin.sourceRows.find(r => r.id === mergedTool.rowId);
+      if (!sourceRow) {
+        console.error('❌ Source row not found for checked-out tool');
+        Alert.alert('Error', 'Failed to check out tool');
+        return;
+      }
+
       // Parse tool if it has quantity
-      let toolName = toolToCheckOut;
+      const toolToCheckOut = mergedTool.value;
+      let toolName: any = toolToCheckOut;
       let quantity = 1;
-      if (typeof toolToCheckOut === 'object' && 'name' in toolToCheckOut) {
+      if (toolToCheckOut && typeof toolToCheckOut === 'object' && 'name' in toolToCheckOut) {
         toolName = (toolToCheckOut as any).name;
         quantity = (toolToCheckOut as any).quantity || 1;
       }
@@ -485,15 +519,16 @@ export default function InventoryScreen() {
       const supabase = await getSupabaseClient();
       const deviceId = await getDeviceId();
 
-      // Remove tool from source bin
-      const updatedTools = checkOutItem.tools.filter((_, i) => i !== toolIndex);
+      // Remove just this tool instance from its source row
+      const sourceTools = Array.isArray(sourceRow.tools) ? sourceRow.tools : [];
+      const updatedTools = sourceTools.filter((_: any, i: number) => i !== mergedTool.indexInRow);
 
       if (updatedTools.length === 0) {
-        // If bin is now empty, delete it
+        // If that row is now empty, delete it
         const { error: deleteError } = await supabase
           .from('tool_inventory')
           .delete()
-          .eq('id', checkOutItem.id);
+          .eq('id', sourceRow.id);
 
         if (deleteError) {
           console.error('❌ Error deleting empty bin:', deleteError);
@@ -501,11 +536,11 @@ export default function InventoryScreen() {
           return;
         }
       } else {
-        // Update the bin
+        // Update the source row
         const { error: updateError } = await supabase
           .from('tool_inventory')
           .update({ tools: updatedTools })
-          .eq('id', checkOutItem.id);
+          .eq('id', sourceRow.id);
 
         if (updateError) {
           console.error('❌ Error updating bin:', updateError);
@@ -526,8 +561,8 @@ export default function InventoryScreen() {
       const checkedOutTool = {
         name: toolName,
         quantity: quantity,
-        original_location: checkOutItem.bin_location,
-        original_bin: checkOutItem.bin_name,
+        original_location: checkOutBin.bin_location,
+        original_bin: checkOutBin.bin_name,
         checked_out_date: new Date().toISOString(),
       };
 
@@ -559,7 +594,7 @@ export default function InventoryScreen() {
             bin_name: CHECKED_OUT_BIN_NAME,
             bin_location: CHECKED_OUT_LOCATION,
             tools: [checkedOutTool],
-            image_url: checkOutItem.image_url,
+            image_url: sourceRow.image_url,
           });
 
         if (createError) {
@@ -579,147 +614,18 @@ export default function InventoryScreen() {
     }
   };
 
-  const expandImage = (imageUrl: string) => {
-    console.log('🖼️ Expanding image');
-    setExpandedImageUrl(imageUrl);
-    scale.value = 1;
-    savedScale.value = 1;
-    translateX.value = 0;
-    translateY.value = 0;
-    savedTranslateX.value = 0;
-    savedTranslateY.value = 0;
-    originX.value = 0;
-    originY.value = 0;
+  // Open the full-screen swipeable gallery starting at a specific image.
+  const openGallery = (urls: string[], index: number) => {
+    const clean = (urls || []).filter(Boolean);
+    if (clean.length === 0) return;
+    setGalleryImages(clean);
+    setGalleryIndex(Math.max(0, Math.min(index, clean.length - 1)));
+    setGalleryVisible(true);
   };
 
-  const closeExpandedImage = () => {
-    console.log('❌ Closing expanded image');
-    setExpandedImageUrl(null);
-    scale.value = 1;
-    savedScale.value = 1;
-    translateX.value = 0;
-    translateY.value = 0;
-    savedTranslateX.value = 0;
-    savedTranslateY.value = 0;
-    originX.value = 0;
-    originY.value = 0;
+  const closeGallery = () => {
+    setGalleryVisible(false);
   };
-
-  // Pan gesture for dragging the zoomed image
-  const panGesture = Gesture.Pan()
-    .minDistance(10)
-    .onUpdate((event) => {
-      // Only allow panning when zoomed in
-      if (savedScale.value > 1) {
-        translateX.value = savedTranslateX.value + event.translationX;
-        translateY.value = savedTranslateY.value + event.translationY;
-      }
-    })
-    .onEnd(() => {
-      savedTranslateX.value = translateX.value;
-      savedTranslateY.value = translateY.value;
-    });
-
-  // Pinch gesture for zooming with proper focal point handling
-  const pinchGesture = Gesture.Pinch()
-    .onStart((event) => {
-      // Store the focal point at the start of the pinch
-      originX.value = event.focalX;
-      originY.value = event.focalY;
-    })
-    .onUpdate((event) => {
-      // Calculate new scale with limits
-      const newScale = Math.max(1, Math.min(savedScale.value * event.scale, 5));
-      scale.value = newScale;
-
-      // Calculate translation to keep the focal point stationary
-      // The focal point should remain at the same screen position
-      const deltaX = event.focalX - originX.value;
-      const deltaY = event.focalY - originY.value;
-      
-      // Adjust translation based on scale change
-      const scaleChange = newScale - savedScale.value;
-      translateX.value = savedTranslateX.value + deltaX - (event.focalX - SCREEN_WIDTH / 2) * scaleChange / savedScale.value;
-      translateY.value = savedTranslateY.value + deltaY - (event.focalY - SCREEN_HEIGHT / 2) * scaleChange / savedScale.value;
-    })
-    .onEnd(() => {
-      savedScale.value = scale.value;
-      savedTranslateX.value = translateX.value;
-      savedTranslateY.value = translateY.value;
-
-      // Reset if zoomed out too much
-      if (scale.value < 1.2) {
-        scale.value = withSpring(1);
-        savedScale.value = 1;
-        translateX.value = withSpring(0);
-        translateY.value = withSpring(0);
-        savedTranslateX.value = 0;
-        savedTranslateY.value = 0;
-      }
-    });
-
-  // Double tap to zoom in/out
-  const doubleTapGesture = Gesture.Tap()
-    .numberOfTaps(2)
-    .onEnd((event) => {
-      if (scale.value > 1) {
-        // Zoom out
-        scale.value = withSpring(1);
-        savedScale.value = 1;
-        translateX.value = withSpring(0);
-        translateY.value = withSpring(0);
-        savedTranslateX.value = 0;
-        savedTranslateY.value = 0;
-      } else {
-        // Zoom in to 2x at tap location
-        const newScale = 2;
-        const centerX = SCREEN_WIDTH / 2;
-        const centerY = SCREEN_HEIGHT / 2;
-        
-        // Calculate translation to center on tap point
-        const targetX = centerX - event.x;
-        const targetY = centerY - event.y;
-        
-        scale.value = withSpring(newScale);
-        savedScale.value = newScale;
-        translateX.value = withSpring(targetX * newScale);
-        translateY.value = withSpring(targetY * newScale);
-        savedTranslateX.value = targetX * newScale;
-        savedTranslateY.value = targetY * newScale;
-      }
-    });
-
-  // Single tap to close when not zoomed
-  const singleTapGesture = Gesture.Tap()
-    .numberOfTaps(1)
-    .onEnd(() => {
-      if (scale.value <= 1.1) {
-        runOnJS(closeExpandedImage)();
-      }
-    });
-
-  // Close button tap — separate gesture so it uses the native gesture system
-  const closeButtonGesture = Gesture.Tap()
-    .onEnd(() => {
-      runOnJS(closeExpandedImage)();
-    });
-
-  // Combine all gestures — double tap takes priority over single tap
-  const composedGesture = Gesture.Simultaneous(
-    Gesture.Exclusive(doubleTapGesture, singleTapGesture),
-    pinchGesture,
-    panGesture
-  );
-
-  const animatedStyle = useAnimatedStyle(() => {
-    return {
-      transform: [
-        { translateX: translateX.value },
-        { translateY: translateY.value },
-        { scale: scale.value },
-      ],
-    };
-  });
 
   const renderHeaderRight = () => (
     <Pressable
@@ -801,7 +707,7 @@ export default function InventoryScreen() {
             />
           }
         >
-            {filteredInventory.length === 0 ? (
+            {mergedBins.length === 0 ? (
             <View style={styles.emptyContainer}>
               <IconSymbol name="tray.fill" size={64} color={colors.textSecondary} />
               <Text style={[styles.emptyTitle, { color: colors.text }]}>No Tools Yet</Text>
@@ -832,7 +738,7 @@ export default function InventoryScreen() {
                   onPress={() => setBinsModalVisible(true)}
                 >
                   <IconSymbol name="tray.fill" size={24} color={colors.primary} />
-                  <Text style={[styles.statNumber, { color: colors.text }]}>{inventory.length}</Text>
+                  <Text style={[styles.statNumber, { color: colors.text }]}>{mergedBins.length}</Text>
                   <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Bins</Text>
                 </Pressable>
                 <View style={[styles.statCard, { backgroundColor: colors.card }]}>
@@ -868,32 +774,56 @@ export default function InventoryScreen() {
                 </View>
               )}
 
-              {displayInventory.map((item) => (
-                <View key={item.id} style={[styles.card, { backgroundColor: colors.card }]}>
-                  <Pressable onPress={() => expandImage(item.image_url)}>
-                    <Image source={{ uri: item.image_url }} style={styles.cardImage} />
-                  </Pressable>
+              {displayMergedBins.map((bin) => (
+                <View key={bin.id} style={[styles.card, { backgroundColor: colors.card }]}>
+                  {bin.images.length <= 1 ? (
+                    <Pressable onPress={() => openGallery(bin.images.map(x => x.url), 0)}>
+                      <Image source={{ uri: bin.images[0]?.url }} style={styles.cardImage} />
+                    </Pressable>
+                  ) : (
+                    <View style={styles.collageContainer}>
+                      {bin.images.slice(0, 4).map((img, i) => {
+                        const showMore = i === 3 && bin.images.length > 4;
+                        return (
+                          <Pressable
+                            key={`${img.rowId}_${i}`}
+                            style={styles.collageTile}
+                            onPress={() => openGallery(bin.images.map(x => x.url), i)}
+                          >
+                            <Image source={{ uri: img.url }} style={styles.collageImage} />
+                            {showMore && (
+                              <View style={styles.collageOverlay}>
+                                <Text style={styles.collageOverlayText}>
+                                  +{bin.images.length - 4}
+                                </Text>
+                              </View>
+                            )}
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  )}
                   <View style={styles.cardContent}>
                     <View style={styles.cardHeader}>
                       <View style={styles.binInfo}>
                         <IconSymbol name="archivebox.fill" size={20} color={colors.primary} />
-                        <Text style={[styles.binName, { color: colors.text }]}>{item.bin_name}</Text>
+                        <Text style={[styles.binName, { color: colors.text }]}>{bin.bin_name}</Text>
                       </View>
                       <View style={styles.cardActions}>
                         <Pressable
-                          onPress={() => openCheckOutModal(item)}
+                          onPress={() => openCheckOutModal(bin)}
                           style={styles.iconButton}
                         >
                           <IconSymbol name="arrow.up.circle.fill" size={20} color="#34C759" />
                         </Pressable>
                         <Pressable
-                          onPress={() => openEditModal(item)}
+                          onPress={() => openEditModal(bin)}
                           style={styles.iconButton}
                         >
                           <IconSymbol name="pencil" size={20} color={colors.primary} />
                         </Pressable>
                         <Pressable
-                          onPress={() => deleteItem(item.id)}
+                          onPress={() => deleteBin(bin)}
                           style={styles.iconButton}
                         >
                           <IconSymbol name="trash" size={20} color="#FF3B30" />
@@ -904,16 +834,18 @@ export default function InventoryScreen() {
                     <View style={styles.locationRow}>
                       <IconSymbol name="location.fill" size={16} color={colors.textSecondary} />
                       <Text style={[styles.location, { color: colors.textSecondary }]}>
-                        {item.bin_location}
+                        {bin.bin_location}
                       </Text>
                     </View>
 
                     <View style={styles.toolsContainer}>
                       <Text style={[styles.toolsTitle, { color: colors.text }]}>Tools:</Text>
-                      {item.tools.map((tool, index) => (
+                      {bin.tools.map((tool, index) => (
                         <View key={index} style={styles.toolRow}>
                           <Text style={[styles.toolBullet, { color: colors.primary }]}>•</Text>
-                          <Text style={[styles.toolText, { color: colors.text }]}>{tool}</Text>
+                          <Text style={[styles.toolText, { color: colors.text }]}>
+                            {toolLabel(tool.value)}
+                          </Text>
                         </View>
                       ))}
                     </View>
@@ -952,10 +884,23 @@ export default function InventoryScreen() {
                       </Pressable>
                     </View>
 
-                    {editingItem && (
-                      <Pressable onPress={() => expandImage(editingItem.image_url)}>
-                        <Image source={{ uri: editingItem.image_url }} style={styles.modalImage} />
+                    {editingBin && editingBin.images.length <= 1 && (
+                      <Pressable onPress={() => editingBin && openGallery(editingBin.images.map(x => x.url), 0)}>
+                        <Image source={{ uri: editingBin.images[0]?.url }} style={styles.modalImage} />
                       </Pressable>
+                    )}
+                    {editingBin && editingBin.images.length > 1 && (
+                      <View style={styles.modalCollageContainer}>
+                        {editingBin.images.map((img, i) => (
+                          <Pressable
+                            key={`${img.rowId}_${i}`}
+                            style={styles.modalCollageTile}
+                            onPress={() => editingBin && openGallery(editingBin.images.map(x => x.url), i)}
+                          >
+                            <Image source={{ uri: img.url }} style={styles.modalCollageImage} />
+                          </Pressable>
+                        ))}
+                      </View>
                     )}
 
                     <Text style={[styles.modalLabel, { color: colors.text }]}>Bin Name</Text>
@@ -981,7 +926,7 @@ export default function InventoryScreen() {
                       <View key={index} style={styles.toolInputRow}>
                         <TextInput
                           style={[styles.toolInput, { backgroundColor: colors.background, color: colors.text }]}
-                          value={tool}
+                          value={tool.value}
                           onChangeText={(text) => updateTool(index, text)}
                           placeholder="Tool name"
                           placeholderTextColor={colors.textSecondary}
@@ -1043,14 +988,14 @@ export default function InventoryScreen() {
               </Pressable>
             </View>
 
-            {checkOutItem && (
+            {checkOutBin && (
               <>
                 <View style={[styles.checkOutBinInfo, { backgroundColor: colors.background }]}>
                   <Text style={[styles.checkOutBinName, { color: colors.text }]}>
-                    {checkOutItem.bin_name}
+                    {checkOutBin.bin_name}
                   </Text>
                   <Text style={[styles.checkOutBinLocation, { color: colors.textSecondary }]}>
-                    {checkOutItem.bin_location}
+                    {checkOutBin.bin_location}
                   </Text>
                 </View>
 
@@ -1059,10 +1004,14 @@ export default function InventoryScreen() {
                 </Text>
 
                 <ScrollView style={styles.checkOutToolsList}>
-                  {checkOutItem.tools.map((tool, index) => {
-                    const toolName = typeof tool === 'string' ? tool : tool.name || tool;
-                    const toolQuantity = typeof tool === 'object' && 'quantity' in tool ? tool.quantity : null;
-                    
+                  {checkOutBin.tools.map((tool, index) => {
+                    const value = tool.value;
+                    const toolName = typeof value === 'string' ? value : (value as any).name || value;
+                    const toolQuantity =
+                      value && typeof value === 'object' && 'quantity' in value
+                        ? (value as any).quantity
+                        : null;
+
                     return (
                       <Pressable
                         key={index}
@@ -1091,48 +1040,13 @@ export default function InventoryScreen() {
         </View>
       </Modal>
 
-      {/* Full Screen Image Zoom Modal */}
-      <Modal
-        visible={expandedImageUrl !== null}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={closeExpandedImage}
-        statusBarTranslucent
-      >
-        <GestureHandlerRootView style={styles.fullScreenContainer}>
-          <View style={styles.fullScreenOverlay}>
-            <StatusBar hidden />
-
-            {/* Zoomable image — fills screen */}
-            <GestureDetector gesture={composedGesture}>
-              <Animated.View style={[styles.imageContainer, animatedStyle]}>
-                {expandedImageUrl && (
-                  <Image
-                    source={{ uri: expandedImageUrl }}
-                    style={styles.fullScreenImage}
-                    resizeMode="contain"
-                  />
-                )}
-              </Animated.View>
-            </GestureDetector>
-
-            {/* Close button — uses its own GestureDetector so it participates
-                in the native gesture system and can't be blocked */}
-            <GestureDetector gesture={closeButtonGesture}>
-              <View style={styles.closeButton}>
-                <View style={styles.closeButtonBackground}>
-                  <IconSymbol name="xmark" size={28} color="#FFFFFF" />
-                </View>
-              </View>
-            </GestureDetector>
-
-            {/* Instructions at bottom */}
-            <View style={styles.zoomInstructions} pointerEvents="none">
-              <Text style={styles.zoomInstructionsText}>Pinch to zoom  •  Double tap to zoom  •  Tap to close</Text>
-            </View>
-          </View>
-        </GestureHandlerRootView>
-      </Modal>
+      {/* Full Screen Swipeable Image Gallery */}
+      <ImageGalleryModal
+        images={galleryImages}
+        initialIndex={galleryIndex}
+        visible={galleryVisible}
+        onClose={closeGallery}
+      />
 
       {/* Locations List Modal */}
       <Modal
@@ -1204,7 +1118,7 @@ export default function InventoryScreen() {
               </Pressable>
             </View>
             <ScrollView style={styles.listModalScroll} showsVerticalScrollIndicator={false}>
-              {inventory.length === 0 ? (
+              {mergedBins.length === 0 ? (
                 <View style={styles.emptyListContainer}>
                   <IconSymbol name="tray" size={48} color={colors.textSecondary} />
                   <Text style={[styles.emptyListText, { color: colors.textSecondary }]}>
@@ -1212,35 +1126,43 @@ export default function InventoryScreen() {
                   </Text>
                 </View>
               ) : (
-                [...inventory]
+                [...mergedBins]
                   .sort((a, b) => a.bin_name.localeCompare(b.bin_name))
-                  .map((item, index) => (
+                  .map((bin, index, arr) => (
                   <Pressable
-                    key={item.id}
+                    key={bin.id}
                     style={[
                       styles.listItem,
                       { backgroundColor: colors.background },
-                      index === inventory.length - 1 && styles.listItemLast
+                      index === arr.length - 1 && styles.listItemLast
                     ]}
-                    onPress={() => handleBinSelect(item.id)}
+                    onPress={() => handleBinSelect(bin.id)}
                   >
                     <View style={styles.listItemLeft}>
-                      <Image source={{ uri: item.image_url }} style={styles.listItemImage} />
+                      <Image source={{ uri: bin.images[0]?.url }} style={styles.listItemImage} />
                       <View style={styles.listItemInfo}>
                         <Text style={[styles.listItemTitle, { color: colors.text }]}>
-                          {item.bin_name}
+                          {bin.bin_name}
                         </Text>
                         <View style={styles.listItemSubtitle}>
                           <IconSymbol name="location.fill" size={12} color={colors.textSecondary} />
                           <Text style={[styles.listItemLocation, { color: colors.textSecondary }]}>
-                            {item.bin_location || 'Unspecified'}
+                            {bin.bin_location || 'Unspecified'}
                           </Text>
+                          {bin.images.length > 1 && (
+                            <View style={styles.photoBadge}>
+                              <IconSymbol name="photo.on.rectangle" size={11} color={colors.primary} />
+                              <Text style={[styles.photoBadgeText, { color: colors.primary }]}>
+                                {bin.images.length}
+                              </Text>
+                            </View>
+                          )}
                         </View>
                       </View>
                     </View>
                     <View style={styles.listItemRight}>
                       <Text style={[styles.listItemCount, { color: colors.textSecondary }]}>
-                        {item.tools.length} {item.tools.length === 1 ? 'tool' : 'tools'}
+                        {bin.toolCount} {bin.toolCount === 1 ? 'tool' : 'tools'}
                       </Text>
                       <IconSymbol name="chevron.right" size={16} color={colors.textSecondary} />
                     </View>
@@ -1290,24 +1212,24 @@ export default function InventoryScreen() {
                   </Text>
                 </View>
               ) : (
-                binsForSelectedLocation.map((item, index) => (
+                binsForSelectedLocation.map((bin, index) => (
                   <Pressable
-                    key={item.id}
+                    key={bin.id}
                     style={[
                       styles.listItem,
                       { backgroundColor: colors.background },
                       index === binsForSelectedLocation.length - 1 && styles.listItemLast
                     ]}
-                    onPress={() => handleBinFromLocationSelect(item.id)}
+                    onPress={() => handleBinFromLocationSelect(bin.id)}
                   >
                     <View style={styles.listItemLeft}>
-                      <Image source={{ uri: item.image_url }} style={styles.listItemImage} />
+                      <Image source={{ uri: bin.images[0]?.url }} style={styles.listItemImage} />
                       <View style={styles.listItemInfo}>
                         <Text style={[styles.listItemTitle, { color: colors.text }]}>
-                          {item.bin_name}
+                          {bin.bin_name}
                         </Text>
                         <Text style={[styles.listItemToolCount, { color: colors.textSecondary }]}>
-                          {item.tools.length} {item.tools.length === 1 ? 'tool' : 'tools'}
+                          {bin.toolCount} {bin.toolCount === 1 ? 'tool' : 'tools'}
                         </Text>
                       </View>
                     </View>
@@ -1425,6 +1347,38 @@ const styles = StyleSheet.create({
     height: 200,
     backgroundColor: colors.background,
   },
+  collageContainer: {
+    width: '100%',
+    height: 200,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    backgroundColor: colors.background,
+  },
+  collageTile: {
+    width: '50%',
+    height: 100,
+    padding: 1,
+  },
+  collageImage: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: colors.background,
+  },
+  collageOverlay: {
+    position: 'absolute',
+    top: 1,
+    left: 1,
+    right: 1,
+    bottom: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  collageOverlayText: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: '700',
+  },
   cardContent: {
     padding: 16,
   },
@@ -1519,6 +1473,22 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     backgroundColor: colors.background,
   },
+  modalCollageContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 16,
+    marginHorizontal: -3,
+  },
+  modalCollageTile: {
+    width: '50%',
+    padding: 3,
+  },
+  modalCollageImage: {
+    width: '100%',
+    height: 110,
+    borderRadius: 10,
+    backgroundColor: colors.background,
+  },
   modalLabel: {
     fontSize: 15,
     fontWeight: '600',
@@ -1589,56 +1559,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
-  },
-  fullScreenContainer: {
-    flex: 1,
-  },
-  fullScreenOverlay: {
-    flex: 1,
-    backgroundColor: '#000000',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  closeButton: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 60 : 40,
-    right: 20,
-    zIndex: 10,
-    padding: 4,
-  },
-  closeButtonBackground: {
-    backgroundColor: 'rgba(60, 60, 60, 0.9)',
-    borderRadius: 24,
-    width: 48,
-    height: 48,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.6)',
-  },
-  zoomInstructions: {
-    position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 50 : 30,
-    alignSelf: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
-  },
-  zoomInstructionsText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  imageContainer: {
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  fullScreenImage: {
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT,
   },
   // Tappable stat card styles
   statCardTappable: {
@@ -1745,6 +1665,16 @@ const styles = StyleSheet.create({
   },
   listItemLocation: {
     fontSize: 13,
+  },
+  photoBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    marginLeft: 6,
+  },
+  photoBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   listItemToolCount: {
     fontSize: 13,

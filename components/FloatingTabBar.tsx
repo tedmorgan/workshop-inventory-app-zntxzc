@@ -12,7 +12,7 @@ import { useRouter, usePathname } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { IconSymbol } from '@/components/IconSymbol';
 import { BlurView } from 'expo-blur';
-import { useTheme } from '@react-navigation/native';
+import { useTheme } from 'expo-router/react-navigation';
 import { colors } from '@/styles/commonStyles';
 import Animated, {
   useAnimatedStyle,
@@ -149,7 +149,7 @@ export default function FloatingTabBar({
     indicator: {
       ...styles.indicator,
       backgroundColor: `${colors.primary}20`,
-      width: `${(100 / tabs.length) - 3}%`,
+      width: `${(100 / tabs.length) - 3}%` as `${number}%`,
     },
   };
 
@@ -222,7 +222,11 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   background: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   indicator: {
     position: 'absolute',

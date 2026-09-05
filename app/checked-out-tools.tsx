@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from "react";
-import { useTheme } from "@react-navigation/native";
+import { useTheme } from "expo-router/react-navigation";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
 import { 

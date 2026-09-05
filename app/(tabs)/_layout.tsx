@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Platform } from 'react-native';
-import { NativeTabs, Icon, Label } from 'expo-router/unstable-native-tabs';
+import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { Stack } from 'expo-router';
 import FloatingTabBar, { TabBarItem } from '@/components/FloatingTabBar';
 import { colors } from '@/styles/commonStyles';
@@ -34,16 +34,16 @@ export default function TabLayout() {
     return (
       <NativeTabs>
         <NativeTabs.Trigger name="(home)">
-          <Icon sf="house.fill" drawable="ic_home" />
-          <Label>Home</Label>
+          <NativeTabs.Trigger.Icon sf="house.fill" drawable="ic_home" />
+          <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
         <NativeTabs.Trigger name="inventory">
-          <Icon sf="wrench.and.screwdriver.fill" drawable="ic_inventory" />
-          <Label>Inventory</Label>
+          <NativeTabs.Trigger.Icon sf="wrench.and.screwdriver.fill" drawable="ic_inventory" />
+          <NativeTabs.Trigger.Label>Inventory</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
         <NativeTabs.Trigger name="profile">
-          <Icon sf="person.fill" drawable="ic_profile" />
-          <Label>Profile</Label>
+          <NativeTabs.Trigger.Icon sf="person.fill" drawable="ic_profile" />
+          <NativeTabs.Trigger.Label>Profile</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
       </NativeTabs>
     );

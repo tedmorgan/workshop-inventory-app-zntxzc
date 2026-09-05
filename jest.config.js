@@ -19,6 +19,12 @@ module.exports = {
         moduleResolution: 'node',
         skipLibCheck: true,
         noImplicitAny: false,
+        // Pin rootDir/outDir so newer TypeScript (SDK 57) doesn't error with
+        // TS5011 when a single nested test file is compiled in isolation.
+        rootDir: '.',
+        outDir: undefined,
+        composite: false,
+        declaration: false,
       },
     }],
   },

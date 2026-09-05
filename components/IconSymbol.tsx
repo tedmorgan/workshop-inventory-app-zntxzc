@@ -172,7 +172,7 @@ const MAPPING = {
   "sun.max.fill": "light-mode",
 } as Partial<
   Record<
-    import("expo-symbols").SymbolViewProps["name"],
+    import("expo-symbols").SFSymbol,
     React.ComponentProps<typeof MaterialIcons>["name"]
   >
 >;

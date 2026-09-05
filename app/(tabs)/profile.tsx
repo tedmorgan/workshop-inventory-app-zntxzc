@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from "react";
-import { useTheme } from "@react-navigation/native";
+import { useTheme } from "expo-router/react-navigation";
 import { View, Text, StyleSheet, ScrollView, Platform, Pressable, Alert, ActivityIndicator } from "react-native";
 import { Stack } from "expo-router";
 import AsyncStorage from '@react-native-async-storage/async-storage';

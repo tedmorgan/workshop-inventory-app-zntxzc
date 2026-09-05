@@ -35,7 +35,12 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import { Audio } from 'expo-av';
+import {
+  useAudioRecorder,
+  AudioModule,
+  RecordingPresets,
+  setAudioModeAsync,
+} from 'expo-audio';
 // Conditionally import FileSystem only for native platforms
 let FileSystem: any = null;
 if (Platform.OS !== 'web') {
@@ -72,7 +77,7 @@ export default function FindToolScreen() {
   // Voice recording state
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const recordingRef = useRef<Audio.Recording | null>(null);
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   // Refs for scrolling to results
   const scrollViewRef = useRef<ScrollView>(null);
   const resultsContainerRef = useRef<View>(null);
@@ -319,8 +324,8 @@ export default function FindToolScreen() {
   const startRecording = async () => {
     try {
       console.log('🎤 Requesting permissions...');
-      const { status } = await Audio.requestPermissionsAsync();
-      if (status !== 'granted') {
+      const permission = await AudioModule.requestRecordingPermissionsAsync();
+      if (!permission.granted) {
         Alert.alert(
           'Permission Required',
           'Please grant microphone permission to use voice search.',
@@ -329,16 +334,14 @@ export default function FindToolScreen() {
         return;
       }
 
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
       });
 
       console.log('🎤 Starting recording...');
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      recordingRef.current = recording;
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
       setIsRecording(true);
       console.log('✅ Recording started');
     } catch (error) {
@@ -350,14 +353,13 @@ export default function FindToolScreen() {
   const stopRecording = async () => {
     try {
       console.log('🛑 Stopping recording...');
-      if (!recordingRef.current) {
+      if (!isRecording) {
         return;
       }
 
       setIsRecording(false);
-      await recordingRef.current.stopAndUnloadAsync();
-      const uri = recordingRef.current.getURI();
-      recordingRef.current = null;
+      await audioRecorder.stop();
+      const uri = audioRecorder.uri;
 
       if (!uri) {
         Alert.alert('Error', 'No recording found. Please try again.');
@@ -483,11 +485,12 @@ export default function FindToolScreen() {
   // Cleanup recording on unmount
   useEffect(() => {
     return () => {
-      if (recordingRef.current) {
-        recordingRef.current.stopAndUnloadAsync();
+      if (isRecording) {
+        audioRecorder.stop().catch(() => {});
       }
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRecording]);
 
   const openViewInventory = () => {
     console.log('📤 Setting returnToSearch = true');

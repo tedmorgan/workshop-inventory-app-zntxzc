@@ -101,9 +101,14 @@ export async function getDeviceInfo(): Promise<{
     // Safely get device name with platform check
     let deviceName: string | null = null;
     try {
-      // Check if the method exists and is available
-      if (Application.getDeviceNameAsync && typeof Application.getDeviceNameAsync === 'function') {
-        deviceName = await Application.getDeviceNameAsync();
+      // Check if the method exists and is available.
+      // Note: getDeviceNameAsync was removed from expo-application in newer SDKs,
+      // so we access it defensively via a cast and fall back when unavailable.
+      const AppModule = Application as unknown as {
+        getDeviceNameAsync?: () => Promise<string | null>;
+      };
+      if (AppModule.getDeviceNameAsync && typeof AppModule.getDeviceNameAsync === 'function') {
+        deviceName = await AppModule.getDeviceNameAsync();
         console.log('📱 Device name obtained:', deviceName);
       } else {
         console.log('⚠️ getDeviceNameAsync not available on this platform');

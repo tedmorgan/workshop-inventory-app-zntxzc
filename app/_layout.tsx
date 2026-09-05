@@ -12,7 +12,7 @@ import {
   DefaultTheme,
   Theme,
   ThemeProvider,
-} from "@react-navigation/native";
+} from "expo-router/react-navigation";
 import { StatusBar } from "expo-status-bar";
 import { Button } from "@/components/button";
 import { WidgetProvider } from "@/contexts/WidgetContext";

@@ -1,6 +1,6 @@
 
 import React, { useState } from "react";
-import { useTheme } from "@react-navigation/native";
+import { useTheme } from "expo-router/react-navigation";
 import { colors } from "@/styles/commonStyles";
 import { Stack, useRouter } from "expo-router";
 import * as Clipboard from 'expo-clipboard';
@@ -19,6 +19,7 @@ import {
   Share,
 } from "react-native";
 import { getDeviceId } from "@/utils/deviceId";
+import { groupBins, toolLabel } from "@/utils/mergeBins";
 
 type ToolInventoryItem = {
   id: string;
@@ -105,18 +106,22 @@ export default function HomeScreen() {
   };
 
   const generateTextContent = (inventory: ToolInventoryItem[]): string => {
+    // Group submissions that share a bin name + location so the export shows
+    // one entry per bin (matching the inventory screen), not one per photo.
+    const bins = groupBins(inventory as any);
+
     let content = '🔧 MY TOOL INVENTORY 🔧\n';
     content += `Generated: ${new Date().toLocaleDateString()}\n`;
-    content += `Total Bins: ${inventory.length}\n`;
-    content += `Total Tools: ${inventory.reduce((sum, item) => sum + item.tools.length, 0)}\n`;
+    content += `Total Bins: ${bins.length}\n`;
+    content += `Total Tools: ${bins.reduce((sum, bin) => sum + bin.toolCount, 0)}\n`;
     content += '\n' + '='.repeat(40) + '\n\n';
 
-    inventory.forEach((item, index) => {
-      content += `📦 BIN ${index + 1}: ${item.bin_name}\n`;
-      content += `📍 Location: ${item.bin_location}\n`;
-      content += `🔧 Tools (${item.tools.length}):\n`;
-      item.tools.forEach((tool, toolIndex) => {
-        content += `   ${toolIndex + 1}. ${tool}\n`;
+    bins.forEach((bin, index) => {
+      content += `📦 BIN ${index + 1}: ${bin.bin_name}\n`;
+      content += `📍 Location: ${bin.bin_location}\n`;
+      content += `🔧 Tools (${bin.toolCount}):\n`;
+      bin.tools.forEach((tool, toolIndex) => {
+        content += `   ${toolIndex + 1}. ${toolLabel(tool.value)}\n`;
       });
       content += '\n' + '-'.repeat(40) + '\n\n';
     });

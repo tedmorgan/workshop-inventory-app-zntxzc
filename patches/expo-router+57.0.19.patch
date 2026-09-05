@@ -1,0 +1,78 @@
+diff --git a/node_modules/expo-router/build/global-state/routingQueue.js b/node_modules/expo-router/build/global-state/routingQueue.js
+index 87f0f25..652f211 100644
+--- a/node_modules/expo-router/build/global-state/routingQueue.js
++++ b/node_modules/expo-router/build/global-state/routingQueue.js
+@@ -15,7 +15,9 @@ exports.routingQueue = {
+         return exports.routingQueue.queue;
+     },
+     add(action) {
+-        exports.routingQueue.queue.push(action);
++        // Use a new array identity so useSyncExternalStore detects the change
++        // and does not silently drop queued navigation actions (expo #48626).
++        exports.routingQueue.queue = [...exports.routingQueue.queue, action];
+         for (const callback of exports.routingQueue.subscribers) {
+             callback();
+         }
+diff --git a/node_modules/expo-router/build/navigationEvents/index.js b/node_modules/expo-router/build/navigationEvents/index.js
+index 47794e3..ec90c84 100644
+--- a/node_modules/expo-router/build/navigationEvents/index.js
++++ b/node_modules/expo-router/build/navigationEvents/index.js
+@@ -29,7 +29,15 @@ function emit(type, event) {
+     const subscribersForEvent = subscribers[type];
+     if (subscribersForEvent) {
+         for (const callback of subscribersForEvent) {
+-            callback(event);
++            // Telemetry/analytics subscribers must never be able to crash
++            // navigation. A throwing subscriber (re-entrancy in this build)
++            // otherwise tears down the whole navigator. See expo PR #49408.
++            try {
++                callback(event);
++            }
++            catch (e) {
++                console.warn('[navigationEvents] subscriber for "' + type + '" threw:', e);
++            }
+         }
+     }
+ }
+diff --git a/node_modules/expo-router/build/navigationEvents/navigation.js b/node_modules/expo-router/build/navigationEvents/navigation.js
+index e7eb7c5..12eb4df 100644
+--- a/node_modules/expo-router/build/navigationEvents/navigation.js
++++ b/node_modules/expo-router/build/navigationEvents/navigation.js
+@@ -1,20 +1,29 @@
+ "use strict";
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.handleNavigationOnReady = handleNavigationOnReady;
+-const _1 = require(".");
++// NOTE: Use an explicit "./index" specifier. Metro does not reliably resolve a
++// bare "." import to the directory's index module, which left `_1.emit`
++// undefined on-device and crashed navigation with "undefined is not a function".
++const _1 = require("./index");
+ const store_1 = require("../global-state/store");
+ let unsubscribe;
+ function handleNavigationOnReady() {
+     if (unsubscribe)
+         unsubscribe();
+     unsubscribe = store_1.storeRef.current.navigationRef.addListener('__unsafe_action__', (e) => {
+-        if (!e.data.noop && store_1.storeRef.current.state) {
+-            const action = e.data.action;
+-            (0, _1.emit)('actionDispatched', {
+-                actionType: action.type,
+-                payload: action.payload,
+-                state: store_1.storeRef.current.state,
+-            });
++        // This is dev-only navigation telemetry; it must never crash navigation.
++        try {
++            if (!e.data.noop && e.data.action && store_1.storeRef.current.state && typeof _1.emit === 'function') {
++                const action = e.data.action;
++                (0, _1.emit)('actionDispatched', {
++                    actionType: action.type,
++                    payload: action.payload,
++                    state: store_1.storeRef.current.state,
++                });
++            }
++        }
++        catch (err) {
++            console.warn('[navigationEvents] actionDispatched telemetry skipped:', err);
+         }
+     });
+ }
