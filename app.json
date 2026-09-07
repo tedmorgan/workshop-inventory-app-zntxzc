@@ -16,7 +16,7 @@
       "appStoreUrl": "https://apps.apple.com/app/id6755446543",
       "supportsTablet": true,
       "bundleIdentifier": "com.anonymous.Natively",
-      "buildNumber": "2",
+      "buildNumber": "3",
       "splash": {
         "image": "./assets/images/Workshop-splash.png",
         "resizeMode": "contain",
@@ -36,7 +36,7 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.nagrom.inventory",
-      "versionCode": 3,
+      "versionCode": 4,
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",

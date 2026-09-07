@@ -295,6 +295,65 @@ export default function CheckedOutToolsScreen() {
     }
   };
 
+  const handleDiscard = (tool: CheckedOutTool, index: number) => {
+    Alert.alert(
+      'Discard Tool',
+      `Permanently remove "${tool.name}" from your inventory?\n\nUse this for items that were used up or thrown away (e.g. paint, caulk). It will NOT be returned to a bin. This can't be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Discard',
+          style: 'destructive',
+          onPress: () => performDiscard(tool, index),
+        },
+      ]
+    );
+  };
+
+  const performDiscard = async (tool: CheckedOutTool, index: number) => {
+    try {
+      console.log(`[${new Date().toISOString()}] 🗑️ Discarding "${tool.name}" from inventory (not returning to bin)`);
+      const supabase = await getSupabaseClient();
+
+      // Remove from the checked-out list WITHOUT returning it to any bin.
+      const updatedCheckedOutTools = checkedOutTools.filter((_, i) => i !== index);
+
+      if (updatedCheckedOutTools.length === 0 && binId) {
+        // Nothing left checked out — delete the checked-out bin row.
+        const { error: deleteError } = await supabase
+          .from('tool_inventory')
+          .delete()
+          .eq('id', binId);
+
+        if (deleteError) {
+          console.error(`[${new Date().toISOString()}] ❌ Error deleting empty checked-out bin:`, deleteError);
+          Alert.alert('Error', 'Failed to discard tool');
+          return;
+        }
+        setCheckedOutTools([]);
+        setBinId(null);
+      } else if (binId) {
+        const { error: updateError } = await supabase
+          .from('tool_inventory')
+          .update({ tools: updatedCheckedOutTools })
+          .eq('id', binId);
+
+        if (updateError) {
+          console.error(`[${new Date().toISOString()}] ❌ Error updating checked-out list after discard:`, updateError);
+          Alert.alert('Error', 'Failed to discard tool');
+          return;
+        }
+        setCheckedOutTools(updatedCheckedOutTools);
+      }
+
+      Alert.alert('Discarded', `"${tool.name}" was removed from your inventory.`);
+      console.log(`[${new Date().toISOString()}] ✅ Tool discarded successfully`);
+    } catch (error) {
+      console.error(`[${new Date().toISOString()}] ❌ Error in performDiscard:`, error);
+      Alert.alert('Error', 'Failed to discard tool');
+    }
+  };
+
   const renderToolCard = (tool: CheckedOutTool, index: number) => {
     return (
       <View key={index} style={[styles.toolCard, { backgroundColor: colors.card }]}>
@@ -319,13 +378,22 @@ export default function CheckedOutToolsScreen() {
             </Text>
           )}
         </View>
-        <Pressable
-          style={[styles.checkInButton, { backgroundColor: colors.primary }]}
-          onPress={() => handleCheckIn(tool, index)}
-        >
-          <IconSymbol name="arrow.down.circle.fill" size={20} color="#FFFFFF" />
-          <Text style={styles.checkInButtonText}>Check In</Text>
-        </Pressable>
+        <View style={styles.actionsRow}>
+          <Pressable
+            style={[styles.actionButton, styles.checkInButton, { backgroundColor: colors.primary }]}
+            onPress={() => handleCheckIn(tool, index)}
+          >
+            <IconSymbol name="arrow.down.circle.fill" size={18} color="#FFFFFF" />
+            <Text style={styles.checkInButtonText}>Check In</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.actionButton, styles.discardButton]}
+            onPress={() => handleDiscard(tool, index)}
+          >
+            <IconSymbol name="trash" size={18} color="#FF3B30" />
+            <Text style={styles.discardButtonText}>Discard</Text>
+          </Pressable>
+        </View>
       </View>
     );
   };
@@ -441,46 +509,67 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   toolCard: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     padding: 16,
     borderRadius: 12,
     marginBottom: 12,
-    alignItems: 'center',
   },
   toolInfo: {
-    flex: 1,
+    width: '100%',
   },
   toolName: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '600',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   quantity: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '400',
   },
   locationInfo: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 6,
     marginBottom: 4,
   },
   locationText: {
     fontSize: 14,
+    flex: 1,
+    flexWrap: 'wrap',
   },
   dateText: {
     fontSize: 12,
   },
-  checkInButton: {
+  actionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 14,
+  },
+  actionButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 6,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 8,
   },
+  checkInButton: {
+    // backgroundColor applied inline (theme primary)
+  },
   checkInButtonText: {
     color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  discardButton: {
+    backgroundColor: 'rgba(255, 59, 48, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 59, 48, 0.4)',
+  },
+  discardButtonText: {
+    color: '#FF3B30',
     fontSize: 14,
     fontWeight: '600',
   },
