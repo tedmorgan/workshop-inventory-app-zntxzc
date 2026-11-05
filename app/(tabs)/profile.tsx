@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useTheme } from "expo-router/react-navigation";
+import Constants from "expo-constants";
 import { View, Text, StyleSheet, ScrollView, Platform, Pressable, Alert, ActivityIndicator } from "react-native";
 import { Stack } from "expo-router";
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -168,7 +169,9 @@ export default function ProfileScreen() {
           {/* App Info */}
           <View style={styles.appInfo}>
             <Text style={styles.appInfoText}>Workshop AI</Text>
-            <Text style={styles.appInfoVersion}>Version 1.0.0</Text>
+            <Text style={styles.appInfoVersion}>
+              Version {Constants.expoConfig?.version ?? "1.5.2"}
+            </Text>
             <Text style={styles.appInfoCopyright}>
               Personal tool inventory management
             </Text>
